@@ -4,6 +4,7 @@
 Verge3D is the most artist-friendly toolkit for creating interactive WebGL experiences. It features a comprehensive integration with Blender, a physically-based rendering pipeline, support for native materials and animation. Interactivity is enabled with Puzzles, an intuitive and easy-to-learn visual scripting environment.
 
 This add-on is an open-sourced part of complete Verge3D for Blender toolkit.
+This add-on is based on the offical Khronos [Blender glTF 2.0 Exporter](https://github.com/KhronosGroup/glTF-Blender-Exporter).
 
 On its own it can do the following:
 
