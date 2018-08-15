@@ -964,16 +964,21 @@ def generateCameras(operator, context, export_settings, glTF):
 
     filtered_cameras = export_settings['filtered_cameras']
     
+    activeCam = None
     for bl_camera in filtered_cameras:
-
         camera = generateCamera(bl_camera) 
         if camera:
             cameras.append(camera)
+            if bpy.context.screen.scene.camera.data == bl_camera:
+                activeCam = camera
 
     if not len(cameras):
         camera = generateCameraFromView(1)
         if camera:
             cameras.append(camera)
+
+    # ensure that the active scene camera will be used for rendering (first one)
+    cameras = sorted(cameras, key=lambda cam: cam==activeCam, reverse=True)
 
     if len(cameras) > 0:
         glTF['cameras'] = cameras
@@ -2825,8 +2830,8 @@ def generateMaterials(operator, context, export_settings, glTF):
                     # Diffuse texture
 
                     if blender_texture_slot.use_map_color_diffuse:
-                        index = get_texture_index_by_image(export_settings, glTF,
-                                get_tex_image(blender_texture_slot.texture))
+                        index = get_texture_index_by_texture(export_settings, 
+                                glTF, blender_texture_slot.texture)
                         if index >= 0:
                             diffuseTexture = {
                                 'index' : index
@@ -2836,8 +2841,8 @@ def generateMaterials(operator, context, export_settings, glTF):
                     # Alpha texture
 
                     if blender_texture_slot.use_map_alpha:
-                        index = get_texture_index_by_image(export_settings, glTF,
-                                get_tex_image(blender_texture_slot.texture))
+                        index = get_texture_index_by_texture(export_settings, 
+                                glTF, blender_texture_slot.texture)
                         if index >= 0:
                             alphaTexture = {
                                 'index' : index
@@ -2848,8 +2853,8 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                     # NOTE: this one connected as color but interpreted as intensity
                     if blender_texture_slot.use_map_color_spec:
-                        index = get_texture_index_by_image(export_settings, glTF,
-                                get_tex_image(blender_texture_slot.texture))
+                        index = get_texture_index_by_texture(export_settings, 
+                                glTF, blender_texture_slot.texture)
                         if index >= 0:
                             specularTexture = {
                                 'index' : index
@@ -2859,8 +2864,8 @@ def generateMaterials(operator, context, export_settings, glTF):
                     # Emissive texture
 
                     if blender_texture_slot.use_map_emit:
-                        index = get_texture_index_by_image(export_settings, glTF, 
-                                get_tex_image(blender_texture_slot.texture))
+                        index = get_texture_index_by_texture(export_settings, 
+                                glTF, blender_texture_slot.texture)
                         if index >= 0:
                             emissiveTexture = {
                                 'index' : index
@@ -2870,8 +2875,8 @@ def generateMaterials(operator, context, export_settings, glTF):
                     # Normal texture
 
                     if blender_texture_slot.use_map_normal:
-                        index = get_texture_index_by_image(export_settings, glTF,
-                                get_tex_image(blender_texture_slot.texture))
+                        index = get_texture_index_by_texture(export_settings, 
+                                glTF, blender_texture_slot.texture)
                         if index >= 0:
                             normalTexture = {
                                 'index' : index
@@ -2882,8 +2887,8 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                     if export_settings['gltf_displacement']:
                         if blender_texture_slot.use_map_displacement:
-                            index = get_texture_index_by_image(export_settings, glTF,
-                                    get_tex_image(blender_texture_slot.texture))
+                            index = get_texture_index_by_texture(export_settings, 
+                                    glTF, blender_texture_slot.texture)
                             if index >= 0:
                                 extensions = material['extensions']
 

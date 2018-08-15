@@ -168,12 +168,36 @@ def get_texture_index(glTF, name):
 
     return -1
 
-def get_texture_index_by_texture(export_settings, glTF, texture):
-    if texture is None or get_tex_image(texture) is None:
+def get_texture_index_by_texture(export_settings, glTF, bl_texture):
+    """
+    Return the texture index in the glTF array by a given texture. Safer than 
+    "get_texture_index_by_image" and "get_texture_index" in case of different 
+    textures with the same image or linked textures with the same name but with 
+    different images.
+    """
+
+    if (export_settings['gltf_uri_data'] is None or glTF.get('textures') is None 
+            or bl_texture is None):
         return -1
 
-    return get_texture_index_by_image(export_settings, glTF, get_tex_image(texture))
+    bl_image = get_tex_image(bl_texture)
+    if bl_image is None or bl_image.filepath is None:
+        return -1
 
+    uri = get_image_exported_uri(export_settings, bl_image)
+    image_uri = export_settings['gltf_uri_data']['uri']
+    tex_name = get_texture_name(bl_texture)
+
+    index = 0
+    for texture in glTF['textures']:
+        if 'source' in texture and 'name' in texture:
+            current_image_uri = image_uri[texture['source']]
+            if current_image_uri == uri and texture['name'] == tex_name:
+                return index
+        
+        index += 1
+
+    return -1
 
 def get_texture_index_node(export_settings, glTF, name, shader_node_group):
     """
@@ -202,7 +226,7 @@ def get_texture_index_node(export_settings, glTF, name, shader_node_group):
     if get_tex_image(from_node) is None or get_tex_image(from_node).size[0] == 0 or get_tex_image(from_node).size[1] == 0:
         return -1
 
-    return get_texture_index_by_image(export_settings, glTF, get_tex_image(from_node))
+    return get_texture_index_by_texture(export_settings, glTF, from_node)
 
 
 def get_texcoord_index(glTF, name, shader_node_group):
