@@ -14,21 +14,21 @@ On its own it can do the following:
 Need more? Download Verge3D for Blender from [here](https://www.soft8soft.com/get-verge3d/).
 
 ## Installation
-Just clone and copy the repo to one the following directory (considering you have Blender 2.79 installed):
+Just clone and copy the repo internals to one the following directory (considering you have Blender 2.79 installed):
 
 ### Linux
 ```
-/home/$user/.config/blender/2.79/scripts/addons/
+/home/$user/.config/blender/2.79/scripts/addons/verge3d
 ```
 
 ### Windows 7+
 ```
-C:\Users\%username%\AppData\Roaming\Blender Foundation\Blender\2.79\scripts\addons
+C:\Users\%username%\AppData\Roaming\Blender Foundation\Blender\2.79\scripts\addons\verge3d
 ```
 
 ### macOS
 ```
-/Users/$USER/Library/Application Support/Blender/2.79/
+/Users/$USER/Library/Application Support/Blender/2.79/scripts/addons/verge3d
 ```
 
 ## Support
