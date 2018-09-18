@@ -17,7 +17,7 @@ import bpy
 
 class Profile(bpy.types.RenderEngine):
     bl_idname = 'VERGE3D'
-    bl_label = 'Verge3D'
+    bl_label = 'Verge3D / Internal'
     bl_use_preview = False
 
     bl_use_shading_nodes = False

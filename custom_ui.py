@@ -43,6 +43,11 @@ class V3DPanel():
         else:
             return False
 
+    @classmethod
+    def checkCycles(cls, context):
+        return context.scene.render.engine == 'CYCLES'
+
+
 class V3DExportSettingsPanel(bpy.types.Panel, V3DPanel):
     """Located on render panel"""
     bl_space_type = 'PROPERTIES'
@@ -298,11 +303,12 @@ class V3DMaterialTransparencyPanel(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(mat, "transparency_method", expand=True)
 
-        if mat.active_node_material:
-            mat = mat.active_node_material
+        if not super().checkCycles(context):
+            if mat.active_node_material:
+                mat = mat.active_node_material
 
-        layout.prop(mat, "alpha")
-        layout.prop(mat, "specular_alpha", text="Specular")
+            layout.prop(mat, "alpha")
+            layout.prop(mat, "specular_alpha", text="Specular")
 
 class V3DCurveSettingsPanel(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'

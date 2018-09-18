@@ -18,10 +18,13 @@
 # Imports
 #
 
+from string import Template
+
 import bpy
 
 from .gltf2_get import *
 from .gltf2_extract import *
+from .node_material_wrapper import NodeMaterialWrapper
 from .utils import *
 
 #
@@ -29,6 +32,7 @@ from .utils import *
 #
 
 TO_MESH_SOURCE_CUSTOM_PROP = "v3d_to_mesh_source_object"
+WORLD_NODE_MAT_NAME = Template('v3d_world_${name}_node_material')
 
 #
 # Functions
@@ -220,6 +224,7 @@ def filter_apply(export_settings):
     # MATERIALS
 
     filtered_materials = []
+    temporary_materials = []
 
     for blender_material in get_used_materials():
         
@@ -245,8 +250,52 @@ def filter_apply(export_settings):
             for mat in bl_curve.materials:
                 if mat == blender_material and mat not in filtered_materials:
                     filtered_materials.append(mat)
-                    
-    export_settings['filtered_materials'] = filtered_materials                
+
+    curr_world = bpy.context.scene.world
+    if export_settings['gltf_format'] != 'FB' and curr_world is not None:
+
+        world_mat = bpy.data.materials.new(WORLD_NODE_MAT_NAME.substitute(
+                name=curr_world.name))
+        world_mat.use_nodes = True
+
+        world_mat_wrapper = NodeMaterialWrapper(world_mat)
+
+        if isCyclesRender(bpy.context) and curr_world.use_nodes:
+            mat_node_tree = curr_world.node_tree.copy()
+        else:
+            mat_node_tree = world_mat.node_tree.copy()
+            mat_node_tree.nodes.clear()
+
+            bkg_node = mat_node_tree.nodes.new('ShaderNodeBackground')
+            bkg_node.inputs['Color'].default_value[0] = curr_world.horizon_color[0]
+            bkg_node.inputs['Color'].default_value[1] = curr_world.horizon_color[1]
+            bkg_node.inputs['Color'].default_value[2] = curr_world.horizon_color[2]
+            bkg_node.inputs['Color'].default_value[3] = 1
+            bkg_node.inputs['Strength'].default_value = 1
+
+            out_node = mat_node_tree.nodes.new('ShaderNodeOutputWorld')
+
+            mat_node_tree.links.new(bkg_node.outputs['Background'], out_node.inputs['Surface'])
+
+            # when in non-cycles profile trying to use an environment texture
+            if not isCyclesRender(bpy.context):
+                tex_slot = get_world_first_valid_texture_slot(curr_world)
+                if tex_slot is not None:
+                    tex_node = mat_node_tree.nodes.new('ShaderNodeTexture')
+                    tex_node.texture = tex_slot.texture
+                    mat_node_tree.links.new(tex_node.outputs['Color'], bkg_node.inputs['Color'])
+
+                    tc_node = mat_node_tree.nodes.new('ShaderNodeTexCoord')
+                    mat_node_tree.links.new(tc_node.outputs['Generated'], tex_node.inputs['Vector'])
+
+        world_mat_wrapper.node_tree = mat_node_tree
+
+        temporary_materials.append(world_mat)
+        filtered_materials.append(world_mat_wrapper)
+        print('!!!', world_mat)
+
+    export_settings['filtered_materials'] = filtered_materials
+    export_settings['temporary_materials'] = temporary_materials
 
     filtered_node_groups = []
     for group in bpy.data.node_groups:
@@ -262,7 +311,6 @@ def filter_apply(export_settings):
                     filtered_node_groups.append(group)
 
     export_settings['filtered_node_groups'] = filtered_node_groups
-    
 
     filtered_textures = []
     
@@ -330,21 +378,6 @@ def filter_apply(export_settings):
                     get_tex_image(bl_node.texture) is not None and 
                     bl_node not in filtered_textures):
                 filtered_textures.append(bl_node)
-
-    curr_world = bpy.context.scene.world
-
-    if curr_world is not None and export_settings['gltf_format'] != 'FB':
-        # append environment map from world
-        
-        slot = get_world_first_valid_texture_slot(curr_world)
-
-        if slot is not None and slot not in filtered_textures:
-            filtered_textures.append(slot)
-
-        # append cycles environment texture
-        envTexNode = getWorldCyclesEnvTexture(curr_world)
-        if envTexNode is not None and envTexNode not in filtered_textures:
-            filtered_textures.append(envTexNode)
 
     export_settings['filtered_textures'] = filtered_textures
 

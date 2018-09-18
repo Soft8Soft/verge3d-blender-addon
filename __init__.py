@@ -40,6 +40,8 @@ if 'bpy' in locals():
     if 'gltf2_get' in locals():
         imp.reload(gltf2_get)
 
+    if 'node_material_wrapper' in locals():
+        imp.reload(node_material_wrapper)
     if 'profile' in locals():
         imp.reload(profile)
     if 'utils' in locals():
@@ -50,7 +52,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 6, 0),
+    "version": (2, 7, 1),
     "blender": (2, 79, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -224,6 +226,9 @@ class ExportGLTF2_Base():
 
         export_settings['gltf_sneak_peek'] = self.export_sneak_peek
         export_settings['gltf_app_manager_host'] = APP_MANAGER_HTTP_HOST
+
+        export_settings['temporary_meshes'] = None
+        export_settings['temporary_materials'] = None
 
         return gltf2_export.save(self, context, export_settings)
 

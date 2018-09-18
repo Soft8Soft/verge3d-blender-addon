@@ -1252,20 +1252,13 @@ def generateLights(operator, context, export_settings, glTF):
         light['type'] = 'ambient' 
         light['color'] = [0, 0, 0]
 
-        if bl_scene.world:
-            if isCyclesRender(context) and not getWorldCyclesEnvTexture(bl_scene.world):
-                c = getWorldCyclesBkgColor(bl_scene.world)
-                s = getWorldCyclesBkgStrength(bl_scene.world)
-
-                light['color'] = [s * c[0], s * c[1], s * c[2]]
-
-            elif not isCyclesRender(context):
-                light_set = bl_scene.world.light_settings
-
-                if light_set.use_environment_light:
-                    # NOTE: only white supported
-                    energy = light_set.environment_energy
-                    light['color'] = [energy, energy, energy]
+        if bl_scene.world and not isCyclesRender(context):
+            light_set = bl_scene.world.light_settings
+            
+            if light_set.use_environment_light:
+                # NOTE: only white supported
+                energy = light_set.environment_energy
+                light['color'] = [energy, energy, energy]
         
         light['name'] = 'Ambient_' + bl_scene.name
         
@@ -2904,23 +2897,6 @@ def generateMaterials(operator, context, export_settings, glTF):
             if mat_type == 'NODE' or mat_type == 'CYCLES':
                 v3d_data['nodeGraph'] = extract_node_graph(bl_mat.node_tree,
                         export_settings, glTF)
-
-
-        if ((mat_type == 'PBR' or mat_type == 'CYCLES') and
-                bpy.context.scene.world and export_settings['gltf_format'] != 'FB'):
-
-            envTexNode = getWorldCyclesEnvTexture(bpy.context.scene.world)
-            envBkgStrength = getWorldCyclesBkgStrength(bpy.context.scene.world)
-
-            if envTexNode is not None:
-                v3d_data['pbrEnvironmentTexture'] = get_texture_index_by_texture(
-                        export_settings, glTF, envTexNode)
-                v3d_data['pbrEnvironmentStrength'] = envBkgStrength
-            elif isCyclesRender(context):
-                c = getWorldCyclesBkgColor(bpy.context.scene.world)
-
-                v3d_data['pbrEnvironmentColor'] = [c[0], c[1], c[2]]
-                v3d_data['pbrEnvironmentStrength'] = envBkgStrength
     
         material['name'] = bl_mat.name
 
@@ -3000,34 +2976,14 @@ def generateScenes(operator, context, export_settings, glTF):
 
         v3d_data['light'] = light
  
-        v3d_data['horizonColor'] = DEFAULT_COLOR
-
         if bl_scene.world and export_settings['gltf_format'] != 'FB':
-            if not isCyclesRender(context) and getView3DSpaceProp('show_world'):
-                wtex_slot = get_world_first_valid_texture_slot(bl_scene.world)
-                if wtex_slot is not None:
-                    v3d_data['worldTexture'] = get_texture_index_by_texture(
-                            export_settings, glTF, wtex_slot.texture)
+            world_mat = get_material_index(glTF, WORLD_NODE_MAT_NAME.substitute(
+                    name=bl_scene.world.name))
+            if world_mat >= 0:
+                v3d_data['worldMaterial'] = world_mat
 
-                v3d_data['horizonColor'] = extract_vec(bl_scene.world.horizon_color)
-
-            elif isCyclesRender(context):
-                env_tex_node = getWorldCyclesEnvTexture(bl_scene.world)
-                if env_tex_node is not None:
-                    v3d_data['worldTexture'] = get_texture_index_by_texture(
-                            export_settings, glTF, env_tex_node)
-
-                c = getWorldCyclesBkgColor(bl_scene.world)
-                s = getWorldCyclesBkgStrength(bl_scene.world)
-
-                v3d_data['horizonColor'] = [s * c[0], s * c[1], s * c[2]]
-
+            if isCyclesRender(context):
                 v3d_data['physicallyCorrectLights'] = True
-
-        if bl_scene.world:
-            v3d_data['ambientColor'] = extract_vec(bl_scene.world.ambient_color)
-        else:
-            v3d_data['ambientColor'] = [0, 0, 0]
 
         if export_settings['gltf_use_shadows']:
             v3d_data['shadowMap'] = {

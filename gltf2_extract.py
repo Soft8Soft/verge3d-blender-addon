@@ -1328,6 +1328,14 @@ def extract_node_graph(node_tree, export_settings, glTF):
             # rename for uniformity with GEOMETRY node
             node['uvLayer'] = bl_node.uv_map
 
+        elif bl_node.type == 'TEX_ENVIRONMENT':
+            index = get_texture_index(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1 
+            
+            if index == -1:
+                node['type'] = 'TEX_ENVIRONMENT_NONE'
+            else:
+                node['texture'] = index
+
         elif bl_node.type == 'TEX_IMAGE':
             index = get_texture_index(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1 
             
@@ -1335,6 +1343,12 @@ def extract_node_graph(node_tree, export_settings, glTF):
                 node['type'] = 'TEX_IMAGE_NONE'
             else:
                 node['texture'] = index
+
+        elif bl_node.type == 'TEX_SKY':
+            node['skyType'] = bl_node.sky_type
+            node['sunDirection'] = extract_vec(bl_node.sun_direction)
+            node['turbidity'] = bl_node.turbidity
+            node['groundAlbedo'] = bl_node.ground_albedo
 
         elif bl_node.type == 'TEX_VORONOI':
             node['coloring'] = bl_node.coloring

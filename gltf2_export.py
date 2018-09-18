@@ -61,6 +61,10 @@ def finish(export_settings):
     if export_settings['temporary_meshes'] is not None:
         for temporary_mesh in export_settings['temporary_meshes']:
             bpy.data.meshes.remove(temporary_mesh)
+
+    if export_settings['temporary_materials'] is not None:
+        for temporary_mat in export_settings['temporary_materials']:
+            bpy.data.materials.remove(temporary_mat)
             
     bpy.context.scene.frame_set(export_settings['gltf_original_frame'])  
 

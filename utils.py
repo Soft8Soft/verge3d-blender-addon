@@ -93,9 +93,9 @@ def getLightCyclesStrength(bl_light):
 
     # point and spot light have 100 as default strength
     if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
-        return 100 * bl_light.energy
+        return 100
     else:
-        return bl_light.energy
+        return 1
 
 
 def getLightCyclesColor(bl_light):
