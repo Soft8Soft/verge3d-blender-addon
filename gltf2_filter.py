@@ -292,7 +292,6 @@ def filter_apply(export_settings):
 
         temporary_materials.append(world_mat)
         filtered_materials.append(world_mat_wrapper)
-        print('!!!', world_mat)
 
     export_settings['filtered_materials'] = filtered_materials
     export_settings['temporary_materials'] = temporary_materials
@@ -463,7 +462,7 @@ def filter_apply(export_settings):
             if blender_object.type != 'MESH':
                 continue
 
-            armature_object = blender_object.find_armature()
+            armature_object = find_armature(blender_object)
             if armature_object is None or len(armature_object.pose.bones) == 0:
                 continue
             

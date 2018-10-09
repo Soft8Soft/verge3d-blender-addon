@@ -47,6 +47,9 @@ def animate_get_interpolation(export_settings, blender_fcurve_list):
     
     prev_times = None
     for blender_fcurve in blender_fcurve_list:
+        if blender_fcurve is None:
+            continue
+            
         curr_times = [p.co[0] for p in blender_fcurve.keyframe_points]
         if prev_times is not None and curr_times != prev_times:
             return 'CONVERSION_NEEDED'

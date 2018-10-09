@@ -59,6 +59,7 @@ def get_compat_props_types():
         t('DATA_PT_context_lamp'),
         t('DATA_PT_context_mesh'),
         t('DATA_PT_curve_texture_space'),
+        t('DATA_PT_customdata'),
         t('DATA_PT_custom_props_arm'),
         t('DATA_PT_custom_props_camera'),
         t('DATA_PT_custom_props_curve'),

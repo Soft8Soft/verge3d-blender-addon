@@ -20,7 +20,7 @@ class NodeMaterialWrapper():
     """
 
     def __init__(self, material):
-        super(NodeMaterialWrapper, self).__setattr__('_material', material)
+        super().__setattr__('_material', material)
         self.node_tree = None
 
     def __getattr__(self, attr):
@@ -28,6 +28,6 @@ class NodeMaterialWrapper():
 
     def __setattr__(self, attr, value):
         if attr == 'node_tree':
-            super(NodeMaterialWrapper, self).__setattr__(attr, value)
+            super().__setattr__(attr, value)
         else:
             setattr(self._material, attr, value)

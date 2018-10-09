@@ -2009,7 +2009,7 @@ def generateNodes(operator, context, export_settings, glTF):
             children_list = list(bl_object.children)
             
             for blender_check_object in filtered_objects_with_dg:
-                blender_check_armature = blender_check_object.find_armature()
+                blender_check_armature = find_armature(blender_check_object)
 
                 if blender_check_armature == bl_object and blender_check_object not in children_list:
                     children_list.append(blender_check_object)
@@ -2102,7 +2102,7 @@ def generateNodes(operator, context, export_settings, glTF):
         node = nodes[node_index]
         
         if export_settings['gltf_skins']:
-            blender_armature = bl_object.find_armature()
+            blender_armature = find_armature(bl_object)
             if blender_armature is not None:
                 index_offset = 0
                 
@@ -2112,7 +2112,7 @@ def generateNodes(operator, context, export_settings, glTF):
                     index_local_offset = 0
                     
                     for blender_check_object in filtered_objects_shallow:
-                        blender_check_armature = blender_check_object.find_armature()
+                        blender_check_armature = find_armature(blender_check_object)
                         if blender_check_armature == blender_armature:
                             index_local_offset += 1
                             

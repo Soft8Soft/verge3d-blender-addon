@@ -18,6 +18,7 @@
 # Imports
 #
 
+import bmesh
 import bpy
 import mathutils
 import mathutils.geometry
@@ -398,7 +399,10 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
     need_skin_attributes = export_settings['gltf_skins'] and len(blender_joint_indices) > 0
 
     printLog('INFO', 'Extracting primitive')
-    
+
+    if blender_mesh.has_custom_normals:
+        blender_mesh.calc_normals_split()
+
     use_tangents = False
     if blender_mesh.uv_layers.active and len(blender_mesh.uv_layers) > 0:
         try:
@@ -520,6 +524,9 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
     #
     # Convert polygon to primitive indices and eliminate invalid ones. Assign to material.
     #
+
+    bm_tri = bmesh.new()
+
     for blender_polygon in blender_mesh.polygons:
         export_color = True
         
@@ -558,24 +565,32 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         indices = primitive['indices']
         
         loop_index_list = []
+
+        
         
         if len(blender_polygon.loop_indices) == 3:
             loop_index_list.extend(blender_polygon.loop_indices)
         elif len(blender_polygon.loop_indices) > 3:
             # Triangulation of polygon. Using internal function, as non-convex polygons could exist.
-            polyline = []
-            
+            bm_tri.clear()
+
             for loop_index in blender_polygon.loop_indices:
                 vertex_index = blender_mesh.loops[loop_index].vertex_index
-                v = blender_mesh.vertices[vertex_index].co
-                polyline.append(mathutils.Vector((v[0], v[1], v[2])))
-                
-            triangles = mathutils.geometry.tessellate_polygon((polyline,))
+                bm_tri.verts.new(blender_mesh.vertices[vertex_index].co)
+            bm_tri.faces.new(bm_tri.verts)
+
+            bm_tri.normal_update()
+            bm_tri.verts.index_update()
+            bm_tri.edges.index_update()
+            bm_tri.faces.index_update()
             
-            for triangle in triangles:
-                loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
-                loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
-                loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
+            # use calc_tessafce instead of mathutils.geometry.tessellate_polygon
+            # because the latter can produce incorrect results in some specific cases
+            face_tuples = bm_tri.calc_tessface()
+            for ft in face_tuples:
+                loop_index_list.append(blender_polygon.loop_indices[ft[0].vert.index])
+                loop_index_list.append(blender_polygon.loop_indices[ft[1].vert.index])
+                loop_index_list.append(blender_polygon.loop_indices[ft[2].vert.index])
         else:
             continue
 
@@ -603,7 +618,11 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             
             v = convert_swizzle_location(vertex.co)
             if blender_polygon.use_smooth:
-                n = convert_swizzle_location(vertex.normal)
+
+                if blender_mesh.has_custom_normals:
+                    n = convert_swizzle_location(blender_mesh.loops[loop_index].normal)
+                else:
+                    n = convert_swizzle_location(vertex.normal)
                 if use_tangents:
                     t = convert_swizzle_tangent(blender_mesh.loops[loop_index].tangent, blender_mesh.loops[loop_index].bitangent_sign)
             else:
@@ -906,6 +925,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                         
                         attributes[target_tangent_id].extend(target_tangents[morph_index])
     
+    bm_tri.free()
+
     #
     # Add primitive plus split them if needed.
     # 

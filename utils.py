@@ -180,3 +180,14 @@ def mat4_is_decomposable(mat4):
     return (abs(v0.dot(v1)) < ORTHO_EPS 
             and abs(v0.dot(v2)) < ORTHO_EPS 
             and abs(v1.dot(v2)) < ORTHO_EPS)
+
+def find_armature(obj):
+
+    for mod in obj.modifiers:
+        if mod.type == 'ARMATURE' and mod.object is not None:
+            return mod.object
+
+    # use obj.find_armature as a last resort, because it doesn't work with many
+    # armature modifiers
+    return obj.find_armature()
+    
