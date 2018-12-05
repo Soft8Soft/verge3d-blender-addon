@@ -234,7 +234,10 @@ def animate_location(export_settings, location, interpolation, node_type, node_n
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
                 
-                matrix = matrix_correction * matrix_basis 
+                if bpy.app.version < (2,80,0):
+                    matrix = matrix_correction * matrix_basis 
+                else:
+                    matrix = matrix_correction @ matrix_basis 
     
                 translation, tmp_rotation, tmp_scale = decompose_transform_swizzle(matrix)
                 
@@ -297,7 +300,10 @@ def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolat
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
                 
-                matrix = matrix_correction * matrix_basis 
+                if bpy.app.version < (2,80,0):
+                    matrix = matrix_correction * matrix_basis 
+                else:
+                    matrix = matrix_correction @ matrix_basis 
     
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
                 
@@ -318,7 +324,10 @@ def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolat
             rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
-                rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                if bpy.app.version < (2,80,0):
+                    rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                else:
+                    rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
             
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -355,7 +364,10 @@ def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, inter
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
                 
-                matrix = matrix_correction * matrix_basis 
+                if bpy.app.version < (2,80,0):
+                    matrix = matrix_correction * matrix_basis 
+                else:
+                    matrix = matrix_correction @ matrix_basis 
 
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
                 
@@ -376,7 +388,10 @@ def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, inter
             rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
-                rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                if bpy.app.version < (2,80,0):
+                    rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                else:
+                    rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
             
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -415,7 +430,10 @@ def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolat
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
                 
-                matrix = matrix_correction * matrix_basis 
+                if bpy.app.version < (2,80,0):
+                    matrix = matrix_correction * matrix_basis 
+                else:
+                    matrix = matrix_correction @ matrix_basis 
     
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
                 
@@ -451,9 +469,14 @@ def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolat
             if node_type == 'NODE_X_90':
                 quat_x90 = mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
 
-                rotation = rotation * quat_x90
-                in_tangent = in_tangent * quat_x90
-                out_tangent = out_tangent * quat_x90
+                if bpy.app.version < (2,80,0):
+                    rotation = rotation * quat_x90
+                    in_tangent = in_tangent * quat_x90
+                    out_tangent = out_tangent * quat_x90
+                else:
+                    rotation = rotation @ quat_x90
+                    in_tangent = in_tangent @ quat_x90
+                    out_tangent = out_tangent @ quat_x90
             
 
         # Bring to glTF Quaternion notation.
@@ -497,7 +520,10 @@ def animate_scale(export_settings, scale, interpolation, node_type, node_name, m
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
                 
-                matrix = matrix_correction * matrix_basis 
+                if bpy.app.version < (2,80,0):
+                    matrix = matrix_correction * matrix_basis 
+                else:
+                    matrix = matrix_correction @ matrix_basis 
     
                 tmp_location, tmp_rotation, scale_data = decompose_transform_swizzle(matrix)
                 

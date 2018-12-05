@@ -32,7 +32,7 @@ from .utils import *
 #
 
 TO_MESH_SOURCE_CUSTOM_PROP = "v3d_to_mesh_source_object"
-WORLD_NODE_MAT_NAME = Template('v3d_world_${name}_node_material')
+WORLD_NODE_MAT_NAME = Template('Verge3D_Environment_${name}')
 
 #
 # Functions
@@ -60,15 +60,16 @@ def filter_apply(export_settings):
         if blender_object not in filtered_objects_with_dg:
             filtered_objects_with_dg.append(blender_object)
                     
-        if blender_object.dupli_type == 'GROUP' and blender_object.dupli_group != None:
-            for blender_dupli_object in blender_object.dupli_group.objects:
+        if bpy.app.version < (2,80,0):
+            if blender_object.dupli_type == 'GROUP' and blender_object.dupli_group != None:
+                for blender_dupli_object in blender_object.dupli_group.objects:
 
-                if not is_dupli_obj_visible_in_group(blender_object.dupli_group, 
-                        blender_dupli_object):
-                    continue
+                    if not is_dupli_obj_visible_in_group(blender_object.dupli_group, 
+                            blender_dupli_object):
+                        continue
 
-                if blender_dupli_object not in filtered_objects_with_dg:
-                    filtered_objects_with_dg.append(blender_dupli_object)
+                    if blender_dupli_object not in filtered_objects_with_dg:
+                        filtered_objects_with_dg.append(blender_dupli_object)
         
     export_settings['filtered_objects_shallow'] = filtered_objects_shallow
     export_settings['filtered_objects_with_dg'] = filtered_objects_with_dg
@@ -111,6 +112,8 @@ def filter_apply(export_settings):
                 need_triangulation = False
                 if current_blender_mesh.uv_layers.active and len(current_blender_mesh.uv_layers) > 0:
                     for poly in current_blender_mesh.polygons:
+                        # tangents can only be calculated for tris/quads 
+                        # (later via mesh.calc_tangents())
                         if poly.loop_total > 4:
                             need_triangulation = True
 
@@ -129,7 +132,7 @@ def filter_apply(export_settings):
                         if mod.type == 'ARMATURE':
                             copy_obj.modifiers.remove(mod)
 
-                    if use_auto_smooth:
+                    if use_auto_smooth and not export_settings['gltf_bake_modifiers']:
                         copy_obj.modifiers.clear()
                     
                     if use_auto_smooth:
@@ -143,7 +146,11 @@ def filter_apply(export_settings):
                         # seems to produce smoother results
                         blender_modifier.ngon_method = 'CLIP'
 
-                    current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW', calc_tessface=True)
+                    if bpy.app.version < (2,80,0):
+                        current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW', calc_tessface=True)
+                    else:
+                        current_blender_mesh = copy_obj.to_mesh(bpy.context.depsgraph, apply_modifiers=True)
+
                     if current_blender_mesh is not None:
                         current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
                         temporary_meshes.append(current_blender_mesh)
@@ -197,7 +204,10 @@ def filter_apply(export_settings):
                     if not export_settings['gltf_bake_modifiers']:
                         copy_obj.modifiers.clear()
                     
-                    current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW')
+                    if bpy.app.version < (2,80,0):
+                        current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW')
+                    else:
+                        current_blender_mesh = copy_obj.to_mesh(bpy.context.depsgraph, True)
                     if current_blender_mesh is not None:
                         current_blender_mesh.name = bl_curve.name
                         current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
@@ -267,9 +277,14 @@ def filter_apply(export_settings):
             mat_node_tree.nodes.clear()
 
             bkg_node = mat_node_tree.nodes.new('ShaderNodeBackground')
-            bkg_node.inputs['Color'].default_value[0] = curr_world.horizon_color[0]
-            bkg_node.inputs['Color'].default_value[1] = curr_world.horizon_color[1]
-            bkg_node.inputs['Color'].default_value[2] = curr_world.horizon_color[2]
+            if bpy.app.version < (2,80,0):
+                bkg_node.inputs['Color'].default_value[0] = curr_world.horizon_color[0]
+                bkg_node.inputs['Color'].default_value[1] = curr_world.horizon_color[1]
+                bkg_node.inputs['Color'].default_value[2] = curr_world.horizon_color[2]
+            else:
+                bkg_node.inputs['Color'].default_value[0] = curr_world.color[0]
+                bkg_node.inputs['Color'].default_value[1] = curr_world.color[1]
+                bkg_node.inputs['Color'].default_value[2] = curr_world.color[2]
             bkg_node.inputs['Color'].default_value[3] = 1
             bkg_node.inputs['Strength'].default_value = 1
 
@@ -281,12 +296,17 @@ def filter_apply(export_settings):
             if not isCyclesRender(bpy.context):
                 tex_slot = get_world_first_valid_texture_slot(curr_world)
                 if tex_slot is not None:
-                    tex_node = mat_node_tree.nodes.new('ShaderNodeTexture')
-                    tex_node.texture = tex_slot.texture
-                    mat_node_tree.links.new(tex_node.outputs['Color'], bkg_node.inputs['Color'])
+                    if isinstance(tex_slot.texture, bpy.types.EnvironmentMapTexture):
+                        tex_node = mat_node_tree.nodes.new('ShaderNodeTexture')
+                        tex_node.texture = tex_slot.texture
+                        mat_node_tree.links.new(tex_node.outputs['Color'], bkg_node.inputs['Color'])
 
-                    tc_node = mat_node_tree.nodes.new('ShaderNodeTexCoord')
-                    mat_node_tree.links.new(tc_node.outputs['Generated'], tex_node.inputs['Vector'])
+                        tc_node = mat_node_tree.nodes.new('ShaderNodeTexCoord')
+                        mat_node_tree.links.new(tc_node.outputs['Generated'], tex_node.inputs['Vector'])
+                    else:
+                        tex_node = mat_node_tree.nodes.new('ShaderNodeTexEnvironment')
+                        tex_node.image = tex_slot.texture.image
+                        mat_node_tree.links.new(tex_node.outputs['Color'], bkg_node.inputs['Color'])
 
         world_mat_wrapper.node_tree = mat_node_tree
 
@@ -325,7 +345,8 @@ def filter_apply(export_settings):
                         bl_node not in filtered_textures):
                     filtered_textures.append(bl_node)
 
-                elif (isinstance(bl_node, bpy.types.ShaderNodeTexture) and 
+                elif (bpy.app.version < (2,80,0) and
+                        isinstance(bl_node, bpy.types.ShaderNodeTexture) and 
                         bl_node.texture is not None and 
                         get_tex_image(bl_node.texture) is not None and
                         get_tex_image(bl_node.texture).users != 0 and
@@ -334,7 +355,7 @@ def filter_apply(export_settings):
                         bl_node not in filtered_textures):
                     filtered_textures.append(bl_node)
         # BASIC materials
-        else:
+        elif bpy.app.version < (2,80,0):
             for blender_texture_slot in blender_material.texture_slots:
 
                 if (blender_texture_slot is not None and
@@ -370,13 +391,14 @@ def filter_apply(export_settings):
                         if accept:
                             filtered_textures.append(blender_texture_slot)
 
-    for node_group in filtered_node_groups:
-        for bl_node in node_group.nodes:
-            if (isinstance(bl_node, bpy.types.ShaderNodeTexture) and 
-                    bl_node.texture is not None and 
-                    get_tex_image(bl_node.texture) is not None and 
-                    bl_node not in filtered_textures):
-                filtered_textures.append(bl_node)
+    if bpy.app.version < (2,80,0):
+        for node_group in filtered_node_groups:
+            for bl_node in node_group.nodes:
+                if (isinstance(bl_node, bpy.types.ShaderNodeTexture) and 
+                        bl_node.texture is not None and 
+                        get_tex_image(bl_node.texture) is not None and 
+                        bl_node not in filtered_textures):
+                    filtered_textures.append(bl_node)
 
     export_settings['filtered_textures'] = filtered_textures
 
@@ -411,7 +433,7 @@ def filter_apply(export_settings):
     
     filtered_lights = []
     
-    for blender_light in bpy.data.lamps:
+    for blender_light in bpy.data.lamps if bpy.app.version < (2,80,0) else bpy.data.lights:
         
         if blender_light.users == 0:
             continue
@@ -422,37 +444,6 @@ def filter_apply(export_settings):
         filtered_lights.append(blender_light)
                 
     export_settings['filtered_lights'] = filtered_lights
-
-    #
-    #
-    
-    filtered_lights_pbr = []
-    
-    for blender_light in bpy.data.lamps:
-        
-        if blender_light.users == 0:
-            continue
-
-        if blender_light.type == 'AREA':
-            continue
-
-        if not blender_light.use_nodes or blender_light.node_tree is None:
-            continue
-        
-        add_light = False
-        
-        for blender_node in blender_light.node_tree.nodes:
-            if isinstance(blender_node, bpy.types.ShaderNodeGroup):
-                if blender_node.node_tree.name.startswith('glTF Directional Light') or blender_node.node_tree.name.startswith('glTF Point Light') or blender_node.node_tree.name.startswith('glTF Spot Light'):
-                    add_light = True
-                    break 
-
-        if add_light:
-            filtered_lights_pbr.append(blender_light)
-                
-    export_settings['filtered_lights_pbr'] = filtered_lights_pbr
-    
-    
 
     joint_indices = {}
 

@@ -19,6 +19,8 @@ import os
 import sys
 import threading
 
+from bpy.app.handlers import persistent
+
 join = os.path.join
 
 if 'bpy' in locals():
@@ -42,8 +44,6 @@ if 'bpy' in locals():
 
     if 'node_material_wrapper' in locals():
         imp.reload(node_material_wrapper)
-    if 'profile' in locals():
-        imp.reload(profile)
     if 'utils' in locals():
         imp.reload(utils)
 
@@ -52,11 +52,14 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 8, 0),
+    "version": (2, 9, 1),
     "blender": (2, 79, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
 }
+
+if bpy.app.version > (2, 80, 0):
+    bl_info['blender'] = (2, 80, 0)
 
 APP_MANAGER_HTTP_HOST="localhost:8668"
 
@@ -194,6 +197,7 @@ class ExportGLTF2_Base():
         export_settings['gltf_bake_text'] = v3d_export.bake_text
         export_settings['gltf_export_constraints'] = v3d_export.export_constraints
         export_settings['gltf_lzma_enabled'] = v3d_export.lzma_enabled
+        export_settings['gltf_use_hdr'] = v3d_export.use_hdr
         export_settings['gltf_animations'] = self.export_animations
         if self.export_animations:
             export_settings['gltf_frame_range'] = self.export_frame_range
@@ -238,23 +242,23 @@ class ExportGLTF2_Base():
         #
 
         col = layout.box().column()
-        col.label('Embedding:', icon='PACKAGE')
+        col.label(text='Embedding:', icon='PACKAGE')
         if self.export_format == 'ASCII':
             col.prop(self, 'export_embed_buffers')
             col.prop(self, 'export_embed_images')
             col.prop(self, 'export_strip')
 
         col = layout.box().column()
-        col.label('Nodes:', icon='OOPS')
+        col.label(text='Nodes:', icon='PACKAGE')
         col.prop(self, 'export_custom_props')
 
         col = layout.box().column()
-        col.label('Meshes:', icon='MESH_DATA')
+        col.label(text='Meshes:', icon='MESH_DATA')
         col.prop(self, 'export_indices')
         col.prop(self, 'export_force_indices')
 
         col = layout.box().column()
-        col.label('Animation:', icon='OUTLINER_DATA_POSE')
+        col.label(text='Animation:', icon='RENDER_ANIMATION')
         col.prop(self, 'export_animations')
         if self.export_animations:
             col.prop(self, 'export_frame_range')
@@ -269,11 +273,11 @@ class ExportGLTF2_Base():
                 col.prop(self, 'export_morph_tangent')
 
         col = layout.box().column()
-        col.label('Experimental:', icon='RADIO')
+        col.label(text='Experimental:', icon='QUESTION')
         col.prop(self, 'export_displacement')
 
 
-class ExportV3D_GLTF(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
+class V3D_OT_ExportGLTF(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     '''Export scene to glTF 2.0 format'''
     bl_idname = 'export_scene.v3d_gltf'
     bl_label = 'Export Verge3D glTF'
@@ -284,7 +288,7 @@ class ExportV3D_GLTF(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     export_format = 'ASCII'
 
 
-class ExportV3D_GLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
+class V3D_OT_ExportGLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     '''Export scene to glTF 2.0 binary format'''
     bl_idname = 'export_scene.v3d_glb'
     bl_label = 'Export Verge3D glTF Binary'
@@ -294,7 +298,7 @@ class ExportV3D_GLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     
     export_format = 'BINARY'
 
-class ExportV3D_FB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
+class V3D_OT_ExportFB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     '''Export scene to glTF 2.0 binary format compatible with Facebook'''
     bl_idname = 'export_scene.v3d_fb'
     bl_label = 'Export Verge3D Facebook GLB'
@@ -305,13 +309,13 @@ class ExportV3D_FB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
     export_format = 'FB'
 
 def menu_func_export_v3d_gltf(self, context):
-    self.layout.operator(ExportV3D_GLTF.bl_idname, text='Verge3D glTF (.gltf)')
+    self.layout.operator(V3D_OT_ExportGLTF.bl_idname, text='Verge3D glTF (.gltf)')
 
 def menu_func_export_v3d_glb(self, context):
-    self.layout.operator(ExportV3D_GLB.bl_idname, text='Verge3D glTF Binary (.glb)')
+    self.layout.operator(V3D_OT_ExportGLB.bl_idname, text='Verge3D glTF Binary (.glb)')
 
 def menu_func_export_v3d_fb(self, context):
-    self.layout.operator(ExportV3D_FB.bl_idname, text='Facebook GLB (.glb)')
+    self.layout.operator(V3D_OT_ExportFB.bl_idname, text='Facebook GLB (.glb)')
 
 def get_root():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -341,35 +345,56 @@ class V3DServer():
 
 
 def register():
-    from . import custom_props, custom_ui, profile
+    from . import custom_props, custom_ui
 
-    bpy.utils.register_class(ExportV3D_GLTF)
-    bpy.utils.register_class(ExportV3D_GLB)
-    bpy.utils.register_class(ExportV3D_FB)
+    bpy.utils.register_class(V3D_OT_ExportGLTF)
+    bpy.utils.register_class(V3D_OT_ExportGLB)
+    bpy.utils.register_class(V3D_OT_ExportFB)
 
     custom_props.register()
     custom_ui.register()
-    profile.register()
 
-    bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_gltf)
-    bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_glb)
-    bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_fb)
+    if bpy.app.version < (2,80,0):
+        bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_gltf)
+        bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_glb)
+        bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_fb)
+    else:
+        bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_gltf)
+        bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_glb)
+        bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_fb)
+
+    if bpy.app.version < (2,80,0):
+        bpy.app.handlers.load_post.append(apply_v3d_render_engine_fix)
 
     V3DServer.start()
 
 
-def unregister():
-    from . import custom_props, custom_ui, profile
 
-    bpy.utils.unregister_class(ExportV3D_GLTF)
-    bpy.utils.unregister_class(ExportV3D_GLB)
-    bpy.utils.unregister_class(ExportV3D_FB)
+def unregister():
+    from . import custom_props, custom_ui
+
+    bpy.utils.unregister_class(V3D_OT_ExportGLTF)
+    bpy.utils.unregister_class(V3D_OT_ExportGLB)
+    bpy.utils.unregister_class(V3D_OT_ExportFB)
 
     custom_props.unregister()
     custom_ui.unregister()
-    profile.unregister()
 
-    bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_gltf)
-    bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_glb)
-    bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_fb)
+    if bpy.app.version < (2,80,0):
+        bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_gltf)
+        bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_glb)
+        bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_fb)
+    else:
+        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_gltf)
+        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_glb)
+        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_fb)
+
+@persistent
+def apply_v3d_render_engine_fix(dummy):
+
+    # change to something, then back
+    # this fixes issue with 'VERGE3D' render warning, dropped in version 2.9.0
+    if bpy.context.scene.render.engine == 'BLENDER_RENDER':
+        bpy.context.scene.render.engine = 'BLENDER_GAME'
+        bpy.context.scene.render.engine = 'BLENDER_RENDER'
 

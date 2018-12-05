@@ -45,6 +45,13 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    use_hdr = bpy.props.BoolProperty(
+        name = 'Use HDR Rendering',
+        description = 'Enable HDR rendering pipeline on compatible hardware',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
     use_shadows = bpy.props.BoolProperty(
         name = 'Enable Shadows',
         description = 'Enable shadows, use lamp settings to confiure shadow params',
@@ -227,6 +234,20 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    use_shadows = bpy.props.BoolProperty(
+        name = 'Receive Shadows',
+        description = 'Allow this object to receive shadows',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    use_cast_shadows = bpy.props.BoolProperty(
+        name = 'Cast Shadows',
+        description = 'Allow this object to cast shadows',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
 class V3DCameraSettings(bpy.types.PropertyGroup):
 
     controls = bpy.props.EnumProperty(
@@ -387,13 +408,16 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-class V3DLampSettings(bpy.types.PropertyGroup):
+class V3DLightSettings(bpy.types.PropertyGroup):
     shadow = bpy.props.PointerProperty(
         name = 'Shadow Settings',
         type = V3DShadowSettings
     )
 
 def alpha_add_update(self, context):
+    if bpy.app.version >= (2,80,0):
+        return
+
     mat = context.material
     
     if mat.v3d.alpha_add == True:
@@ -402,14 +426,40 @@ def alpha_add_update(self, context):
         mat.game_settings.alpha_blend = 'OPAQUE'
 
 
-
 class V3DMaterialSettings(bpy.types.PropertyGroup):
+    # NOTE: keep this name for compatibility (blender 2.79 only)
     alpha_add = bpy.props.BoolProperty(
         name = 'Alpha Add Transparency',
         description = 'Use Alpha Add transparency (disable depth write)',
         default = False,
         options = NO_ANIM_OPTS,
         update = alpha_add_update
+    )
+
+    render_side = bpy.props.EnumProperty(
+        name='Render Side',
+        description = 'Which side of geometry will be rendered',
+        default = 'FRONT',
+        items = [
+            ('DOUBLE', 'Double-sided', 'Render both sides (reduced performance)'),
+            ('BACK', 'Back Side', 'Render back side (better performance)'),
+            ('FRONT', 'Front Side', 'Render front side (better performance, default)'),
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    depth_write = bpy.props.BoolProperty(
+        name = 'Depth Write',
+        description = 'Depth write (disable to fix transparency sorting issues or render 2D overlays)',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    dithering = bpy.props.BoolProperty(
+        name = 'Dithering',
+        description = 'Apply color dithering to eliminate banding artefacts',
+        default = False,
+        options = NO_ANIM_OPTS
     )
 
 class V3DTextureSettings(bpy.types.PropertyGroup):
@@ -477,7 +527,7 @@ def register():
     bpy.utils.register_class(V3DObjectSettings)
     bpy.utils.register_class(V3DCameraSettings)
     bpy.utils.register_class(V3DShadowSettings)
-    bpy.utils.register_class(V3DLampSettings)
+    bpy.utils.register_class(V3DLightSettings)
     bpy.utils.register_class(V3DMaterialSettings)
     bpy.utils.register_class(V3DTextureSettings)
     bpy.utils.register_class(V3DLineRenderingSettings)
@@ -504,10 +554,18 @@ def register():
         name = "Verge3D camera settings",
         type = V3DCameraSettings
     )
-    bpy.types.Lamp.v3d = bpy.props.PointerProperty(
-        name = "Verge3D lamp settings",
-        type = V3DLampSettings
-    )
+
+    if bpy.app.version < (2,80,0):
+        bpy.types.Lamp.v3d = bpy.props.PointerProperty(
+            name = "Verge3D light settings",
+            type = V3DLightSettings
+        )
+    else:
+        bpy.types.Light.v3d = bpy.props.PointerProperty(
+            name = "Verge3D light settings",
+            type = V3DLightSettings
+        )
+
     bpy.types.Material.v3d = bpy.props.PointerProperty(
         name = "Verge3D material settings",
         type = V3DMaterialSettings
@@ -536,7 +594,7 @@ def register():
 def unregister():
     bpy.utils.unregister_class(V3DTextureSettings)
     bpy.utils.unregister_class(V3DMaterialSettings)
-    bpy.utils.unregister_class(V3DLampSettings)
+    bpy.utils.unregister_class(V3DLightSettings)
     bpy.utils.unregister_class(V3DLineRenderingSettings)
     bpy.utils.unregister_class(V3DCurveSettings)
     bpy.utils.unregister_class(V3DMeshSettings)
@@ -549,7 +607,10 @@ def unregister():
     bpy.utils.unregister_class(V3DExportSettings)
 
     del bpy.types.Material.v3d
-    del bpy.types.Lamp.v3d
+    if bpy.app.version < (2,80,0):
+        del bpy.types.Lamp.v3d
+    else:
+        del bpy.types.Light.v3d
     del bpy.types.Curve.v3d
     del bpy.types.Mesh.v3d
     del bpy.types.Camera.v3d

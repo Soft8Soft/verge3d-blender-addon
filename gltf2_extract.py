@@ -94,7 +94,10 @@ def convert_swizzle_matrix(matrix):
     mat_sca[1][1] = scale[1]
     mat_sca[2][2] = scale[2]
 
-    return mat_trans * mat_rot * mat_sca
+    if bpy.app.version < (2,80,0):
+        return mat_trans * mat_rot * mat_sca
+    else:
+        return mat_trans @ mat_rot @ mat_sca
 
 def extract_primitive_floor(a, indices, use_tangents):
     """
@@ -383,7 +386,7 @@ def extract_primitive_pack(a, indices, use_tangents):
 def check_use_node_attrs(bl_mat):
     mat_type = get_material_type(bl_mat)
     
-    if mat_type == 'NODE' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bl_mat.use_shadeless):
+    if mat_type == 'NODE' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bpy.app.version < (2,80,0) and bl_mat.use_shadeless):
         return True
     else:
         return False
@@ -430,19 +433,19 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
     # Directory of materials with its primitive.
     #
     no_material_primitives = {
-        'material' : '',
+        'material' : DEFAULT_MAT_NAME,
         'useNodeAttrs' : False,
         'indices' : [],
         'attributes' : no_material_attributes
     }
     
-    material_name_to_primitives = {'' : no_material_primitives}
+    material_name_to_primitives = { DEFAULT_MAT_NAME : no_material_primitives }
 
     #
     
     vertex_index_to_new_indices = {}
     
-    material_map[''] = vertex_index_to_new_indices 
+    material_map[DEFAULT_MAT_NAME] = vertex_index_to_new_indices 
     
     #
     # Create primitive for each material.
@@ -535,8 +538,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         primitive = None
         vertex_index_to_new_indices = None
         if blender_polygon.material_index < 0 or blender_polygon.material_index >= len(blender_mesh.materials) or blender_mesh.materials[blender_polygon.material_index] is None:
-            primitive = material_name_to_primitives['']
-            vertex_index_to_new_indices = material_map['']
+            primitive = material_name_to_primitives[DEFAULT_MAT_NAME]
+            vertex_index_to_new_indices = material_map[DEFAULT_MAT_NAME]
         else:
             primitive = material_name_to_primitives[blender_mesh.materials[blender_polygon.material_index].name]
             vertex_index_to_new_indices = material_map[blender_mesh.materials[blender_polygon.material_index].name]
@@ -572,25 +575,43 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             loop_index_list.extend(blender_polygon.loop_indices)
         elif len(blender_polygon.loop_indices) > 3:
             # Triangulation of polygon. Using internal function, as non-convex polygons could exist.
-            bm_tri.clear()
 
-            for loop_index in blender_polygon.loop_indices:
-                vertex_index = blender_mesh.loops[loop_index].vertex_index
-                bm_tri.verts.new(blender_mesh.vertices[vertex_index].co)
-            bm_tri.faces.new(bm_tri.verts)
+            if bpy.app.version < (2,80,0):
+                bm_tri.clear()
 
-            bm_tri.normal_update()
-            bm_tri.verts.index_update()
-            bm_tri.edges.index_update()
-            bm_tri.faces.index_update()
-            
-            # use calc_tessafce instead of mathutils.geometry.tessellate_polygon
-            # because the latter can produce incorrect results in some specific cases
-            face_tuples = bm_tri.calc_tessface()
-            for ft in face_tuples:
-                loop_index_list.append(blender_polygon.loop_indices[ft[0].vert.index])
-                loop_index_list.append(blender_polygon.loop_indices[ft[1].vert.index])
-                loop_index_list.append(blender_polygon.loop_indices[ft[2].vert.index])
+                for loop_index in blender_polygon.loop_indices:
+                    vertex_index = blender_mesh.loops[loop_index].vertex_index
+                    bm_tri.verts.new(blender_mesh.vertices[vertex_index].co)
+                bm_tri.faces.new(bm_tri.verts)
+
+                bm_tri.normal_update()
+                bm_tri.verts.index_update()
+                bm_tri.edges.index_update()
+                bm_tri.faces.index_update()
+                
+                # use calc_tessafce instead of mathutils.geometry.tessellate_polygon
+                # because the latter can produce incorrect results in some specific cases
+                face_tuples = bm_tri.calc_tessface()
+                for ft in face_tuples:
+                    loop_index_list.append(blender_polygon.loop_indices[ft[0].vert.index])
+                    loop_index_list.append(blender_polygon.loop_indices[ft[1].vert.index])
+                    loop_index_list.append(blender_polygon.loop_indices[ft[2].vert.index])
+            else:
+                # old method, using it since bmesh.calc_tessface() was removed
+                polyline = []
+                
+                for loop_index in blender_polygon.loop_indices:
+                    vertex_index = blender_mesh.loops[loop_index].vertex_index
+                    v = blender_mesh.vertices[vertex_index].co
+                    polyline.append(mathutils.Vector((v[0], v[1], v[2])))
+                    
+                triangles = mathutils.geometry.tessellate_polygon((polyline,))
+                
+                for triangle in triangles:
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
+
         else:
             continue
 
@@ -1134,7 +1155,7 @@ def extract_line_primitives(glTF, blender_mesh, export_settings):
 
     printLog('INFO', 'Extracting line primitive')
 
-    # support the first material only
+    # material property currently isn't used for line meshes in the engine
     mat_name = (blender_mesh.materials[0].name if blender_mesh.materials 
             and blender_mesh.materials[0] is not None else '')
 
@@ -1412,7 +1433,13 @@ def extract_node_graph(node_tree, export_settings, glTF):
                 # Cycles shader has no default value
                 node['inputs'].append([0, 0, 0, 0])
             else:
-                node['inputs'].append(bl_input.default_value)
+                # NOTE: the roughness value for the Glossy BSDF node is squared
+                # prior to 2.80
+                if (bpy.app.version < (2, 80, 0) and bl_node.type == 'BSDF_GLOSSY' 
+                        and bl_input.identifier == 'Roughness'):
+                    node['inputs'].append(math.sqrt(bl_input.default_value))
+                else:
+                    node['inputs'].append(bl_input.default_value)
 
         node['outputs'] = []
         for bl_output in bl_node.outputs:
@@ -1507,10 +1534,233 @@ def find_node_socket_num(socket_list, identifier):
             return i
     return -1
 
+def composeNodeGraph(bl_mat, export_settings, glTF):
+
+    graph = { 'nodes' : [], 'edges' : [] }
+
+    if bpy.app.version < (2,80,0):
+        appendNode(graph, {
+            'name': 'Output',
+            'type': 'OUTPUT',
+            'inputs': [
+                [1,1,1,1],
+                1,
+            ],
+            'outputs': [],
+            'is_active_output': True
+        })
+
+        appendNode(graph, {
+            'name': 'Material', 
+            'type': 'MATERIAL_EXT', 
+            'materialName': 'Material', 
+            'useDiffuse': True, 
+            'useSpecular': True,
+            'invertNormal': False, 
+            'diffuseShader': bl_mat.diffuse_shader,
+            'specularShader': bl_mat.specular_shader,
+            'specularHardness': bl_mat.specular_hardness,
+            'specularIntensity': bl_mat.specular_intensity,
+            'useShadeless': bl_mat.use_shadeless,
+            'inputs': [
+                extract_vec(bl_mat.diffuse_color) + [1],
+                extract_vec(bl_mat.specular_color) + [1],
+                bl_mat.diffuse_intensity,
+                [0, 0, 0],
+                [0, 0, 0, 0],
+                bl_mat.ambient,
+                bl_mat.emit,
+                bl_mat.specular_alpha, 
+                0, 
+                bl_mat.alpha, 
+                0
+            ], 
+            'outputs': [
+                [0, 0, 0, 0],
+                0,
+                [0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0, 0]
+            ]
+        }, 0, [(0, 0), (1, 1)])
+
+        texNodes = []
+
+        for bl_tex_slot in bl_mat.texture_slots:
+            if (bl_tex_slot and bl_tex_slot.texture and
+                bl_tex_slot.texture.type == 'IMAGE' and
+                get_tex_image(bl_tex_slot.texture) is not None):
+
+                blendType = bl_tex_slot.blend_type
+
+                # Diffuse texture
+
+                if bl_tex_slot.use_map_color_diffuse:
+                    index = get_texture_index_by_texture(export_settings, 
+                            glTF, bl_tex_slot.texture)
+                    if index >= 0:
+                        mixIdx = appendMixRGBNode(graph, 'DiffuseMix', blendType,
+                                bl_tex_slot.diffuse_color_factor, 1, (0,0))
+                        texNodes.append(appendTextureNode(graph, 'Diffuse', index, mixIdx, [(1,2)]))
+
+                # Alpha texture
+
+                if bl_tex_slot.use_map_alpha:
+                    index = get_texture_index_by_texture(export_settings, 
+                            glTF, bl_tex_slot.texture)
+                    if index >= 0:
+                        mixIdx = appendMixRGBNode(graph, 'AlphaMix', blendType,
+                                bl_tex_slot.alpha_factor, 1, (0,9))
+                        texNodes.append(appendTextureNode(graph, 'Alpha', index, mixIdx, [(1,2)]))
+
+                # Specular intensity texture
+                # NOTE: this one connected as color but interpreted as intensity
+                if bl_tex_slot.use_map_color_spec:
+                    index = get_texture_index_by_texture(export_settings, 
+                            glTF, bl_tex_slot.texture)
+                    if index >= 0:
+                        mixIdx = appendMixRGBNode(graph, 'SpecularMix', blendType,
+                                bl_tex_slot.specular_color_factor, 1, (0,1))
+                        texNodes.append(appendTextureNode(graph, 'Specular', index, mixIdx, [(1,2)]))
+
+                # Emissive texture
+
+                if bl_tex_slot.use_map_emit:
+                    index = get_texture_index_by_texture(export_settings, 
+                            glTF, bl_tex_slot.texture)
+                    if index >= 0:
+                        mixIdx = appendMixRGBNode(graph, 'EmissiveMix', blendType,
+                                bl_tex_slot.emit_factor, 1, (0,6))
+                        texNodes.append(appendTextureNode(graph, 'Emissive', index, mixIdx, [(1,2)]))
+
+                # Normal texture
+
+                if bl_tex_slot.use_map_normal:
+                    index = get_texture_index_by_texture(export_settings, 
+                            glTF, bl_tex_slot.texture)
+                    if index >= 0:
+                        normalIdx = appendNode(graph, {
+                            'name': 'NormalMap',
+                            'type': 'NORMAL_MAP',
+                            'uvLayer': '',
+                            'inputs': [
+                                1,
+                                [1,1,1,1],
+                            ],
+                            'outputs': [[1,1,1]],
+                        }, 1, [(0,3)])
+
+                        texNodes.append(appendTextureNode(graph, 'NormalTex', index, normalIdx, [(1,1)]))
+
+        geometry = {
+            'name': 'Geometry',
+            'type': 'GEOMETRY',
+            'uvLayer': '',
+            'colorLayer': '',
+            'inputs': [],
+            'outputs': [[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0,0], 0, 0]
+        }
+
+        # connect geometry node
+        for idx in texNodes:
+            appendNode(graph, geometry, idx, [(4, 0)])
+
+    else: # blender 2.80
+
+        appendNode(graph, {
+            'name': 'Output',
+            'type': 'OUTPUT_MATERIAL',
+            'inputs': [
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [0, 0, 0]
+            ],
+            'outputs': [],
+            'is_active_output': True
+        })
+
+        appendNode(graph, {
+            'name': 'Principled', 
+            'type': 'BSDF_PRINCIPLED', 
+            'inputs': [
+                extract_vec(bl_mat.diffuse_color) + [1],
+                0.0,
+                [1.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+                bl_mat.metallic,
+                bl_mat.specular_intensity,
+                0.0,
+                bl_mat.roughness,
+                0.0,
+                0.0,
+                0.0,
+                0.5,
+                0.0,
+                0.03,
+                1.45,
+                0.0,
+                0.0,
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0]
+            ],
+            'outputs': [[0, 0, 0, 0]]
+        }, 0)
+    
+    return graph
+
+def appendNode(nodeGraph, node, toNode=-1, connections=[(0, 0)]):
+
+    if node not in nodeGraph['nodes']:
+        nodeGraph['nodes'].append(node)
+
+    nodeIndex = nodeGraph['nodes'].index(node)
+
+    if toNode > -1:
+        for conn in connections:
+            nodeGraph['edges'].append({
+                'fromNode' : nodeIndex,
+                'fromOutput' : conn[0],
+                'toNode' : toNode,
+                'toInput' : conn[1]
+            })
+
+    return nodeIndex
+
+def appendMixRGBNode(nodeGraph, name, blendType, factor, toNode, connection=(0, 0)):
+
+    mixedColor = nodeGraph['nodes'][toNode]['inputs'][connection[1]]
+
+    # float connection
+    if isinstance(mixedColor, (int, float)):
+        mixedColor = [mixedColor, mixedColor, mixedColor, 1]
+
+    return appendNode(nodeGraph, {
+        'name' : name,
+        'type' : 'MIX_RGB',
+        'blendType': blendType,
+        'useClamp': False,  # ?
+        'inputs' : [factor, mixedColor, [0,0,0,0]],
+        'outputs': [[0,0,0,0]]
+    }, toNode, [connection])
+
+
+def appendTextureNode(nodeGraph, name, index, toNode=-1, connections=[(0, 0)]):
+
+    return appendNode(nodeGraph, {
+        'name' : name,
+        'type' : 'TEXTURE',
+        'texture': index,
+        'inputs' : [[0,0,0]],
+        'outputs': [0, [0,0,0,0], [0,0,0]]
+    }, toNode, connections)
+
 
 def getView3DSpaceProp(prop):
     # screen -> area -> space
-    for area in bpy.data.screens[bpy.context.screen.name].areas:
+    #for area in bpy.data.screens[bpy.context.screen.name].areas:
+    for area in bpy.context.screen.areas:
         if area.type != 'VIEW_3D':
             continue
 
@@ -1665,6 +1915,8 @@ def extract_image_bindata(bl_image, scene):
         return extract_image_bindata_jpeg(bl_image, scene)
     elif bl_image.file_format == 'BMP':
         return extract_image_bindata_bmp(bl_image, scene)
+    elif bl_image.file_format == 'HDR':
+        return extract_image_bindata_hdr(bl_image, scene)
     else:
         return extract_image_bindata_png(bl_image, scene)
 
@@ -1749,6 +2001,34 @@ def extract_image_bindata_bmp(bl_image, scene):
     color_mode = img_set.color_mode
 
     img_set.file_format = 'BMP'
+    img_set.color_mode = 'RGB'
+
+    bl_image.save_render(tmp_img.name, scene)
+
+    img_set.file_format = file_format
+    img_set.color_mode = color_mode
+
+    bindata = tmp_img.read()
+    tmp_img.close()
+    os.unlink(tmp_img.name)
+
+    return bindata
+
+def extract_image_bindata_hdr(bl_image, scene):
+
+    if not bl_image.is_dirty:
+        # it's much faster to access packed file data if no conversion is needed
+        if bl_image.packed_file is not None and bl_image.file_format == 'HDR':
+            return bl_image.packed_file.data
+
+    tmp_img = tempfile.NamedTemporaryFile(delete=False)
+
+    img_set = scene.render.image_settings
+
+    file_format = img_set.file_format
+    color_mode = img_set.color_mode
+
+    img_set.file_format = 'HDR'
     img_set.color_mode = 'RGB'
 
     bl_image.save_render(tmp_img.name, scene)

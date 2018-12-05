@@ -272,7 +272,7 @@ def get_texcoord_index(glTF, name, shader_node_group):
 
     # Try to gather map index.   
     for blender_mesh in bpy.data.meshes:
-        texCoordIndex = blender_mesh.uv_textures.find(input_node.uv_map)
+        texCoordIndex = blender_mesh.uv_layers.find(input_node.uv_map)
         if texCoordIndex >= 0:
             return texCoordIndex
 
@@ -343,6 +343,10 @@ def get_material_type(bl_material):
         if (isinstance(bl_node, bpy.types.ShaderNodeGroup) and
                 bl_node.node_tree.name.startswith('Verge3D PBR')):
             return 'PBR'
+
+    # NOTE: temporary
+    if bpy.app.version > (2,80,0):
+        return 'CYCLES'
 
     for bl_node in bl_material.node_tree.nodes:
         if type(bl_node) in get_cycles_node_types():
@@ -474,35 +478,6 @@ def get_light_index(glTF, name):
     return -1
 
 
-def get_light_index_pbr(glTF, name):
-    """
-    Return the light index in the glTF array.
-    """
-
-    if glTF.get('extensions') is None:
-        return -1
-    
-    extensions = glTF['extensions']
-        
-    if extensions.get('KHR_lights_pbr') is None:
-        return -1
-    
-    khr_lights_pbr = extensions['KHR_lights_pbr']
-
-    if khr_lights_pbr.get('lights') is None:
-        return -1
-
-    lights = khr_lights_pbr['lights']
-
-    index = 0
-    for light in lights:
-        if light['name'] == name:
-            return index
-        
-        index += 1
-
-    return -1
-
 def get_node_graph_index(glTF, name):
     """
     Return the node graph index in the glTF array.
@@ -570,7 +545,9 @@ def get_image_exported_uri(export_settings, bl_image):
     uri_name = name if name != '' else 'v3d_exported_image_' + bl_image.name
 
     uri_ext = ''
-    if (bl_image.file_format == 'JPEG' or bl_image.file_format == 'BMP' 
+    if (bl_image.file_format == 'JPEG'
+            or bl_image.file_format == 'BMP' 
+            or bl_image.file_format == 'HDR'
             or bl_image.file_format == 'PNG'):
         if ext != '':
             uri_ext = ext
@@ -598,6 +575,8 @@ def get_image_exported_mime_type(bl_image):
         return 'image/jpeg'
     elif bl_image.file_format == 'BMP':
         return 'image/bmp'
+    elif bl_image.file_format == 'HDR':
+        return 'image/vnd.radiance'
     else:
         return 'image/png'
 
@@ -769,3 +748,146 @@ def get_asset_extension(glTF, extension):
         return None
     
     return glTF['extensions'].get(extension)
+
+
+def get_or_create_default_material_index(glTF):
+    def_idx = get_material_index(glTF, DEFAULT_MAT_NAME)
+
+    if def_idx == -1:
+        if 'materials' not in glTF:
+            glTF['materials'] = []
+
+        if isCyclesRender(bpy.context):
+            glTF['materials'].append(create_default_material_cycles())
+        else:
+            glTF['materials'].append(create_default_material_internal())
+
+        def_idx = len(glTF['materials']) - 1
+
+    return def_idx
+
+def create_default_material_cycles():
+    return {
+        "emissiveFactor" : [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "extensions" : {
+            "S8S_v3d_material_data" : {
+                "nodeGraph" : {
+                    "edges" : [
+                        {
+                            "fromNode" : 1,
+                            "fromOutput" : 0,
+                            "toInput" : 0,
+                            "toNode" : 0
+                        }
+                    ],
+                    "nodes" : [
+                        {
+                            "inputs" : [
+                                [ 0, 0, 0, 0 ],
+                                [ 0, 0, 0, 0 ],
+                                0.0
+                            ],
+                            "is_active_output" : True,
+                            "name" : "Material Output",
+                            "outputs" : [],
+                            "type" : "OUTPUT_MATERIAL"
+                        },
+                        {
+                            "inputs" : [
+                                [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0 ],
+                                0.0,
+                                [ 0.0, 0.0, 0.0 ]
+                            ],
+                            "is_active_output" : False,
+                            "name" : "Diffuse BSDF",
+                            "outputs" : [
+                                [ 0, 0, 0, 0 ]
+                            ],
+                            "type" : "BSDF_DIFFUSE"
+                        }
+                    ]
+                },
+                "useCastShadows" : False,
+                "useShadows" : False
+            }
+        },
+        "name" : DEFAULT_MAT_NAME
+    }
+
+def create_default_material_internal():
+    return {
+        "extensions" : {
+            "S8S_v3d_material_data" : {
+                "nodeGraph" : {
+                    "edges" : [
+                        {
+                            "fromNode" : 1, 
+                            "fromOutput" : 0, 
+                            "toInput" : 0, 
+                            "toNode" : 0
+                        }, 
+                        {
+                            "fromNode" : 1, 
+                            "fromOutput" : 1, 
+                            "toInput" : 1, 
+                            "toNode" : 0
+                        }
+                    ], 
+                    "nodes" : [
+                        {
+                            "inputs" : [
+                                [ 1, 1, 1, 1 ], 
+                                1
+                            ], 
+                            "is_active_output" : True, 
+                            "name" : "Output", 
+                            "outputs" : [], 
+                            "type" : "OUTPUT"
+                        }, 
+                        {
+                            "diffuseShader" : "LAMBERT", 
+                            "inputs" : [
+                                [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1 ], 
+                                [ 1.0, 1.0, 1.0, 1 ], 
+                                0.800000011920929, 
+                                [ 0, 0, 0 ], 
+                                [ 0, 0, 0, 0 ], 
+                                1.0, 
+                                0.0, 
+                                1.0, 
+                                0, 
+                                1.0, 
+                                0
+                            ], 
+                            "invertNormal" : False, 
+                            "is_active_output" : False, 
+                            "materialName" : "Material", 
+                            "name" : "Material", 
+                            "outputs" : [
+                                [ 0, 0, 0, 0 ], 
+                                0, 
+                                [ 0, 0, 0 ], 
+                                [ 0, 0, 0, 0 ], 
+                                [ 0, 0, 0, 0 ], 
+                                [ 0, 0, 0, 0 ]
+                            ], 
+                            "specularHardness" : 50, 
+                            "specularIntensity" : 0.5, 
+                            "specularShader" : "COOKTORR", 
+                            "type" : "MATERIAL_EXT", 
+                            "useDiffuse" : True, 
+                            "useShadeless" : False, 
+                            "useSpecular" : True
+                        }
+                    ]
+                }, 
+                "useCastShadows" : False, 
+                "useShadows" : False
+            }
+        }, 
+        "name" : DEFAULT_MAT_NAME
+    }

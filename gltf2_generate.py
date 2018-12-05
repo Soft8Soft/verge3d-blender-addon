@@ -47,6 +47,11 @@ SPOT_SHADOW_MIN_NEAR = 0.01
 
 CAM_ANGLE_EPSILON = math.pi / 180
 
+# some small offset to be added to the alphaCutoff option, it's needed bcz 
+# Blender uses the "less or equal" condition for clipping values, but the engine 
+# uses just "less"
+ALPHA_CUTOFF_EPS = 1e-4
+
 def generateAsset(operator, context, export_settings, glTF):
     """
     Generates the top level asset entry.
@@ -110,7 +115,8 @@ def generateAnimationsParameter(operator,
     node_type = 'NODE'
     used_node_name = blender_node_name 
 
-    if bl_object.type == 'CAMERA' or bl_object.type == 'LAMP' or bl_object.type == 'CURVE':
+    # LAMP 2.79, LIGHT 2.80
+    if bl_object.type == 'CAMERA' or bl_object.type == 'LAMP' or bl_object.type == 'LIGHT' or bl_object.type == 'CURVE':
         node_type = 'NODE_X_90'
 
     if blender_bone_name != None:
@@ -690,20 +696,29 @@ def generateAnimations(operator, context, export_settings, glTF):
             if bl_object.animation_data is not None: 
                 blender_backup_action[bl_object.name] = bl_object.animation_data.action
 
+            if bl_object.pose is None:
+                continue
+
             obj_scene = get_scene_by_object(bl_object)
             if obj_scene is not None:
 
                 prev_active_scene = bpy.context.scene
-                bpy.context.screen.scene = obj_scene
+                if bpy.app.version < (2,80,0):
+                    bpy.context.screen.scene = obj_scene
+                else:
+                    bpy.context.window.scene = obj_scene
 
-                prev_active_object = bpy.context.object
-                bpy.context.scene.objects.active = bl_object
-            
+                setSelectedObject(bl_object)
+
                 bpy.ops.nla.bake(frame_start=start, frame_end=end, 
                         only_selected=False, visual_keying=True)
 
-                bpy.context.scene.objects.active = prev_active_object
-                bpy.context.screen.scene = prev_active_scene
+                restoreSelectedObjects()
+
+                if bpy.app.version < (2,80,0):
+                    bpy.context.screen.scene = prev_active_scene
+                else:
+                    bpy.context.window.scene = prev_active_scene
     
     #
     #
@@ -768,16 +783,22 @@ def generateAnimations(operator, context, export_settings, glTF):
                         correction_matrix_local = blender_bone.bone.matrix_local.copy()
                     
                         if blender_bone.parent is not None:
-                            correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                            if bpy.app.version < (2,80,0):
+                                correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                            else:
+                                correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
                             
                         #
                         if not export_settings['gltf_joint_cache'].get(blender_bone.name):
                             export_settings['gltf_joint_cache'][blender_bone.name] = {}
                         
                         if export_settings['gltf_bake_armature_actions']:
-                            matrix_basis = bl_object.convert_space(blender_bone, blender_bone.matrix, from_space='POSE', to_space='LOCAL')
+                            matrix_basis = bl_object.convert_space(pose_bone=blender_bone, matrix=blender_bone.matrix, from_space='POSE', to_space='LOCAL')
                         
-                        matrix = correction_matrix_local * matrix_basis 
+                        if bpy.app.version < (2,80,0):
+                            matrix = correction_matrix_local * matrix_basis 
+                        else:
+                            matrix = correction_matrix_local @ matrix_basis 
             
                         tmp_location, tmp_rotation, tmp_scale = decompose_transform_swizzle(matrix)
                         
@@ -794,12 +815,15 @@ def generateAnimations(operator, context, export_settings, glTF):
                     correction_matrix_local = blender_bone.bone.matrix_local.copy()
                 
                     if blender_bone.parent is not None:
-                        correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                        if bpy.app.version < (2,80,0):
+                            correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                        else:
+                            correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
                     
                     #
                     
                     if export_settings['gltf_bake_armature_actions']:
-                        matrix_basis = bl_object.convert_space(blender_bone, blender_bone.matrix, from_space='POSE', to_space='LOCAL')
+                        matrix_basis = bl_object.convert_space(pose_bone=blender_bone, matrix=blender_bone.matrix, from_space='POSE', to_space='LOCAL')
                     
                     generateAnimationsParameter(operator, context, export_settings, glTF,
                             blender_action, channels, samplers, bl_object, blender_bone.name,
@@ -841,7 +865,7 @@ def generateAnimations(operator, context, export_settings, glTF):
 
     for bl_object in filtered_objects_with_dg:
 
-        if bl_object.type != 'LAMP' or bl_object.data is None:
+        if bl_object.type != 'LAMP' or bl_object.type != 'LIGHT' or bl_object.data is None:
             continue
         
         bl_light = bl_object.data
@@ -970,7 +994,11 @@ def generateCameras(operator, context, export_settings, glTF):
         camera = generateCamera(bl_camera) 
         if camera:
             cameras.append(camera)
-            if bpy.context.screen.scene.camera.data == bl_camera:
+            if (bpy.app.version < (2,80,0) and bpy.context.screen.scene.camera and 
+                    bpy.context.screen.scene.camera.data == bl_camera):
+                activeCam = camera
+            elif (bpy.app.version >= (2,80,0) and bpy.context.window.scene.camera and
+                    bpy.context.window.scene.camera.data == bl_camera):
                 activeCam = camera
 
     if not len(cameras):
@@ -991,7 +1019,7 @@ def generateCamera(bl_camera):
     camera = {}
 
     # NOTE: should use a scene where the camera is located for proper calculation
-    vf = bl_camera.view_frame(bpy.context.scene)
+    vf = bl_camera.view_frame(scene=bpy.context.scene)
     aspectRatio = (vf[0].x - vf[2].x) / (vf[0].y - vf[2].y)
 
     if bl_camera.type == 'PERSP':
@@ -1149,13 +1177,13 @@ def generateLights(operator, context, export_settings, glTF):
         
         if bl_light.type == 'SUN':
             light['type'] = 'directional' 
-            useShadows = (bl_light.shadow_method != 'NOSHADOW')
+            useShadows = (bl_light.shadow_method != 'NOSHADOW') if bpy.app.version < (2,80,0) else bl_light.use_shadow
         elif bl_light.type == 'POINT':
             light['type'] = 'point' 
-            useShadows = (bl_light.shadow_method != 'NOSHADOW')
+            useShadows = (bl_light.shadow_method != 'NOSHADOW') if bpy.app.version < (2,80,0) else bl_light.use_shadow
         elif bl_light.type == 'SPOT':
             light['type'] = 'spot' 
-            useShadows = (bl_light.shadow_method != 'NOSHADOW')
+            useShadows = (bl_light.shadow_method != 'NOSHADOW') if bpy.app.version < (2,80,0) else bl_light.use_shadow
         elif bl_light.type == 'HEMI':
             # Cycles does not suppport HEMI lights (EEVEE does!)
             if isCyclesRender(context): 
@@ -1169,10 +1197,10 @@ def generateLights(operator, context, export_settings, glTF):
         if not export_settings['gltf_use_shadows']:
             useShadows = False
 
-        if useShadows:
+        if useShadows and bpy.app.version < (2,80,0):
             cameraNear = bl_light.v3d.shadow.camera_near
             # usability improvement
-            if bl_light.type == 'SPOT' and cameraNear < SPOT_SHADOW_MIN_NEAR:
+            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
                 cameraNear = SPOT_SHADOW_MIN_NEAR
 
             cameraFar = bl_light.v3d.shadow.camera_far
@@ -1188,6 +1216,30 @@ def generateLights(operator, context, export_settings, glTF):
                 # but keeping it positive in the UI is more user-friendly
                 'bias': -bl_light.v3d.shadow.bias
             }
+        elif useShadows:
+            cameraNear = bl_light.shadow_buffer_clip_start
+            # usability improvement
+            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
+                cameraNear = SPOT_SHADOW_MIN_NEAR
+            cameraFar = bl_light.shadow_buffer_clip_end
+
+            if bl_light.type == 'SPOT':
+                cameraFov = bl_light.spot_size
+            else :
+                cameraFov = bl_light.v3d.shadow.camera_fov
+
+            light['shadow'] = {
+                'mapSize': int(context.scene.eevee.shadow_cascade_size),
+                'cameraSize': bl_light.v3d.shadow.camera_size,
+                'cameraFov': cameraFov,
+                'cameraNear': cameraNear,
+                'cameraFar': cameraFar,
+                'radius': bl_light.shadow_buffer_soft,
+                # NOTE: negate bias since the negative is more appropriate in most cases
+                # but keeping it positive in the UI is more user-friendly
+                'bias': -bl_light.shadow_buffer_bias * 0.0015
+            }
+
 
         if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
 
@@ -1331,8 +1383,13 @@ def generateMeshes(operator, context, export_settings, glTF):
             # Meshes/primitives without material are allowed.
             if material >= 0:
                 primitive['material'] = material
+            elif internal_primitive['material'] == DEFAULT_MAT_NAME:
+                primitive['material'] = get_or_create_default_material_index(glTF)
+                # it's possible that there were no materials in the scene, so
+                # the default one should 'register' the v3d material extension
+                createExtensionsUsed(operator, context, export_settings, glTF, 'S8S_v3d_material_data')
             else:
-                printLog('WARNING', 'Material ' + internal_primitive['material'] + ' not found')                
+                printLog('WARNING', 'Material ' + internal_primitive['material'] + ' not found')
             indices = internal_primitive['indices']
 
             componentType = "UNSIGNED_BYTE"
@@ -1814,7 +1871,8 @@ def generateNodeInstance(operator, context, export_settings, glTF, bl_object):
         if camera >= 0:
             node['camera'] = camera
 
-    elif bl_obj_type == 'LAMP':
+    # LAMP 2.79, LIGHT 2.80
+    elif bl_obj_type == 'LAMP' or bl_obj_type == 'LIGHT':
         light = get_light_index(glTF, bl_object.data.name)
         if light >= 0:
             v3d_data['light'] = light
@@ -1822,10 +1880,21 @@ def generateNodeInstance(operator, context, export_settings, glTF, bl_object):
     v3d_data['hidden'] = bl_object.hide_render
     v3d_data['renderOrder'] = bl_object.v3d.render_order
     v3d_data['frustumCulling'] = bl_object.v3d.frustum_culling
-    if len(bl_object.users_group):
+
+    if (bpy.app.version >= (2,80,0) and bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'FONT'] and
+            export_settings['gltf_use_shadows']):
+        v3d_data['useShadows'] = bl_object.v3d.use_shadows
+        v3d_data['useCastShadows'] = bl_object.v3d.use_cast_shadows
+
+    if bpy.app.version < (2,80,0) and len(bl_object.users_group):
         v3d_data['groupNames'] = []
         for group in bl_object.users_group:   
             v3d_data['groupNames'].append(group.name)
+    elif bpy.app.version >= (2,80,0) and len(bl_object.users_collection):
+        v3d_data['groupNames'] = []
+        for collection in bpy.data.collections:
+            if bl_object in collection.all_objects[:]:
+                v3d_data['groupNames'].append(collection.name)
 
     if export_settings['gltf_custom_props']:
         props = create_custom_property(bl_object)
@@ -1855,7 +1924,10 @@ def generateCameraNodeFromView(glTF):
     else:
         # ortho: calculate based on view location and rotation
         q = region3D.view_rotation
-        t = q * mathutils.Vector((0, 0, region3D.view_distance)) + region3D.view_location
+        if bpy.app.version < (2,80,0):
+            t = q * mathutils.Vector((0, 0, region3D.view_distance)) + region3D.view_location
+        else:
+            t = q @ mathutils.Vector((0, 0, region3D.view_distance)) + region3D.view_location
 
         node['translation'] = [t[0], t[2], -t[1]]
         node['rotation'] = [q[1], q[3], -q[2], q[0]]
@@ -1943,28 +2015,29 @@ def generateNodes(operator, context, export_settings, glTF):
         nodes.append(generateCameraNodeFromView(glTF))
     
     for bl_object in filtered_objects_shallow:
-        if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
+        if bpy.app.version < (2,80,0):
+            if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
+                    
+                for blender_dupli_object in bl_object.dupli_group.objects:
+
+                    if not is_dupli_obj_visible_in_group(bl_object.dupli_group, 
+                            blender_dupli_object):
+                        continue
+
+                    node = generateNodeInstance(operator, context, export_settings, glTF, blender_dupli_object)
+                    node['name'] = 'Duplication_' + bl_object.name + '_' + blender_dupli_object.name 
+                    nodes.append(node)
+                    proxy_nodes = generateProxyNodes(operator, context, glTF, node, blender_dupli_object)
+                    nodes.extend(proxy_nodes)
                 
-            for blender_dupli_object in bl_object.dupli_group.objects:
-
-                if not is_dupli_obj_visible_in_group(bl_object.dupli_group, 
-                        blender_dupli_object):
-                    continue
-
-                node = generateNodeInstance(operator, context, export_settings, glTF, blender_dupli_object)
-                node['name'] = 'Duplication_' + bl_object.name + '_' + blender_dupli_object.name 
+                #
+                
+                node = {}
+                node['name'] = 'Duplication_Offset_' + bl_object.name
+                
+                translation = convert_swizzle_location(bl_object.dupli_group.dupli_offset)
+                node['translation'] = [-translation[0], -translation[1], -translation[2]]
                 nodes.append(node)
-                proxy_nodes = generateProxyNodes(operator, context, glTF, node, blender_dupli_object)
-                nodes.extend(proxy_nodes)
-            
-            #
-            
-            node = {}
-            node['name'] = 'Duplication_Offset_' + bl_object.name
-            
-            translation = convert_swizzle_location(bl_object.dupli_group.dupli_offset)
-            node['translation'] = [-translation[0], -translation[1], -translation[2]]
-            nodes.append(node)
             
     if len(nodes) > 0:
         glTF['nodes'] = nodes
@@ -1987,18 +2060,24 @@ def generateNodes(operator, context, export_settings, glTF):
                 if obj_scene is not None:
 
                     prev_active_scene = bpy.context.scene
-                    bpy.context.screen.scene = obj_scene
+                    if bpy.app.version < (2,80,0):
+                        bpy.context.screen.scene = obj_scene
+                    else:
+                        bpy.context.window.scene = obj_scene
 
-                    prev_active_object = bpy.context.object
-                    bpy.context.scene.objects.active = bl_object
+                    setSelectedObject(bl_object)
                 
                     bpy.ops.object.mode_set(mode='POSE')
                     bpy.ops.nla.bake(frame_start=bpy.context.scene.frame_current, 
                             frame_end=bpy.context.scene.frame_current, 
                             only_selected=False, visual_keying=True)
 
-                    bpy.context.scene.objects.active = prev_active_object
-                    bpy.context.screen.scene = prev_active_scene
+                    restoreSelectedObjects()
+
+                    if bpy.app.version < (2,80,0):
+                        bpy.context.screen.scene = prev_active_scene
+                    else:
+                        bpy.context.window.scene = obj_scene
 
             joints = []
             
@@ -2031,14 +2110,20 @@ def generateNodes(operator, context, export_settings, glTF):
                         correction_matrix_local = blender_bone.bone.matrix_local.copy()
                         
                         if blender_bone.parent is not None:
-                            correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                            if bpy.app.version < (2,80,0):
+                                correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() * correction_matrix_local
+                            else:
+                                correction_matrix_local = blender_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
                         
                         matrix_basis = blender_bone.matrix_basis
                         
                         if export_settings['gltf_bake_armature_actions']:
-                            matrix_basis = bl_object.convert_space(blender_bone, blender_bone.matrix, from_space='POSE', to_space='LOCAL')
+                            matrix_basis = bl_object.convert_space(pose_bone=blender_bone, matrix=blender_bone.matrix, from_space='POSE', to_space='LOCAL')
 
-                        generateNodeParameter(correction_matrix_local * matrix_basis, node)
+                        if bpy.app.version < (2,80,0):
+                            generateNodeParameter(correction_matrix_local * matrix_basis, node)
+                        else:
+                            generateNodeParameter(correction_matrix_local @ matrix_basis, node)
                 
                         node['name'] = bl_object.name + "_" + blender_bone.name
                 
@@ -2046,9 +2131,12 @@ def generateNodes(operator, context, export_settings, glTF):
                         
                         nodes.append(node)
                     
-                    bind_shape_matrix = bl_object.matrix_world.inverted() * blender_object_child.matrix_world
-                    
-                    inverse_bind_matrix = convert_swizzle_matrix(blender_bone.bone.matrix_local.inverted() * bind_shape_matrix)
+                    if bpy.app.version < (2,80,0):
+                        bind_shape_matrix = bl_object.matrix_world.inverted() * blender_object_child.matrix_world
+                        inverse_bind_matrix = convert_swizzle_matrix(blender_bone.bone.matrix_local.inverted() * bind_shape_matrix)
+                    else:
+                        bind_shape_matrix = bl_object.matrix_world.inverted() @ blender_object_child.matrix_world
+                        inverse_bind_matrix = convert_swizzle_matrix(blender_bone.bone.matrix_local.inverted() @ bind_shape_matrix)
 
                     for column in range(0, 4):
                         for row in range(0, 4):
@@ -2060,8 +2148,12 @@ def generateNodes(operator, context, export_settings, glTF):
                 if not joints_written:
                     joints.append(skeleton)
 
-                armature_inverse_bind_matrix = convert_swizzle_matrix(
-                        bl_object.matrix_world.inverted() * blender_object_child.matrix_world)
+                if bpy.app.version < (2,80,0):
+                    armature_inverse_bind_matrix = convert_swizzle_matrix(
+                            bl_object.matrix_world.inverted() * blender_object_child.matrix_world)
+                else:
+                    armature_inverse_bind_matrix = convert_swizzle_matrix(
+                            bl_object.matrix_world.inverted() @ blender_object_child.matrix_world)
 
                 for column in range(0, 4):
                     for row in range(0, 4):
@@ -2138,20 +2230,21 @@ def generateNodes(operator, context, export_settings, glTF):
 
             nodeAppendChildFromObj(glTF, node, child_obj)
 
-        # Duplications
-        if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
+        if bpy.app.version < (2,80,0):
+            # Duplications
+            if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
 
-            child_index = get_node_index(glTF, 'Duplication_Offset_' + bl_object.name)
-            if child_index >= 0:
-                if not 'children' in node:
-                    node['children'] = []
-                node['children'].append(child_index)
+                child_index = get_node_index(glTF, 'Duplication_Offset_' + bl_object.name)
+                if child_index >= 0:
+                    if not 'children' in node:
+                        node['children'] = []
+                    node['children'].append(child_index)
 
-                duplication_node = nodes[child_index]
-                for blender_dupli_object in bl_object.dupli_group.objects:
-                    nodeAppendChildFromObj(glTF, duplication_node, 
-                            blender_dupli_object, 'Duplication_' + bl_object.name 
-                            + '_' + blender_dupli_object.name)
+                    duplication_node = nodes[child_index]
+                    for blender_dupli_object in bl_object.dupli_group.objects:
+                        nodeAppendChildFromObj(glTF, duplication_node, 
+                                blender_dupli_object, 'Duplication_' + bl_object.name 
+                                + '_' + blender_dupli_object.name)
                 
         #
         
@@ -2276,7 +2369,10 @@ def preprocessCamLampNodes(nodes):
         if nodeIsCamera(node) or nodeIsLamp(node) or nodeIsCurve(node):
             mat = nodeComposeMatrix(node)
 
-            trans, rot, sca = (mat * rot_x_90).decompose()
+            if bpy.app.version < (2,80,0):
+                trans, rot, sca = (mat * rot_x_90).decompose()
+            else:
+                trans, rot, sca = (mat @ rot_x_90).decompose()
             node['translation'] = list(trans)
             node['rotation'] = [rot[1], rot[2], rot[3], rot[0]]
             node['scale'] = list(sca)
@@ -2286,7 +2382,10 @@ def preprocessCamLampNodes(nodes):
                     child_node = nodes[child_index]
                     child_mat = nodeComposeMatrix(child_node)
 
-                    trans, rot, sca = (rot_x_90_inv * child_mat).decompose()
+                    if bpy.app.version < (2,80,0):
+                        trans, rot, sca = (rot_x_90_inv * child_mat).decompose()
+                    else:
+                        trans, rot, sca = (rot_x_90_inv @ child_mat).decompose()
                     child_node['translation'] = list(trans)
                     child_node['rotation'] = [rot[1], rot[2], rot[3], rot[0]]
                     child_node['scale'] = list(sca)
@@ -2310,7 +2409,10 @@ def nodeComposeMatrix(node):
         mat_sca[1][1] = node['scale'][1]
         mat_sca[2][2] = node['scale'][2]
 
-    return mat_trans * mat_rot * mat_sca
+    if bpy.app.version < (2,80,0):
+        return mat_trans * mat_rot * mat_sca
+    else:
+        return mat_trans @ mat_rot @ mat_sca
 
 
 def nodeIsCamera(node):
@@ -2377,7 +2479,7 @@ def generateImages(operator, context, export_settings, glTF):
                     # copy an image to a new location
 
                     if (bl_image.file_format != "JPEG" and bl_image.file_format != "PNG" 
-                            and bl_image.file_format != "BMP"):
+                            and bl_image.file_format != "BMP" and bl_image.file_format != 'HDR'):
                         # need conversion to PNG
 
                         img_data = extract_image_bindata_png(bl_image, context.scene)
@@ -2604,7 +2706,6 @@ def generateMaterials(operator, context, export_settings, glTF):
                   
     materials = []
     
-    KHR_materials_displacement_used = False
     S8S_v3d_data_used = False
 
     for bl_mat in filtered_materials:
@@ -2686,8 +2787,6 @@ def generateMaterials(operator, context, export_settings, glTF):
                             pbrMetallicRoughness['metallicRoughnessTexture'] = metallicRoughnessTexture
                             
                         
-                    # TODO: Export displacement data for PBR.
-    
                     #
                     # Emissive texture
                     #
@@ -2760,13 +2859,19 @@ def generateMaterials(operator, context, export_settings, glTF):
                         if get_scalar(blender_node.inputs['AlphaMode'].default_value, 0.0) >= 0.5:
                             alphaMode = 'MASK'
     
-                            material['alphaCutoff'] = get_scalar(blender_node.inputs['AlphaCutoff'].default_value, 0.5)
+                            material['alphaCutoff'] = (
+                                    get_scalar(blender_node.inputs['AlphaCutoff'].default_value, 0.5) 
+                                    + ALPHA_CUTOFF_EPS)
     
                         material['alphaMode'] = alphaMode
                         
-                    # NOTE: implementation of BGE "Backface Culling"
-                    if not bl_mat.game_settings.use_backface_culling:
-                        material['doubleSided'] = True
+                    if bpy.app.version < (2,80,0):
+                        # NOTE: implementation of BGE "Backface Culling"
+                        if not bl_mat.game_settings.use_backface_culling:
+                            material['doubleSided'] = True
+                    else:
+                        if bl_mat.v3d.render_side == 'DOUBLE':
+                            material['doubleSided'] = True
                     
                     #
                     # Use Color_0
@@ -2777,136 +2882,67 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                     
         else:
-            # Non-PBR materials
+            # Basic and Node-based materials
             
-            v3d_data['diffuseShader'] = bl_mat.diffuse_shader
-            v3d_data['diffuseIntensity'] = bl_mat.diffuse_intensity
-            v3d_data['diffuseColor'] = extract_vec(bl_mat.diffuse_color)
-
-            v3d_data['specularShader'] = bl_mat.specular_shader
-            v3d_data['specularColor'] = extract_vec(bl_mat.specular_color)
-            v3d_data['specularIntensity'] = bl_mat.specular_intensity
-            v3d_data['specularHardness'] = bl_mat.specular_hardness
-            v3d_data['specularAlpha'] = bl_mat.specular_alpha
-
-            alpha = 1.0
             alphaMode = 'OPAQUE'
-            if bl_mat.use_transparency:
-                alpha = bl_mat.alpha
-                if bl_mat.transparency_method == 'MASK':
+
+            if bpy.app.version < (2,80,0):
+                if bl_mat.use_transparency:
+                    if bl_mat.transparency_method == 'MASK':
+                        alphaMode = 'MASK'
+                    else:
+                        alphaMode = 'BLEND'
+            else:
+                if bl_mat.blend_method == 'CLIP':
                     alphaMode = 'MASK'
-                else:
+                    material['alphaCutoff'] = bl_mat.alpha_threshold + ALPHA_CUTOFF_EPS
+                elif bl_mat.blend_method != 'OPAQUE':
                     alphaMode = 'BLEND'
 
-            v3d_data['alpha'] = alpha
-            
             if alphaMode != 'OPAQUE': 
                 material['alphaMode'] = alphaMode
 
-            # NOTE: implementation of BGE "Alpha Add"
-            if bl_mat.game_settings.alpha_blend == 'ADD':
-                v3d_data['depthWrite'] = False;
+            if bpy.app.version < (2,80,0):
+                # NOTE: implementation of BGE "Alpha Add"
+                if bl_mat.game_settings.alpha_blend == 'ADD':
+                    v3d_data['depthWrite'] = False
 
-            # NOTE: implementation of BGE "Backface Culling"
-            if not bl_mat.game_settings.use_backface_culling:
-                material['doubleSided'] = True
+                # NOTE: implementation of BGE "Backface Culling"
+                if not bl_mat.game_settings.use_backface_culling:
+                    material['doubleSided'] = True
+                    v3d_data['renderSide'] = 'DOUBLE'
+            else:
+                if material_has_blend_backside(bl_mat):
+                    v3d_data['depthWrite'] = False
+                    material['doubleSided'] = True
+                    v3d_data['renderSide'] = 'DOUBLE'
+                else:
+                    if bl_mat.v3d.render_side == 'DOUBLE':
+                        material['doubleSided'] = True
+                    if bl_mat.v3d.render_side != 'FRONT':
+                        v3d_data['renderSide'] = bl_mat.v3d.render_side
+                    if bl_mat.v3d.depth_write == False:
+                        v3d_data['depthWrite'] = bl_mat.v3d.depth_write
 
-            v3d_data['useShadeless'] = bl_mat.use_shadeless
-
-            material['emissiveFactor'] = [bl_mat.emit * bl_mat.diffuse_color[0],
-                    bl_mat.emit * bl_mat.diffuse_color[1], bl_mat.emit * bl_mat.diffuse_color[2]]
-            
-            for blender_texture_slot in bl_mat.texture_slots:
-                if (blender_texture_slot and blender_texture_slot.texture and
-                    blender_texture_slot.texture.type == 'IMAGE' and
-                    get_tex_image(blender_texture_slot.texture) is not None):
-
-                    # Diffuse texture
-
-                    if blender_texture_slot.use_map_color_diffuse:
-                        index = get_texture_index_by_texture(export_settings, 
-                                glTF, blender_texture_slot.texture)
-                        if index >= 0:
-                            diffuseTexture = {
-                                'index' : index
-                            }
-                            v3d_data['diffuseTexture'] = diffuseTexture
-
-                    # Alpha texture
-
-                    if blender_texture_slot.use_map_alpha:
-                        index = get_texture_index_by_texture(export_settings, 
-                                glTF, blender_texture_slot.texture)
-                        if index >= 0:
-                            alphaTexture = {
-                                'index' : index
-                            }
-                            v3d_data['alphaTexture'] = alphaTexture
-
-                    # Specular intensity texture
-
-                    # NOTE: this one connected as color but interpreted as intensity
-                    if blender_texture_slot.use_map_color_spec:
-                        index = get_texture_index_by_texture(export_settings, 
-                                glTF, blender_texture_slot.texture)
-                        if index >= 0:
-                            specularTexture = {
-                                'index' : index
-                            }
-                            v3d_data['specularTexture'] = specularTexture
-
-                    # Emissive texture
-
-                    if blender_texture_slot.use_map_emit:
-                        index = get_texture_index_by_texture(export_settings, 
-                                glTF, blender_texture_slot.texture)
-                        if index >= 0:
-                            emissiveTexture = {
-                                'index' : index
-                            }
-                            material['emissiveTexture'] = emissiveTexture
-
-                    # Normal texture
-
-                    if blender_texture_slot.use_map_normal:
-                        index = get_texture_index_by_texture(export_settings, 
-                                glTF, blender_texture_slot.texture)
-                        if index >= 0:
-                            normalTexture = {
-                                'index' : index
-                            }
-                            material['normalTexture'] = normalTexture
-                            
-                    # Displacement textue
-
-                    if export_settings['gltf_displacement']:
-                        if blender_texture_slot.use_map_displacement:
-                            index = get_texture_index_by_texture(export_settings, 
-                                    glTF, blender_texture_slot.texture)
-                            if index >= 0:
-                                extensions = material['extensions']
-
-                                displacementTexture = {
-                                    'index' : index,
-                                    'strength' : blender_texture_slot.displacement_factor 
-                                }
-                                 
-                                extensions['KHR_materials_displacement'] = {'displacementTexture' : displacementTexture}
-                                KHR_materials_displacement_used = True
+            if bl_mat.v3d.dithering == True:
+                v3d_data['dithering'] = bl_mat.v3d.dithering
 
             if mat_type == 'NODE' or mat_type == 'CYCLES':
                 v3d_data['nodeGraph'] = extract_node_graph(bl_mat.node_tree,
                         export_settings, glTF)
+            else:
+                v3d_data['nodeGraph'] = composeNodeGraph(bl_mat, export_settings, glTF)
     
         material['name'] = bl_mat.name
 
-        # receive
-        v3d_data['useShadows'] = bl_mat.use_shadows
-        v3d_data['useCastShadows'] = bl_mat.use_cast_shadows
+        blend_mode = create_blend_mode(bl_mat)
+        if blend_mode is not None:
+            v3d_data['blendMode'] = blend_mode
 
-        if not export_settings['gltf_use_shadows']:
-            v3d_data['useShadows'] = False
-            v3d_data['useCastShadows'] = False
+        # receive
+        if bpy.app.version < (2,80,0) and export_settings['gltf_use_shadows']:
+            v3d_data['useShadows'] = bl_mat.use_shadows
+            v3d_data['useCastShadows'] = bl_mat.use_cast_shadows
 
         if export_settings['gltf_custom_props']:
             props = create_custom_property(bl_mat)
@@ -2919,15 +2955,11 @@ def generateMaterials(operator, context, export_settings, glTF):
         materials.append(material)
             
 
-
     if len (materials) > 0:
         if S8S_v3d_data_used:
             createExtensionsUsed(operator, context, export_settings, glTF,
                     'S8S_v3d_material_data')
             
-        if KHR_materials_displacement_used:
-            createExtensionsUsed(operator, context, export_settings, glTF,
-                                 'KHR_materials_displacement')
 
         glTF['materials'] = materials
 
@@ -2952,11 +2984,13 @@ def generateScenes(operator, context, export_settings, glTF):
         #
         
         nodes = []
+
+        scene_objects = bl_scene.objects if bpy.app.version < (2,80,0) else bl_scene.collection.all_objects
             
-        for bl_object in bl_scene.objects:
+        for bl_object in scene_objects:
             if bl_object.parent is None:
                 node_index = get_node_index(glTF, bl_object.name)
-                
+
                 if node_index < 0:
                     continue
                 
@@ -2992,10 +3026,32 @@ def generateScenes(operator, context, export_settings, glTF):
                 'renderSingleSided' : False if export_settings['gltf_shadow_map_side'] == 'BOTH' else True
             }
 
-        outline = bl_scene.v3d.outline
-        fx_settings = getView3DSpaceProp('fx_settings')
+        if export_settings['gltf_use_hdr']:
+            v3d_data['useHDR'] = True
 
-        if outline.enabled or (fx_settings and (fx_settings.use_dof or fx_settings.use_ssao)):
+        outline = bl_scene.v3d.outline
+        
+        if bpy.app.version < (2,80,0):
+            fx_settings = getView3DSpaceProp('fx_settings')
+        else:
+            fx_settings = bl_scene.eevee
+
+        use_dof = fx_settings.use_dof if fx_settings and bl_scene.camera else False
+        use_ssao = False 
+        if fx_settings:
+            if bpy.app.version < (2,80,0) and fx_settings.use_ssao:
+                use_ssao = True
+            elif bpy.app.version >= (2,80,0) and fx_settings.use_gtao:
+                use_ssao = True
+
+        #use_bloom = False if bpy.app.version <= (2,80,0) else fx_settings.use_bloom
+
+        # NOTE: disable all postprocessing except outline
+        use_bloom = False
+        use_dof = False
+        use_ssao = False
+
+        if outline.enabled or use_dof or use_ssao or use_bloom:
             v3d_data['postprocessing'] = []
 
             if outline.enabled:
@@ -3011,14 +3067,14 @@ def generateScenes(operator, context, export_settings, glTF):
 
                 v3d_data['postprocessing'].append(effect)
 
-            if fx_settings.use_ssao:
+            if use_ssao:
                 effect = {
                     'type': 'ssao'
                 }
 
                 v3d_data['postprocessing'].append(effect)
 
-            if fx_settings.use_dof and bl_scene.camera:
+            if use_dof:
                 camera = bl_scene.camera.data
                 if camera.dof_object:
                     focus = (camera.dof_object.location - bl_scene.camera.location).length
@@ -3028,6 +3084,16 @@ def generateScenes(operator, context, export_settings, glTF):
                 effect = {
                     'type': 'dof',
                     'focus': focus
+                }
+
+                v3d_data['postprocessing'].append(effect)
+
+            if use_bloom:
+                effect = {
+                    'type': 'bloom',
+                    'threshold': fx_settings.bloom_threshold,
+                    'radius': fx_settings.bloom_radius,
+                    'strength': fx_settings.bloom_intensity
                 }
 
                 v3d_data['postprocessing'].append(effect)
@@ -3056,7 +3122,10 @@ def generateScene(operator, context, export_settings, glTF):
     Generates the top level scene entry.
     """
 
-    index = get_scene_index(glTF, bpy.context.screen.scene.name)
+    if bpy.app.version < (2,80,0):
+        index = get_scene_index(glTF, bpy.context.screen.scene.name)
+    else:
+        index = get_scene_index(glTF, bpy.context.window.scene.name)
     
     if index >= 0:
         glTF['scene'] = index

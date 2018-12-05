@@ -17,6 +17,10 @@ import bpy
 import mathutils
 
 ORTHO_EPS = 1e-5
+DEFAULT_MAT_NAME = 'v3d_default_material'
+
+selectedObject = None
+selectedObjectsSave = []
 
 def integer_to_bl_suffix(val):
 
@@ -46,7 +50,8 @@ def get_world_first_valid_texture_slot(world):
     return None
 
 def isCyclesRender(context):
-    return context.scene.render.engine == 'CYCLES'
+    # NOTE: temporary, need to rename/refactor in Blender 2.80
+    return (context.scene.render.engine == 'CYCLES' or bpy.app.version >= (2,80,0))
 
 def getWorldCyclesEnvTexture(world):
     
@@ -86,20 +91,27 @@ def getWorldCyclesBkgColor(world):
         return [0.041, 0.041, 0.041]
 
 def getLightCyclesStrength(bl_light):
-    if bl_light.node_tree is not None and bl_light.use_nodes:
-        for bl_node in bl_light.node_tree.nodes:
-            if bl_node.type == 'EMISSION':
-                return bl_node.inputs['Strength'].default_value
+    if bpy.app.version < (2,80,0):
+        if bl_light.node_tree is not None and bl_light.use_nodes:
+            for bl_node in bl_light.node_tree.nodes:
+                if bl_node.type == 'EMISSION':
+                    return bl_node.inputs['Strength'].default_value
 
-    # point and spot light have 100 as default strength
-    if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
-        return 100
+        # point and spot light have 100 as default strength
+        if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
+            return 100
+        else:
+            return 1
     else:
-        return 1
+        # point and spot light have 100 as default strength
+        if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
+            return 100 * bl_light.energy
+        else:
+            return bl_light.energy
 
 
 def getLightCyclesColor(bl_light):
-    if bl_light.node_tree is not None and bl_light.use_nodes:
+    if bl_light.node_tree is not None and bl_light.use_nodes and bpy.app.version < (2,80,0):
         for bl_node in bl_light.node_tree.nodes:
             if bl_node.type == 'EMISSION':
                 col = bl_node.inputs['Color'].default_value
@@ -108,6 +120,41 @@ def getLightCyclesColor(bl_light):
     col = bl_light.color
     return [col[0], col[1], col[2]]
 
+def setSelectedObject(bl_obj):
+
+    global selectedObject, selectedObjectsSave
+    
+    selectedObject = bl_obj
+    selectedObjectsSave = bpy.context.selected_objects.copy()
+
+    for o in selectedObjectsSave:
+        if bpy.app.version < (2,80,0):
+            o.select = False
+        else:
+            o.select_set(False)
+
+    if bpy.app.version < (2,80,0):
+        bl_obj.select = True
+    else:
+        bl_obj.select_set(True)
+
+def restoreSelectedObjects():
+
+    global selectedObject, selectedObjectsSave
+
+    if bpy.app.version < (2,80,0):
+        selectedObject.select = False
+    else:
+        selectedObject.select_set(False)
+
+    for o in selectedObjectsSave:
+        if bpy.app.version < (2,80,0):
+            o.select = True
+        else:
+            o.select_set(True)
+
+    selectedObject = None
+    selectedObjectsSave = []
 
 def get_scene_by_object(obj):
 
@@ -119,6 +166,9 @@ def get_scene_by_object(obj):
     return None
 
 def is_on_exported_layer(obj):
+
+    if bpy.app.version > (2,80,0):
+        return True
 
     scene = get_scene_by_object(obj)
     if scene is None:
@@ -135,6 +185,9 @@ def is_dupli_obj_visible_in_group(dgroup, dobj):
     for a, b in zip(dobj.layers, dgroup.layers):
         if a and b:
             return True
+
+    if bpy.app.version > (2,80,0):
+        return True
 
     return False
 
@@ -190,4 +243,11 @@ def find_armature(obj):
     # use obj.find_armature as a last resort, because it doesn't work with many
     # armature modifiers
     return obj.find_armature()
-    
+
+def material_has_blend_backside(bl_mat):
+    # >= (2,80,0) API
+    return (material_is_blend(bl_mat) and bl_mat.show_transparent_backside)
+
+def material_is_blend(bl_mat):
+    # >= (2,80,0) API
+    return bl_mat.blend_method in ['BLEND', 'MULTIPLY', 'ADD']

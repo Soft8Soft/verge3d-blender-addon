@@ -16,13 +16,15 @@
 import bpy
 from bpy.app.handlers import persistent
 
-import fnmatch, os
+import fnmatch, re, os, sys
 import shutil
+import subprocess
 import webbrowser
 
 import verge3d
 
 from .gltf2_debug import *
+from . import utils
 
 join = os.path.join
 norm = os.path.normpath
@@ -31,7 +33,7 @@ APP_MANAGER_HOST="http://localhost:8668/"
 MANUAL_URL="https://www.soft8soft.com/docs/"
 
 class V3DPanel():
-    COMPAT_ENGINES = ['VERGE3D', 'CYCLES']
+    COMPAT_ENGINES = ['BLENDER_RENDER', 'CYCLES', 'BLENDER_EEVEE']
 
     @classmethod
     def poll(cls, context):
@@ -44,21 +46,23 @@ class V3DPanel():
             return False
 
     @classmethod
-    def checkCycles(cls, context):
-        return context.scene.render.engine == 'CYCLES'
+    def checkRenderInternal(cls, context):
+        return context.scene.render.engine == 'BLENDER_RENDER'
 
 
-class V3DExportSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
     """Located on render panel"""
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'render'
-    bl_label = 'Verge3D Export Settings'
+    bl_label = 'Verge3D Settings'
 
     poll_datablock = 'scene'
 
     def draw(self, context):
         layout = self.layout
+
+        # global export settings
 
         v3d_export = context.scene.v3d_export
 
@@ -81,6 +85,9 @@ class V3DExportSettingsPanel(bpy.types.Panel, V3DPanel):
         row.prop(v3d_export, 'lzma_enabled')
 
         row = layout.row()
+        row.prop(v3d_export, 'use_hdr')
+
+        row = layout.row()
         row.prop(v3d_export, 'use_shadows')
 
         row = layout.row()
@@ -91,7 +98,39 @@ class V3DExportSettingsPanel(bpy.types.Panel, V3DPanel):
         row.active = v3d_export.use_shadows
         row.prop(v3d_export, 'shadow_map_side')
 
-class V3DRenderLayerSettingsPanel(bpy.types.Panel, V3DPanel):
+        # postprocessing
+
+        outline = context.scene.v3d.outline
+
+        row = layout.row()
+        row.label(text='Outline:')
+
+        row = layout.row()
+        row.prop(outline, 'enabled')
+
+        outlineActive = outline.enabled
+
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'edge_strength')
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'edge_glow')
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'edge_thickness')
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'pulse_period')
+
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'visible_edge_color')
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'hidden_edge_color')
+
+class V3D_PT_RenderLayerSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'render_layer'
@@ -105,47 +144,13 @@ class V3DRenderLayerSettingsPanel(bpy.types.Panel, V3DPanel):
         scene = context.scene
 
         row = layout.row()
-        row.label('Export Layers:')
+        row.label(text='Export Layers:')
 
         row = layout.row()
         row.prop(scene.v3d, 'export_layers', text='')
 
-class V3DSceneSettingsPanel(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = 'scene'
-    bl_label = 'Verge3D Settings'
 
-    poll_datablock = 'scene'
-
-    def draw(self, context):
-        layout = self.layout
-
-        scene = context.scene
-
-        outline = scene.v3d.outline
-
-        row = layout.row()
-        row.label('Outline:')
-
-        row = layout.row()
-        row.prop(outline, 'enabled')
-
-        row = layout.row()
-        row.prop(outline, 'edge_strength')
-        row = layout.row()
-        row.prop(outline, 'edge_glow')
-        row = layout.row()
-        row.prop(outline, 'edge_thickness')
-        row = layout.row()
-        row.prop(outline, 'pulse_period')
-        row = layout.row()
-        row.prop(outline, 'visible_edge_color')
-        row = layout.row()
-        row.prop(outline, 'hidden_edge_color')
-
-
-class V3DObjectSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'object'
@@ -160,7 +165,7 @@ class V3DObjectSettingsPanel(bpy.types.Panel, V3DPanel):
         v3d = obj.v3d
 
         row = layout.row()
-        row.label('Animation:')
+        row.label(text='Animation:')
 
         row = layout.row()
         row.prop(v3d, 'anim_auto')
@@ -180,7 +185,7 @@ class V3DObjectSettingsPanel(bpy.types.Panel, V3DPanel):
         row.prop(v3d, 'anim_offset')
 
         row = layout.row()
-        row.label('Rendering:')
+        row.label(text='Rendering:')
 
         row = layout.row()
         row.prop(v3d, 'render_order')
@@ -188,7 +193,14 @@ class V3DObjectSettingsPanel(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d, 'frustum_culling')
 
-class V3DCameraSettingsPanel(bpy.types.Panel, V3DPanel):
+        if bpy.app.version >= (2,80,0):
+            row = layout.row()
+            row.prop(v3d, 'use_shadows')
+
+            row = layout.row()
+            row.prop(v3d, 'use_cast_shadows')
+
+class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'data'
@@ -223,7 +235,7 @@ class V3DCameraSettingsPanel(bpy.types.Panel, V3DPanel):
             row.prop(v3d, 'orbit_max_distance')
 
             row = layout.row()
-            row.label('Vertical Rotation Limits:')
+            row.label(text='Vertical Rotation Limits:')
 
             row = layout.row()
             row.prop(v3d, 'orbit_min_polar_angle')
@@ -231,86 +243,71 @@ class V3DCameraSettingsPanel(bpy.types.Panel, V3DPanel):
 
 
             row = layout.row()
-            row.label('Horizontal Rotation Limits:')
+            row.label(text='Horizontal Rotation Limits:')
 
             row = layout.row()
             row.prop(v3d, 'orbit_min_azimuth_angle')
             row.prop(v3d, 'orbit_max_azimuth_angle')
 
-class V3DLampSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
-    poll_datablock = 'lamp'
+    poll_datablock = 'light' if bpy.app.version >= (2,80,0) else 'lamp'
 
     def draw(self, context):
         layout = self.layout
 
-        lamp = context.lamp
-        type = lamp.type
-        shadow = lamp.v3d.shadow
+        light = context.light if bpy.app.version >= (2,80,0) else context.lamp
+        type = light.type
+        shadow = light.v3d.shadow
 
-        row = layout.row()
-        row.label('Shadow:')
-
-        if type == 'POINT' or type == 'SPOT' or type == 'SUN':
+        if bpy.app.version < (2,80,0):
             row = layout.row()
-            row.prop(lamp, 'shadow_method', expand=True)
-            
-            if lamp.shadow_method != 'NOSHADOW':
+            row.label(text='Shadow:')
+
+            if type == 'POINT' or type == 'SPOT' or type == 'SUN':
+
+                if not super().checkRenderInternal(context):
+                    row = layout.row()
+                    row.prop(light, 'shadow_method', expand=True)
+
+                shadowOn = light.shadow_method != 'NOSHADOW'
+
                 row = layout.row()
+                row.active = shadowOn
                 row.prop(shadow, 'map_size')
+
                 row = layout.row()
+                row.active = shadowOn
                 if type == 'SUN':
                     row.prop(shadow, 'camera_size')
-                else:
+                elif type == 'SPOT':
                     row.prop(shadow, 'camera_fov')
 
                 row = layout.row()
+                row.active = shadowOn
                 row.prop(shadow, 'camera_near')
                 row.prop(shadow, 'camera_far')
 
                 row = layout.row()
+                row.active = shadowOn
                 row.prop(shadow, 'radius')
                 row.prop(shadow, 'bias')
+            else:
+                row = layout.row()
+                row.label(text='Not available for this light type')
         else:
-            row = layout.row()
-            row.label('Not available for this lamp type')
+            layout.active = light.use_shadow if type != 'HEMI' else False 
 
-class V3DMaterialTransparencyPanel(bpy.types.Panel, V3DPanel):
-    """Inspired by MATERIAL_PT_transp_game"""
-
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = 'material'
-    bl_label = "Transparency"
-
-    poll_datablock = 'material'
-
-    def draw_header(self, context):
-        mat = context.material
-        self.layout.prop(mat, "use_transparency", text="")
-
-    def draw(self, context):
-        layout = self.layout
-        mat = context.material
+            if type == 'SUN' or type == 'AREA':
+                row = layout.row()
+                row.prop(shadow, 'camera_size', text='Shadow Size')
 
 
-        layout.active = mat.use_transparency
-
-        row = layout.row()
-        row.prop(mat, "transparency_method", expand=True)
-
-        if not super().checkCycles(context):
-            if mat.active_node_material:
-                mat = mat.active_node_material
-
-            layout.prop(mat, "alpha")
-            layout.prop(mat, "specular_alpha", text="Specular")
-
-class V3DCurveSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'data'
@@ -341,7 +338,7 @@ class V3DCurveSettingsPanel(bpy.types.Panel, V3DPanel):
         row.prop(v3d.line_rendering_settings, 'width')
         row.active = is_active
 
-class V3DMeshSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_MeshSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'data'
@@ -367,7 +364,7 @@ class V3DMeshSettingsPanel(bpy.types.Panel, V3DPanel):
         row.prop(v3d.line_rendering_settings, 'width')
         row.active = is_active
 
-class V3DMaterialSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'material'
@@ -380,14 +377,44 @@ class V3DMaterialSettingsPanel(bpy.types.Panel, V3DPanel):
 
         material = context.material
 
-        row = layout.row()
-        row.prop(material.game_settings, 'use_backface_culling')
+        if bpy.app.version < (2,80,0):
+
+            row = layout.row()
+            row.prop(material.game_settings, 'use_backface_culling')
+
+
+            if not super().checkRenderInternal(context):
+                row = layout.row()
+                row.prop(material, "use_transparency")
+
+                row = layout.row()
+                row.active = material.use_transparency
+                row.prop(material, "transparency_method", expand=True)
+
+            row = layout.row()
+            row.active = material.use_transparency
+            row.prop(material.v3d, 'alpha_add')
+        else:
+            layout.use_property_split = True
+
+            blend_back = utils.material_has_blend_backside(material)
+
+            if blend_back:
+                row = layout.row()
+                row.label(text='Overridden by the "Options->Show Backside" option.', icon='INFO')
+            
+            row = layout.row()
+            row.prop(material.v3d, 'render_side')
+            row.active = not blend_back
+
+            row = layout.row()
+            row.prop(material.v3d, 'depth_write')
+            row.active = not blend_back
 
         row = layout.row()
-        row.active = material.use_transparency
-        row.prop(material.v3d, 'alpha_add')
+        row.prop(material.v3d, 'dithering')
 
-class V3DTextureSettingsPanel(bpy.types.Panel, V3DPanel):
+class V3D_PT_TextureSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = 'texture'
@@ -401,32 +428,34 @@ class V3DTextureSettingsPanel(bpy.types.Panel, V3DPanel):
         texture = context.texture
 
         row = layout.row()
-        row.label('Anisotropic Filtering:')
+        row.label(text='Anisotropic Filtering:')
 
         row = layout.row()
         row.prop(texture.v3d, 'anisotropy', 'Ratio')
 
-class V3DShaderNodeTexImageSettingsPanel(bpy.types.Panel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = 'texture'
+
+class V3D_PT_NodeSettings(bpy.types.Panel):
+    bl_space_type = 'NODE_EDITOR'
+    bl_region_type = 'UI'
     bl_label = 'Verge3D Settings'
+    bl_parent_id = 'NODE_PT_active_node_generic'
 
     @classmethod
     def poll(cls, context):
-        node = context.texture_node
-        return node and context.scene.render.engine == 'CYCLES'
+        node = context.active_node
+        return node is not None and isinstance(node, bpy.types.ShaderNodeTexImage)
 
     def draw(self, context):
         layout = self.layout
 
-        texture = context.texture_node
+        node = context.active_node
 
         row = layout.row()
-        row.label('Anisotropic Filtering:')
+        row.label(text='Anisotropic Filtering:')
 
         row = layout.row()
-        row.prop(texture.v3d, 'anisotropy', 'Ratio')
+        row.prop(node.v3d, 'anisotropy', text='Ratio')
+
 
 def exec_browser(url):
     # always try to run server before starting browers
@@ -438,7 +467,7 @@ def exec_browser(url):
     except BaseException:
         print("Failed to open URL: " + url)
 
-class V3DAppManager(bpy.types.Operator):
+class V3D_OT_AppManager(bpy.types.Operator):
     bl_idname = "v3d.app_manager"
     bl_label = "Open App Manager"
     bl_description = "Open Verge3D App Manager"
@@ -449,7 +478,7 @@ class V3DAppManager(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class V3DSneakPeek(bpy.types.Operator):
+class V3D_OT_SneakPeek(bpy.types.Operator):
     bl_idname = "v3d.sneak_peek"
     bl_label = "Sneak Peek"
     bl_description = "Export to temporary location and preview the scene in Verge3D"
@@ -472,12 +501,12 @@ class V3DSneakPeek(bpy.types.Operator):
 
 @persistent
 def loadHandler(dummy):
-    printLog('INFO', 'Reexporting ' + V3DReexportAll.currBlend)
-    bpy.ops.export_scene.v3d_gltf(filepath=V3DReexportAll.currGLTF)
+    printLog('INFO', 'Reexporting ' + V3D_OT_ReexportAll.currBlend)
+    bpy.ops.export_scene.v3d_gltf(filepath=V3D_OT_ReexportAll.currGLTF)
 
-    V3DReexportAll.reexportNext()
+    V3D_OT_ReexportAll.reexportNext()
 
-class V3DReexportAll(bpy.types.Operator):
+class V3D_OT_ReexportAll(bpy.types.Operator):
     bl_idname = "v3d.reexport_all"
     bl_label = "Reexport all Verge3D assets"
     bl_description = "Reexport all glTF files inside Verge3D SDK"
@@ -507,6 +536,17 @@ class V3DReexportAll(bpy.types.Operator):
             for name in files:
                 if fnmatch.fnmatch(name, '*.blend'):
                     blendpath = norm(join(root, name))
+
+                    # use file utility to check .blend version
+                    if sys.platform.startswith('linux'):
+                        fileinfo = subprocess.check_output(['file', '--uncompress', blendpath]).decode()
+                        ver = re.search('\d\.\d\d', fileinfo).group(0)
+                        verMaj, verMin = [int(n) for n in ver.split('.')]
+
+                        # ignore uncompatible blender 2.80 files
+                        if bpy.app.version < (2,80,0) and (verMaj > 2 or verMin >= 80):
+                            continue
+
                     gltfpath = os.path.splitext(blendpath)[0] + '.gltf'
 
                     if os.path.exists(gltfpath):
@@ -533,43 +573,42 @@ def register():
     bpy.types.VIEW3D_HT_header.append(v3d_sneak_peek)
     bpy.types.VIEW3D_HT_header.append(v3d_app_manager)
 
-    bpy.types.INFO_MT_help.append(v3d_menu_help)
+    if bpy.app.version < (2,80,0):
+        bpy.types.INFO_MT_help.append(v3d_menu_help)
+    else:
+        bpy.types.TOPBAR_MT_help.append(v3d_menu_help)
 
-    bpy.utils.register_class(V3DExportSettingsPanel)
-    bpy.utils.register_class(V3DRenderLayerSettingsPanel)
-    bpy.utils.register_class(V3DSceneSettingsPanel)
-    bpy.utils.register_class(V3DObjectSettingsPanel)
-    bpy.utils.register_class(V3DCameraSettingsPanel)
-    bpy.utils.register_class(V3DLampSettingsPanel)
-    bpy.utils.register_class(V3DMaterialTransparencyPanel)
-    bpy.utils.register_class(V3DCurveSettingsPanel)
-    bpy.utils.register_class(V3DMaterialSettingsPanel)
-    bpy.utils.register_class(V3DTextureSettingsPanel)
-    bpy.utils.register_class(V3DShaderNodeTexImageSettingsPanel)
-    bpy.utils.register_class(V3DMeshSettingsPanel)
+    bpy.utils.register_class(V3D_PT_RenderSettings)
+    bpy.utils.register_class(V3D_PT_RenderLayerSettings)
+    bpy.utils.register_class(V3D_PT_ObjectSettings)
+    bpy.utils.register_class(V3D_PT_CameraSettings)
+    bpy.utils.register_class(V3D_PT_LightSettings)
+    bpy.utils.register_class(V3D_PT_MaterialSettings)
+    bpy.utils.register_class(V3D_PT_CurveSettings)
+    bpy.utils.register_class(V3D_PT_TextureSettings)
+    bpy.utils.register_class(V3D_PT_MeshSettings)
+    bpy.utils.register_class(V3D_PT_NodeSettings)
 
-    bpy.utils.register_class(V3DAppManager)
-    bpy.utils.register_class(V3DSneakPeek)
-    bpy.utils.register_class(V3DReexportAll)
+    bpy.utils.register_class(V3D_OT_AppManager)
+    bpy.utils.register_class(V3D_OT_SneakPeek)
+    bpy.utils.register_class(V3D_OT_ReexportAll)
 
 def unregister():
 
-    bpy.utils.unregister_class(V3DShaderNodeTexImageSettingsPanel)
-    bpy.utils.unregister_class(V3DTextureSettingsPanel)
-    bpy.utils.unregister_class(V3DMaterialSettingsPanel)
-    bpy.utils.unregister_class(V3DMaterialTransparencyPanel)
-    bpy.utils.unregister_class(V3DLampSettingsPanel)
-    bpy.utils.unregister_class(V3DCurveSettingsPanel)
-    bpy.utils.unregister_class(V3DCameraSettingsPanel)
-    bpy.utils.unregister_class(V3DObjectSettingsPanel)
-    bpy.utils.unregister_class(V3DSceneSettingsPanel)
-    bpy.utils.unregister_class(V3DRenderLayerSettingsPanel)
-    bpy.utils.unregister_class(V3DExportSettingsPanel)
-    bpy.utils.unregister_class(V3DMeshSettingsPanel)
+    bpy.utils.unregister_class(V3D_PT_NodeSettings)
+    bpy.utils.unregister_class(V3D_PT_TextureSettings)
+    bpy.utils.unregister_class(V3D_PT_MaterialSettings)
+    bpy.utils.unregister_class(V3D_PT_LightSettings)
+    bpy.utils.unregister_class(V3D_PT_CurveSettings)
+    bpy.utils.unregister_class(V3D_PT_CameraSettings)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettings)
+    bpy.utils.unregister_class(V3D_PT_RenderLayerSettings)
+    bpy.utils.unregister_class(V3D_PT_RenderSettings)
+    bpy.utils.unregister_class(V3D_PT_MeshSettings)
 
-    bpy.utils.unregister_class(V3DReexportAll)
-    bpy.utils.unregister_class(V3DSneakPeek)
-    bpy.utils.unregister_class(V3DAppManager)
+    bpy.utils.unregister_class(V3D_OT_ReexportAll)
+    bpy.utils.unregister_class(V3D_OT_SneakPeek)
+    bpy.utils.unregister_class(V3D_OT_AppManager)
 
     bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
     bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)

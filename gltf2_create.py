@@ -23,6 +23,7 @@ import zlib
 
 from .gltf2_debug import *
 from .gltf2_get import *
+from .import utils
 
 #
 # Globals
@@ -35,14 +36,39 @@ WEBGL_FILTERS = {
     'LINEAR_MIPMAP_NEAREST'  : 9985,
     'NEAREST_MIPMAP_LINEAR'  : 9986,
     'LINEAR_MIPMAP_LINEAR'   : 9987
-};
+}
 
 WEBGL_WRAPPINGS = {
     'CLAMP_TO_EDGE'   : 33071,
     'MIRRORED_REPEAT' : 33648,
     'REPEAT'          : 10497
-};
+}
 
+WEBGL_BLEND_EQUATIONS = {
+    'FUNC_ADD' : 32774,
+    'FUNC_SUBTRACT' : 32778,
+    'FUNC_REVERSE_SUBTRACT' : 32779
+}
+
+WEBGL_BLEND_FUNCS = {
+    'ZERO' : 0,
+    'ONE' : 1,
+    'SRC_COLOR' : 768,
+    'ONE_MINUS_SRC_COLOR' : 769,
+    'SRC_ALPHA' : 770,
+    'ONE_MINUS_SRC_ALPHA' : 771,
+    'DST_ALPHA' : 772,
+    'ONE_MINUS_DST_ALPHA' : 773,
+    'DST_COLOR' : 774,
+    'ONE_MINUS_DST_COLOR' : 775,
+    'SRC_ALPHA_SATURATE' : 776,
+    
+    # the followings are not supported by the engine yet
+    # 'CONSTANT_COLOR' : 32769,
+    # 'ONE_MINUS_CONSTANT_COLOR' : 32770,
+    # 'CONSTANT_ALPHA' : 32771,
+    # 'ONE_MINUS_CONSTANT_ALPHA' : 32772
+}
 
 #
 # Functions
@@ -390,3 +416,26 @@ def create_anim_channel(glTF, bl_object, sampler_name, path, node_name, samplers
 
     return channel
 
+def create_blend_mode(bl_mat):
+    
+    if bpy.app.version < (2,80,0):
+        return None
+
+    if not utils.material_is_blend(bl_mat):
+        return None
+
+    blend_mode = {
+        'blendEquation': WEBGL_BLEND_EQUATIONS['FUNC_ADD']
+    }
+
+    if bl_mat.blend_method == 'ADD':
+        blend_mode['srcRGB'] = WEBGL_BLEND_FUNCS['ONE']
+        blend_mode['dstRGB'] = WEBGL_BLEND_FUNCS['ONE']
+    elif bl_mat.blend_method == 'BLEND':
+        blend_mode['srcRGB'] = WEBGL_BLEND_FUNCS['ONE']
+        blend_mode['dstRGB'] = WEBGL_BLEND_FUNCS['ONE_MINUS_SRC_ALPHA']
+    elif bl_mat.blend_method == 'MULTIPLY':
+        blend_mode['srcRGB'] = WEBGL_BLEND_FUNCS['DST_COLOR']
+        blend_mode['dstRGB'] = WEBGL_BLEND_FUNCS['ONE_MINUS_SRC_ALPHA']
+
+    return blend_mode
