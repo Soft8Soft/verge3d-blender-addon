@@ -21,6 +21,8 @@ DEFAULT_MAT_NAME = 'v3d_default_material'
 
 selectedObject = None
 selectedObjectsSave = []
+# 2.79
+prevActiveObject = None
 
 def integer_to_bl_suffix(val):
 
@@ -121,40 +123,40 @@ def getLightCyclesColor(bl_light):
     return [col[0], col[1], col[2]]
 
 def setSelectedObject(bl_obj):
-
-    global selectedObject, selectedObjectsSave
+    """
+    Select object for NLA baking
+    """
+    if bpy.app.version < (2,80,0):
+        global prevActiveObject
+        prevActiveObject = bpy.context.object
+        bpy.context.scene.objects.active = bl_obj
+    else:
+        global selectedObject, selectedObjectsSave
     
-    selectedObject = bl_obj
-    selectedObjectsSave = bpy.context.selected_objects.copy()
+        selectedObject = bl_obj
+        selectedObjectsSave = bpy.context.selected_objects.copy()
 
-    for o in selectedObjectsSave:
-        if bpy.app.version < (2,80,0):
-            o.select = False
-        else:
+        for o in selectedObjectsSave:
             o.select_set(False)
 
-    if bpy.app.version < (2,80,0):
-        bl_obj.select = True
-    else:
         bl_obj.select_set(True)
 
 def restoreSelectedObjects():
 
-    global selectedObject, selectedObjectsSave
-
     if bpy.app.version < (2,80,0):
-        selectedObject.select = False
+        global prevActiveObject
+        bpy.context.scene.objects.active = prevActiveObject
+        prevActiveObject = None
     else:
+        global selectedObject, selectedObjectsSave
+
         selectedObject.select_set(False)
 
-    for o in selectedObjectsSave:
-        if bpy.app.version < (2,80,0):
-            o.select = True
-        else:
+        for o in selectedObjectsSave:
             o.select_set(True)
 
-    selectedObject = None
-    selectedObjectsSave = []
+        selectedObject = None
+        selectedObjectsSave = []
 
 def get_scene_by_object(obj):
 
@@ -167,7 +169,7 @@ def get_scene_by_object(obj):
 
 def is_on_exported_layer(obj):
 
-    if bpy.app.version > (2,80,0):
+    if bpy.app.version >= (2,80,0):
         return True
 
     scene = get_scene_by_object(obj)
@@ -181,13 +183,12 @@ def is_on_exported_layer(obj):
     return False
 
 def is_dupli_obj_visible_in_group(dgroup, dobj):
-
+    """
+    Blender version prior to 2.80 only
+    """
     for a, b in zip(dobj.layers, dgroup.layers):
         if a and b:
             return True
-
-    if bpy.app.version > (2,80,0):
-        return True
 
     return False
 
@@ -246,8 +247,56 @@ def find_armature(obj):
 
 def material_has_blend_backside(bl_mat):
     # >= (2,80,0) API
-    return (material_is_blend(bl_mat) and bl_mat.show_transparent_backside)
+    return (material_is_blend(bl_mat) and (
+        # NOTE: compatibility for some pre-beta Blender build
+        (hasattr(bl_mat, 'show_transparent_backside') and bl_mat.show_transparent_backside) or
+        (hasattr(bl_mat, 'show_transparent_back') and bl_mat.show_transparent_back)))
 
 def material_is_blend(bl_mat):
     # >= (2,80,0) API
     return bl_mat.blend_method in ['BLEND', 'MULTIPLY', 'ADD']
+
+def update_orbit_camera_view(cam_obj, scene):
+
+    target_obj = cam_obj.data.v3d.orbit_target_object
+
+    eye = cam_obj.matrix_world.to_translation()
+    target = (cam_obj.data.v3d.orbit_target if target_obj is None 
+            else target_obj.matrix_world.to_translation())
+
+    quat = get_lookat_aligned_up_matrix(eye, target).to_quaternion()
+    quat.rotate(cam_obj.matrix_world.inverted())
+    quat.rotate(cam_obj.matrix_basis)
+
+    rot_mode = cam_obj.rotation_mode
+    cam_obj.rotation_mode = 'QUATERNION'
+    cam_obj.rotation_quaternion = quat
+    cam_obj.rotation_mode = rot_mode
+
+    # need to update the camera state (i.e. world matrix) immediately in case of 
+    # several consecutive UI updates 
+    scene.update()
+
+def get_lookat_aligned_up_matrix(eye, target):
+
+    """
+    This method uses camera axes for building the matrix.
+    """
+
+    axis_z = (eye - target).normalized()
+
+    if axis_z.length == 0:
+        axis_z = mathutils.Vector((0, -1, 0))
+
+    axis_x = mathutils.Vector((0, 0, 1)).cross(axis_z)
+
+    if axis_x.length == 0:
+        axis_x = mathutils.Vector((1, 0, 0))
+
+    axis_y = axis_z.cross(axis_x)
+
+    return mathutils.Matrix([
+        axis_x,
+        axis_y,
+        axis_z,
+    ]).transposed()

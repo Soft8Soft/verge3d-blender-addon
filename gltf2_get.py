@@ -849,7 +849,6 @@ def create_default_material_internal():
                             "type" : "OUTPUT"
                         }, 
                         {
-                            "diffuseShader" : "LAMBERT", 
                             "inputs" : [
                                 [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1 ], 
                                 [ 1.0, 1.0, 1.0, 1 ], 
@@ -877,7 +876,6 @@ def create_default_material_internal():
                             ], 
                             "specularHardness" : 50, 
                             "specularIntensity" : 0.5, 
-                            "specularShader" : "COOKTORR", 
                             "type" : "MATERIAL_EXT", 
                             "useDiffuse" : True, 
                             "useShadeless" : False, 

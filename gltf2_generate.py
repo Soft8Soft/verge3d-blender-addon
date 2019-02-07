@@ -865,7 +865,7 @@ def generateAnimations(operator, context, export_settings, glTF):
 
     for bl_object in filtered_objects_with_dg:
 
-        if bl_object.type != 'LAMP' or bl_object.type != 'LIGHT' or bl_object.data is None:
+        if bl_object.type != 'LAMP' and bl_object.type != 'LIGHT' or bl_object.data is None:
             continue
         
         bl_light = bl_object.data
@@ -991,7 +991,7 @@ def generateCameras(operator, context, export_settings, glTF):
     
     activeCam = None
     for bl_camera in filtered_cameras:
-        camera = generateCamera(bl_camera) 
+        camera = generateCamera(bl_camera, glTF) 
         if camera:
             cameras.append(camera)
             if (bpy.app.version < (2,80,0) and bpy.context.screen.scene.camera and 
@@ -1015,7 +1015,7 @@ def generateCameras(operator, context, export_settings, glTF):
         createExtensionsUsed(operator, context, export_settings, glTF,
                 'S8S_v3d_camera_data')
 
-def generateCamera(bl_camera):
+def generateCamera(bl_camera, glTF):
     camera = {}
 
     # NOTE: should use a scene where the camera is located for proper calculation
@@ -1078,7 +1078,10 @@ def generateCamera(bl_camera):
 
     # optional orbit params
     if bl_camera.v3d.controls == 'ORBIT':
-        v3d_data['orbitTarget'] = extract_vec(convert_swizzle_location(bl_camera.v3d.orbit_target))
+        target_point = (bl_camera.v3d.orbit_target if bl_camera.v3d.orbit_target_object is None 
+                else bl_camera.v3d.orbit_target_object.matrix_world.to_translation())
+
+        v3d_data['orbitTarget'] = extract_vec(convert_swizzle_location(target_point))
         v3d_data['orbitMinDistance'] = bl_camera.v3d.orbit_min_distance
         v3d_data['orbitMaxDistance'] = bl_camera.v3d.orbit_max_distance
 
@@ -1092,6 +1095,9 @@ def generateCamera(bl_camera):
         if abs(2 * math.pi - (max_azim_angle - min_azim_angle)) > CAM_ANGLE_EPSILON:
             v3d_data['orbitMinAzimuthAngle'] = bl_camera.v3d.orbit_min_azimuth_angle
             v3d_data['orbitMaxAzimuthAngle'] = bl_camera.v3d.orbit_max_azimuth_angle
+
+    elif bl_camera.v3d.controls == 'FIRST_PERSON':
+        v3d_data['fpsGazeLevel'] = bl_camera.v3d.fps_gaze_level
 
     camera['extensions'] = { 'S8S_v3d_camera_data' : v3d_data }
 
@@ -1884,7 +1890,7 @@ def generateNodeInstance(operator, context, export_settings, glTF, bl_object):
     if (bpy.app.version >= (2,80,0) and bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'FONT'] and
             export_settings['gltf_use_shadows']):
         v3d_data['useShadows'] = bl_object.v3d.use_shadows
-        v3d_data['useCastShadows'] = bl_object.v3d.use_cast_shadows
+        v3d_data['useCastShadows'] = bl_object.display.show_shadows
 
     if bpy.app.version < (2,80,0) and len(bl_object.users_group):
         v3d_data['groupNames'] = []
@@ -2014,28 +2020,45 @@ def generateNodes(operator, context, export_settings, glTF):
     if get_camera_index(glTF, '__DEFAULT__') >= 0:
         nodes.append(generateCameraNodeFromView(glTF))
     
-    for bl_object in filtered_objects_shallow:
-        if bpy.app.version < (2,80,0):
-            if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
-                    
-                for blender_dupli_object in bl_object.dupli_group.objects:
+    for bl_obj in filtered_objects_shallow:
+        if bpy.app.version >= (2,80,0):
 
-                    if not is_dupli_obj_visible_in_group(bl_object.dupli_group, 
+            if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
+                    
+                for bl_instance_obj in bl_obj.instance_collection.objects:
+
+                    node = generateNodeInstance(operator, context, export_settings, glTF, bl_instance_obj)
+                    node['name'] = 'Instance_' + bl_obj.name + '_' + bl_instance_obj.name 
+                    nodes.append(node)
+                    proxy_nodes = generateProxyNodes(operator, context, glTF, node, bl_instance_obj)
+                    nodes.extend(proxy_nodes)
+                
+                node = {}
+                node['name'] = 'Instance_Offset_' + bl_obj.name
+                
+                translation = convert_swizzle_location(bl_obj.instance_collection.instance_offset)
+                node['translation'] = [-translation[0], -translation[1], -translation[2]]
+                nodes.append(node)
+
+        else:
+            if bl_obj.dupli_type == 'GROUP' and bl_obj.dupli_group != None:
+                    
+                for blender_dupli_object in bl_obj.dupli_group.objects:
+
+                    if not is_dupli_obj_visible_in_group(bl_obj.dupli_group, 
                             blender_dupli_object):
                         continue
 
                     node = generateNodeInstance(operator, context, export_settings, glTF, blender_dupli_object)
-                    node['name'] = 'Duplication_' + bl_object.name + '_' + blender_dupli_object.name 
+                    node['name'] = 'Duplication_' + bl_obj.name + '_' + blender_dupli_object.name 
                     nodes.append(node)
                     proxy_nodes = generateProxyNodes(operator, context, glTF, node, blender_dupli_object)
                     nodes.extend(proxy_nodes)
                 
-                #
-                
                 node = {}
-                node['name'] = 'Duplication_Offset_' + bl_object.name
+                node['name'] = 'Duplication_Offset_' + bl_obj.name
                 
-                translation = convert_swizzle_location(bl_object.dupli_group.dupli_offset)
+                translation = convert_swizzle_location(bl_obj.dupli_group.dupli_offset)
                 node['translation'] = [-translation[0], -translation[1], -translation[2]]
                 nodes.append(node)
             
@@ -2222,6 +2245,20 @@ def generateNodes(operator, context, export_settings, glTF):
         if v3d_data and export_settings['gltf_export_constraints'] and len(bl_object.constraints):
             v3d_data['constraints'] = extract_constraints(glTF, bl_object)
 
+        # first-person camera link to collision material
+
+        if (bl_object.type == 'CAMERA' and
+                bl_object.data and
+                bl_object.data.v3d.controls == 'FIRST_PERSON' and
+                bl_object.data.v3d.fps_collision_material):
+
+            v3d_cam_data = get_asset_extension(glTF['cameras'][node['camera']], 'S8S_v3d_camera_data')
+            if v3d_cam_data:
+                mat = get_material_index(glTF, bl_object.data.v3d.fps_collision_material.name)
+                if mat >= 0:
+                    v3d_cam_data['fpsCollisionMaterial'] = mat
+
+
         # Nodes
         for child_obj in bl_object.children:
 
@@ -2230,10 +2267,24 @@ def generateNodes(operator, context, export_settings, glTF):
 
             nodeAppendChildFromObj(glTF, node, child_obj)
 
-        if bpy.app.version < (2,80,0):
-            # Duplications
-            if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
+        # Instancing / Duplications
+        if bpy.app.version >= (2,80,0):
 
+            if bl_object.instance_type == 'COLLECTION' and bl_object.instance_collection != None:
+                child_index = get_node_index(glTF, 'Instance_Offset_' + bl_object.name)
+                if child_index >= 0:
+                    if not 'children' in node:
+                        node['children'] = []
+                    node['children'].append(child_index)
+
+                    instance_node = nodes[child_index]
+                    for bl_instance_obj in bl_object.instance_collection.objects:
+                        nodeAppendChildFromObj(glTF, instance_node, 
+                                bl_instance_obj, 'Instance_' + bl_object.name 
+                                + '_' + bl_instance_obj.name)
+
+        else:
+            if bl_object.dupli_type == 'GROUP' and bl_object.dupli_group != None:
                 child_index = get_node_index(glTF, 'Duplication_Offset_' + bl_object.name)
                 if child_index >= 0:
                     if not 'children' in node:
@@ -2921,7 +2972,7 @@ def generateMaterials(operator, context, export_settings, glTF):
                         material['doubleSided'] = True
                     if bl_mat.v3d.render_side != 'FRONT':
                         v3d_data['renderSide'] = bl_mat.v3d.render_side
-                    if bl_mat.v3d.depth_write == False:
+                    if bl_mat.blend_method != 'OPAQUE' and bl_mat.v3d.depth_write == False:
                         v3d_data['depthWrite'] = bl_mat.v3d.depth_write
 
             if bl_mat.v3d.dithering == True:

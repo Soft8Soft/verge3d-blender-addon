@@ -52,14 +52,15 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 9, 1),
-    "blender": (2, 79, 0),
+    "version": (2, 10, 0),
+    "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
 }
 
-if bpy.app.version > (2, 80, 0):
-    bl_info['blender'] = (2, 80, 0)
+# fixes blender 2.79 warning
+if bpy.app.version < (2, 80, 0):
+    bl_info['blender'] = (2, 79, 0)
 
 APP_MANAGER_HTTP_HOST="localhost:8668"
 

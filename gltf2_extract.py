@@ -1284,6 +1284,9 @@ def extract_node_graph(node_tree, export_settings, glTF):
             # rename for uniformity with GEOMETRY node
             node['colorLayer'] = bl_node.attribute_name
 
+        elif bl_node.type == 'BSDF_REFRACTION':
+            node['distribution'] = bl_node.distribution
+
         elif bl_node.type == 'BUMP':
             node['invert'] = bl_node.invert
         elif bl_node.type == 'CURVE_RGB':
@@ -1330,9 +1333,6 @@ def extract_node_graph(node_tree, export_settings, glTF):
 
             if mat:
                 node['materialName'] = mat.name
-
-                node['diffuseShader'] = mat.diffuse_shader
-                node['specularShader'] = mat.specular_shader
 
                 node['specularIntensity'] = mat.specular_intensity
                 node['specularHardness'] = mat.specular_hardness
@@ -1394,6 +1394,10 @@ def extract_node_graph(node_tree, export_settings, glTF):
 
         elif bl_node.type == 'TEX_VORONOI':
             node['coloring'] = bl_node.coloring
+
+        elif bl_node.type == 'TEX_WAVE':
+            node['waveType'] = bl_node.wave_type
+            node['waveProfile'] = bl_node.wave_profile
 
         elif bl_node.type == 'TEXTURE':
             # NOTE: using get_texture_index_by_texture() may result in wrong colorSpace if the texture is shared
@@ -1557,8 +1561,6 @@ def composeNodeGraph(bl_mat, export_settings, glTF):
             'useDiffuse': True, 
             'useSpecular': True,
             'invertNormal': False, 
-            'diffuseShader': bl_mat.diffuse_shader,
-            'specularShader': bl_mat.specular_shader,
             'specularHardness': bl_mat.specular_hardness,
             'specularIntensity': bl_mat.specular_intensity,
             'useShadeless': bl_mat.use_shadeless,
@@ -1680,11 +1682,16 @@ def composeNodeGraph(bl_mat, export_settings, glTF):
             'is_active_output': True
         })
 
+        # backwards compatibility with old blender 2.80 beta builds
+        diff_color = extract_vec(bl_mat.diffuse_color)
+        if len(diff_color) == 3:
+            diff_color += [1]
+
         appendNode(graph, {
             'name': 'Principled', 
             'type': 'BSDF_PRINCIPLED', 
             'inputs': [
-                extract_vec(bl_mat.diffuse_color) + [1],
+                diff_color,
                 0.0,
                 [1.0, 1.0, 1.0],
                 [0.0, 0.0, 0.0, 1.0],
@@ -1865,12 +1872,20 @@ def extract_constraints(glTF, bl_obj):
 
         elif bl_cons.type == 'CHILD_OF':
             if target >= 0:
-                constraints.append(dict(cons, **{ 
-                    'type': 'childOf', 
-                    'target': target,
-                    'offsetMatrix': extract_mat(convert_swizzle_matrix(
-                            bl_cons.inverse_matrix * bl_obj.matrix_basis))
-                }))
+                if bpy.app.version < (2, 80, 0):
+                    constraints.append(dict(cons, **{ 
+                        'type': 'childOf', 
+                        'target': target,
+                        'offsetMatrix': extract_mat(convert_swizzle_matrix(
+                                bl_cons.inverse_matrix * bl_obj.matrix_basis))
+                    }))
+                else:
+                    constraints.append(dict(cons, **{ 
+                        'type': 'childOf', 
+                        'target': target,
+                        'offsetMatrix': extract_mat(convert_swizzle_matrix(
+                                bl_cons.inverse_matrix @ bl_obj.matrix_basis))
+                    }))
 
         elif bl_cons.type == 'FLOOR':
             if target >= 0:

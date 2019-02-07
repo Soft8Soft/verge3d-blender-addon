@@ -13,7 +13,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import bpy, math
+import math
+
+import bpy
+
+from . import utils
 
 NO_ANIM_OPTS = set()
 
@@ -241,12 +245,8 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    use_cast_shadows = bpy.props.BoolProperty(
-        name = 'Cast Shadows',
-        description = 'Allow this object to cast shadows',
-        default = True,
-        options = NO_ANIM_OPTS
-    )
+def orbit_target_update(self, context):
+    utils.update_orbit_camera_view(context.object, context.scene)
 
 class V3DCameraSettings(bpy.types.PropertyGroup):
 
@@ -255,9 +255,10 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         description = 'Camera controls type',
         default = 'ORBIT',
         items = [
-            ('NONE', 'No controls', 'Disable camera controls'),
-            ('FLYING', 'Flying', 'Flying camera'),
-            ('ORBIT', 'Orbit', 'Move camera around a target')
+            ('NONE', 'No controls', 'Disable camera controls', 0),
+            ('FIRST_PERSON', 'First-Person', 'First-person control mode', 3),
+            ('FLYING', 'Flying', 'Flying camera', 1),
+            ('ORBIT', 'Orbit', 'Move camera around a target', 2)
         ],
         options = NO_ANIM_OPTS
     )
@@ -333,6 +334,14 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    orbit_target_object = bpy.props.PointerProperty(
+        type = bpy.types.Object,
+        name = 'Target Object',
+        description = "Object which center is used as the camera's target point",
+        options = NO_ANIM_OPTS,
+        update = orbit_target_update
+    )
+
     orbit_target = bpy.props.FloatVectorProperty(
         name = 'Target',
         description = 'Target point for orbit camera',
@@ -340,8 +349,24 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         precision = 3,
         subtype = 'XYZ',
         size = 3,
+        options = NO_ANIM_OPTS,
+        update = orbit_target_update
+    )
+
+    fps_collision_material = bpy.props.PointerProperty(
+        type = bpy.types.Material,
+        name = 'Collision Material',
+        description = 'First-person control collision material (floor and walls)',
         options = NO_ANIM_OPTS
     )
+
+    fps_gaze_level = bpy.props.FloatProperty(
+        name = 'Gaze Level',
+        description = 'First-person gaze (head) level',
+        default = 1.8,
+        options = NO_ANIM_OPTS
+    )
+
 
 class V3DShadowSettings(bpy.types.PropertyGroup):
     """Shadow settings are part of lamp settngs"""

@@ -46,25 +46,31 @@ def filter_apply(export_settings):
     filtered_objects_shallow = []
     filtered_objects_with_dg = []
 
-    for blender_object in bpy.data.objects:
+    for bl_obj in bpy.data.objects:
         
-        if blender_object.users == 0:
+        if bl_obj.users == 0:
             continue
 
-        if not is_on_exported_layer(blender_object):
+        if not is_on_exported_layer(bl_obj):
             continue
         
-        filtered_objects_shallow.append(blender_object)
+        filtered_objects_shallow.append(bl_obj)
 
-        # handle dupli groups
-        if blender_object not in filtered_objects_with_dg:
-            filtered_objects_with_dg.append(blender_object)
+        # handle instance collections / dupli groups
+        if bl_obj not in filtered_objects_with_dg:
+            filtered_objects_with_dg.append(bl_obj)
                     
-        if bpy.app.version < (2,80,0):
-            if blender_object.dupli_type == 'GROUP' and blender_object.dupli_group != None:
-                for blender_dupli_object in blender_object.dupli_group.objects:
+        if bpy.app.version >= (2,80,0):
+            if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
+                for bl_instance_obj in bl_obj.instance_collection.objects:
+                    if bl_instance_obj not in filtered_objects_with_dg:
+                        filtered_objects_with_dg.append(bl_instance_obj)
 
-                    if not is_dupli_obj_visible_in_group(blender_object.dupli_group, 
+        else:
+            if bl_obj.dupli_type == 'GROUP' and bl_obj.dupli_group != None:
+                for blender_dupli_object in bl_obj.dupli_group.objects:
+
+                    if not is_dupli_obj_visible_in_group(bl_obj.dupli_group, 
                             blender_dupli_object):
                         continue
 
@@ -391,9 +397,17 @@ def filter_apply(export_settings):
                         if accept:
                             filtered_textures.append(blender_texture_slot)
 
-    if bpy.app.version < (2,80,0):
-        for node_group in filtered_node_groups:
-            for bl_node in node_group.nodes:
+    for node_group in filtered_node_groups:
+        for bl_node in node_group.nodes:
+            if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and 
+                    get_tex_image(bl_node) is not None and 
+                    get_tex_image(bl_node).users != 0 and
+                    get_tex_image(bl_node).size[0] > 0 and
+                    get_tex_image(bl_node).size[1] > 0 and
+                    bl_node not in filtered_textures):
+                filtered_textures.append(bl_node)
+
+            if bpy.app.version < (2,80,0):
                 if (isinstance(bl_node, bpy.types.ShaderNodeTexture) and 
                         bl_node.texture is not None and 
                         get_tex_image(bl_node.texture) is not None and 

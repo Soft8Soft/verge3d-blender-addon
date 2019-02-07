@@ -184,21 +184,19 @@ class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d, 'anim_offset')
 
-        row = layout.row()
-        row.label(text='Rendering:')
-
-        row = layout.row()
-        row.prop(v3d, 'render_order')
-
-        row = layout.row()
-        row.prop(v3d, 'frustum_culling')
-
-        if bpy.app.version >= (2,80,0):
+        if context.object.type in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT']:
             row = layout.row()
-            row.prop(v3d, 'use_shadows')
+            row.label(text='Rendering:')
 
             row = layout.row()
-            row.prop(v3d, 'use_cast_shadows')
+            row.prop(v3d, 'render_order')
+
+            row = layout.row()
+            row.prop(v3d, 'frustum_culling')
+
+            if bpy.app.version >= (2,80,0):
+                row = layout.row()
+                row.prop(v3d, 'use_shadows')
 
 class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
@@ -217,18 +215,48 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d, 'controls')
 
+        if v3d.controls == 'FIRST_PERSON':
+            split = layout.split()
+            col = split.column()
+            col.label(text='Collision Material:')
+
+            col = split.column()
+            col.prop(v3d, 'fps_collision_material', text='')
+
+            row = layout.row()
+            row.prop(v3d, 'fps_gaze_level')
+
         row = layout.row()
+        row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'enable_pan')
         
         row = layout.row()
+        row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'rotate_speed')
 
         row = layout.row()
+        row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'move_speed')
         
         if v3d.controls == 'ORBIT':
-            col = layout.column()
-            col.prop(v3d, 'orbit_target')
+
+            box = layout.box()
+            box.label(text='Target Object/Point')
+
+            if bpy.app.version < (2,80,0):
+                split = box.split(0.5)
+            else:
+                split = box.split(factor=0.5)
+
+            column = split.column()
+            column.prop(v3d, 'orbit_target', text='Manual')
+            column.enabled = v3d.orbit_target_object is None
+
+            column = split.column()
+            column.label(text='From Object:')
+            column.prop(v3d, 'orbit_target_object', text='')
+
+            box.operator('v3d.orbit_camera_update_view', text='Update View')
 
             row = layout.row()
             row.prop(v3d, 'orbit_min_distance')
@@ -382,8 +410,13 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
             row = layout.row()
             row.prop(material.game_settings, 'use_backface_culling')
 
-
             if not super().checkRenderInternal(context):
+                row = layout.row()
+                row.prop(material, 'use_cast_shadows')
+
+                row = layout.row()
+                row.prop(material, 'use_shadows', text='Receive Shadows')
+
                 row = layout.row()
                 row.prop(material, "use_transparency")
 
@@ -394,6 +427,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
             row = layout.row()
             row.active = material.use_transparency
             row.prop(material.v3d, 'alpha_add')
+
         else:
             layout.use_property_split = True
 
@@ -409,7 +443,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
             row = layout.row()
             row.prop(material.v3d, 'depth_write')
-            row.active = not blend_back
+            row.active = not blend_back and not material.blend_method == 'OPAQUE'
 
         row = layout.row()
         row.prop(material.v3d, 'dithering')
@@ -466,6 +500,16 @@ def exec_browser(url):
         webbrowser.open(url)
     except BaseException:
         print("Failed to open URL: " + url)
+
+class V3D_OT_OrbitCameraUpdateView(bpy.types.Operator):
+    bl_idname = "v3d.orbit_camera_update_view"
+    bl_label = "Update View"
+    bl_description = "Update view for the orbit camera"
+    bl_options = {"INTERNAL"}
+
+    def execute(self, context):
+        utils.update_orbit_camera_view(context.object, context.scene)
+        return {"FINISHED"}
 
 class V3D_OT_AppManager(bpy.types.Operator):
     bl_idname = "v3d.app_manager"
@@ -589,6 +633,7 @@ def register():
     bpy.utils.register_class(V3D_PT_MeshSettings)
     bpy.utils.register_class(V3D_PT_NodeSettings)
 
+    bpy.utils.register_class(V3D_OT_OrbitCameraUpdateView)
     bpy.utils.register_class(V3D_OT_AppManager)
     bpy.utils.register_class(V3D_OT_SneakPeek)
     bpy.utils.register_class(V3D_OT_ReexportAll)
@@ -609,6 +654,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_OT_ReexportAll)
     bpy.utils.unregister_class(V3D_OT_SneakPeek)
     bpy.utils.unregister_class(V3D_OT_AppManager)
+    bpy.utils.unregister_class(V3D_OT_OrbitCameraUpdateView)
 
     bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
     bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)
