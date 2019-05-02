@@ -53,33 +53,33 @@ def get_material_requires_texcoords(glTF, index):
 
     if glTF.get('materials') is None:
         return False
-    
+
     materials = glTF['materials']
-    
+
     if index < 0 or index >= len(materials):
         return False
 
     material = materials[index]
-    
+
     # General
-    
+
     if material.get('emissiveTexture') is not None:
         return True
-    
+
     if material.get('normalTexture') is not None:
         return True
-    
+
     if material.get('occlusionTexture') is not None:
         return True
-    
+
     # Metallic roughness
-    
+
     if material.get('baseColorTexture') is not None:
         return True
-    
+
     if material.get('metallicRoughnessTexture') is not None:
         return True
-    
+
     # Common Material
 
     v3d_data = get_asset_extension(material, 'S8S_v3d_material_data')
@@ -146,7 +146,7 @@ def get_texture_index_by_image(export_settings, glTF, bl_image):
             current_image_uri = image_uri[texture['source']]
             if current_image_uri == uri:
                 return index
-        
+
         index += 1
 
     return -1
@@ -165,20 +165,20 @@ def get_texture_index(glTF, name):
     for texture in glTF['textures']:
         if texture['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
 
 def get_texture_index_by_texture(export_settings, glTF, bl_texture):
     """
-    Return the texture index in the glTF array by a given texture. Safer than 
-    "get_texture_index_by_image" and "get_texture_index" in case of different 
-    textures with the same image or linked textures with the same name but with 
+    Return the texture index in the glTF array by a given texture. Safer than
+    "get_texture_index_by_image" and "get_texture_index" in case of different
+    textures with the same image or linked textures with the same name but with
     different images.
     """
 
-    if (export_settings['gltf_uri_data'] is None or glTF.get('textures') is None 
+    if (export_settings['gltf_uri_data'] is None or glTF.get('textures') is None
             or bl_texture is None):
         return -1
 
@@ -196,7 +196,7 @@ def get_texture_index_by_texture(export_settings, glTF, bl_texture):
             current_image_uri = image_uri[texture['source']]
             if current_image_uri == uri and texture['name'] == tex_name:
                 return index
-        
+
         index += 1
 
     return -1
@@ -208,18 +208,18 @@ def get_texture_index_node(export_settings, glTF, name, shader_node_group):
 
     if shader_node_group is None:
         return -1
-    
+
     if not isinstance(shader_node_group, bpy.types.ShaderNodeGroup):
         return -1
 
     if shader_node_group.inputs.get(name) is None:
         return -1
-    
+
     if len(shader_node_group.inputs[name].links) == 0:
         return -1
-    
+
     from_node = shader_node_group.inputs[name].links[0].from_node
-    
+
     #
 
     if not isinstance(from_node, bpy.types.ShaderNodeTexImage):
@@ -238,25 +238,25 @@ def get_texcoord_index(glTF, name, shader_node_group):
 
     if shader_node_group is None:
         return 0
-    
+
     if not isinstance(shader_node_group, bpy.types.ShaderNodeGroup):
         return 0
 
     if shader_node_group.inputs.get(name) is None:
         return 0
-    
+
     if len(shader_node_group.inputs[name].links) == 0:
         return 0
-    
+
     from_node = shader_node_group.inputs[name].links[0].from_node
-    
+
     #
 
     if not isinstance(from_node, bpy.types.ShaderNodeTexImage):
         return 0
-    
+
     #
-    
+
     if len(from_node.inputs['Vector'].links) == 0:
         return 0
 
@@ -264,13 +264,13 @@ def get_texcoord_index(glTF, name, shader_node_group):
 
     if not isinstance(input_node, bpy.types.ShaderNodeUVMap):
         return 0
-    
+
     if input_node.uv_map == '':
         return 0
-    
+
     #
 
-    # Try to gather map index.   
+    # Try to gather map index.
     for blender_mesh in bpy.data.meshes:
         texCoordIndex = blender_mesh.uv_layers.find(input_node.uv_map)
         if texCoordIndex >= 0:
@@ -351,7 +351,7 @@ def get_material_type(bl_material):
     for bl_node in bl_material.node_tree.nodes:
         if type(bl_node) in get_cycles_node_types():
             return 'CYCLES'
-    
+
     return 'NODE'
 
 def get_material_index(glTF, name):
@@ -368,7 +368,7 @@ def get_material_index(glTF, name):
     for material in glTF['materials']:
         if material['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -386,7 +386,7 @@ def getMeshIndex(glTF, idname):
     for mesh in glTF['meshes']:
         if (isinstance(idname, int) and mesh.get('id') == idname) or mesh['name'] == idname:
             return index
-        
+
         index += 1
 
     return -1
@@ -399,14 +399,14 @@ def get_skin_index(glTF, name, index_offset):
 
     if glTF.get('skins') is None:
         return -1
-    
+
     skeleton = get_node_index(glTF, name)
 
     index = 0
     for skin in glTF['skins']:
         if skin['skeleton'] == skeleton:
             return index + index_offset
-        
+
         index += 1
 
     return -1
@@ -424,7 +424,7 @@ def get_camera_index(glTF, name):
     for camera in glTF['cameras']:
         if camera['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -448,7 +448,7 @@ def get_curve_index(glTF, name):
     for curve in curves:
         if curve['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -472,7 +472,7 @@ def get_light_index(glTF, name):
     for light in lights:
         if light['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -495,7 +495,7 @@ def get_node_graph_index(glTF, name):
     for graph in v3d_data['nodeGraphs']:
         if graph['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -512,7 +512,7 @@ def get_node_index(glTF, name):
     for node in glTF['nodes']:
         if node['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -530,7 +530,7 @@ def get_scene_index(glTF, name):
     for scene in glTF['scenes']:
         if scene['name'] == name:
             return index
-        
+
         index += 1
 
     return -1
@@ -546,7 +546,7 @@ def get_image_exported_uri(export_settings, bl_image):
 
     uri_ext = ''
     if (bl_image.file_format == 'JPEG'
-            or bl_image.file_format == 'BMP' 
+            or bl_image.file_format == 'BMP'
             or bl_image.file_format == 'HDR'
             or bl_image.file_format == 'PNG'):
         if ext != '':
@@ -559,7 +559,7 @@ def get_image_exported_uri(export_settings, bl_image):
     unique_uri = uri_name + uri_ext
     i = 0
     while unique_uri in uri_data['uri']:
-        
+
         index = uri_data['uri'].index(unique_uri)
         if uri_data['bl_datablocks'][index] == bl_image:
             break
@@ -616,10 +616,10 @@ def get_anim_param(data_path):
     """
 
     index = data_path.rfind('.')
-    
+
     if index == -1:
         return data_path
-    
+
     return data_path[(index + 1):]
 
 
@@ -633,7 +633,7 @@ def get_scalar(default_value, init_value = 0.0):
     if default_value is None:
         return return_value
 
-    return_value = default_value 
+    return_value = default_value
 
     return return_value
 
@@ -650,7 +650,7 @@ def get_vec2(default_value, init_value = [0.0, 0.0]):
 
     index = 0
     for number in default_value:
-        return_value[index] = number 
+        return_value[index] = number
 
         index += 1
         if index == 2:
@@ -671,7 +671,7 @@ def get_vec3(default_value, init_value = [0.0, 0.0, 0.0]):
 
     index = 0
     for number in default_value:
-        return_value[index] = number 
+        return_value[index] = number
 
         index += 1
         if index == 3:
@@ -692,7 +692,7 @@ def get_vec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
 
     index = 0
     for number in default_value:
-        return_value[index] = number 
+        return_value[index] = number
 
         index += 1
         if index == 4:
@@ -708,17 +708,17 @@ def get_index(list, name):
 
     if list is None or name is None:
         return -1
-    
+
     index = 0
     for element in list:
         if element.get('name') is None:
             continue
-    
+
         if element['name'] == name:
             return index
-        
+
         index += 1
-    
+
     return -1
 
 def get_by_name(list, name):
@@ -728,14 +728,14 @@ def get_by_name(list, name):
 
     if list is None or name is None:
         return None
-    
+
     for element in list:
         if element.get('name') is None:
             continue
-    
+
         if element['name'] == name:
             return element
-        
+
     return None
 
 
@@ -746,7 +746,7 @@ def get_asset_extension(glTF, extension):
 
     if glTF.get('extensions') == None:
         return None
-    
+
     return glTF['extensions'].get(extension)
 
 
@@ -825,67 +825,67 @@ def create_default_material_internal():
                 "nodeGraph" : {
                     "edges" : [
                         {
-                            "fromNode" : 1, 
-                            "fromOutput" : 0, 
-                            "toInput" : 0, 
+                            "fromNode" : 1,
+                            "fromOutput" : 0,
+                            "toInput" : 0,
                             "toNode" : 0
-                        }, 
+                        },
                         {
-                            "fromNode" : 1, 
-                            "fromOutput" : 1, 
-                            "toInput" : 1, 
+                            "fromNode" : 1,
+                            "fromOutput" : 1,
+                            "toInput" : 1,
                             "toNode" : 0
                         }
-                    ], 
+                    ],
                     "nodes" : [
                         {
                             "inputs" : [
-                                [ 1, 1, 1, 1 ], 
+                                [ 1, 1, 1, 1 ],
                                 1
-                            ], 
-                            "is_active_output" : True, 
-                            "name" : "Output", 
-                            "outputs" : [], 
+                            ],
+                            "is_active_output" : True,
+                            "name" : "Output",
+                            "outputs" : [],
                             "type" : "OUTPUT"
-                        }, 
+                        },
                         {
                             "inputs" : [
-                                [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1 ], 
-                                [ 1.0, 1.0, 1.0, 1 ], 
-                                0.800000011920929, 
-                                [ 0, 0, 0 ], 
-                                [ 0, 0, 0, 0 ], 
-                                1.0, 
-                                0.0, 
-                                1.0, 
-                                0, 
-                                1.0, 
+                                [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1 ],
+                                [ 1.0, 1.0, 1.0, 1 ],
+                                0.800000011920929,
+                                [ 0, 0, 0 ],
+                                [ 0, 0, 0, 0 ],
+                                1.0,
+                                0.0,
+                                1.0,
+                                0,
+                                1.0,
                                 0
-                            ], 
-                            "invertNormal" : False, 
-                            "is_active_output" : False, 
-                            "materialName" : "Material", 
-                            "name" : "Material", 
+                            ],
+                            "invertNormal" : False,
+                            "is_active_output" : False,
+                            "materialName" : "Material",
+                            "name" : "Material",
                             "outputs" : [
-                                [ 0, 0, 0, 0 ], 
-                                0, 
-                                [ 0, 0, 0 ], 
-                                [ 0, 0, 0, 0 ], 
-                                [ 0, 0, 0, 0 ], 
+                                [ 0, 0, 0, 0 ],
+                                0,
+                                [ 0, 0, 0 ],
+                                [ 0, 0, 0, 0 ],
+                                [ 0, 0, 0, 0 ],
                                 [ 0, 0, 0, 0 ]
-                            ], 
-                            "specularHardness" : 50, 
-                            "specularIntensity" : 0.5, 
-                            "type" : "MATERIAL_EXT", 
-                            "useDiffuse" : True, 
-                            "useShadeless" : False, 
+                            ],
+                            "specularHardness" : 50,
+                            "specularIntensity" : 0.5,
+                            "type" : "MATERIAL_EXT",
+                            "useDiffuse" : True,
+                            "useShadeless" : False,
                             "useSpecular" : True
                         }
                     ]
-                }, 
-                "useCastShadows" : False, 
+                },
+                "useCastShadows" : False,
                 "useShadows" : False
             }
-        }, 
+        },
         "name" : DEFAULT_MAT_NAME
     }

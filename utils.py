@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import bpy
+import numpy as np
 import mathutils
 
 ORTHO_EPS = 1e-5
@@ -27,7 +28,7 @@ prevActiveObject = None
 def integer_to_bl_suffix(val):
 
     suf = str(val)
-    
+
     for i in range(0, 3 - len(suf)):
         suf = '0' + suf
 
@@ -39,14 +40,14 @@ def get_world_first_valid_texture_slot(world):
         if (blender_texture_slot is not None and
                 blender_texture_slot.texture and
                 blender_texture_slot.texture.users != 0 and
-                (blender_texture_slot.texture.type == 'ENVIRONMENT_MAP' 
-                or blender_texture_slot.texture.type == 'IMAGE' 
+                (blender_texture_slot.texture.type == 'ENVIRONMENT_MAP'
+                or blender_texture_slot.texture.type == 'IMAGE'
                 and blender_texture_slot.texture_coords == 'EQUIRECT') and
                 get_tex_image(blender_texture_slot.texture) is not None and
                 get_tex_image(blender_texture_slot.texture).users != 0 and
                 get_tex_image(blender_texture_slot.texture).size[0] > 0 and
                 get_tex_image(blender_texture_slot.texture).size[1] > 0):
-            
+
             return blender_texture_slot
 
     return None
@@ -56,15 +57,15 @@ def isCyclesRender(context):
     return (context.scene.render.engine == 'CYCLES' or bpy.app.version >= (2,80,0))
 
 def getWorldCyclesEnvTexture(world):
-    
+
     if world.node_tree is not None and world.use_nodes:
         for bl_node in world.node_tree.nodes:
-            if (bl_node.type == 'TEX_ENVIRONMENT' and 
-                    get_tex_image(bl_node) is not None and 
-                    get_tex_image(bl_node).users != 0 and 
-                    get_tex_image(bl_node).size[0] > 0 and 
+            if (bl_node.type == 'TEX_ENVIRONMENT' and
+                    get_tex_image(bl_node) is not None and
+                    get_tex_image(bl_node).users != 0 and
+                    get_tex_image(bl_node).size[0] > 0 and
                     get_tex_image(bl_node).size[1] > 0):
-                
+
                 return bl_node
 
     return None
@@ -126,25 +127,30 @@ def setSelectedObject(bl_obj):
     """
     Select object for NLA baking
     """
+    global prevActiveObject
+
     if bpy.app.version < (2,80,0):
-        global prevActiveObject
         prevActiveObject = bpy.context.object
         bpy.context.scene.objects.active = bl_obj
     else:
         global selectedObject, selectedObjectsSave
-    
+
         selectedObject = bl_obj
         selectedObjectsSave = bpy.context.selected_objects.copy()
 
+        # NOTE: seems like we need both selection and setting active object
         for o in selectedObjectsSave:
             o.select_set(False)
+
+        prevActiveObject = bpy.context.view_layer.objects.active
+        bpy.context.view_layer.objects.active = bl_obj
 
         bl_obj.select_set(True)
 
 def restoreSelectedObjects():
+    global prevActiveObject
 
     if bpy.app.version < (2,80,0):
-        global prevActiveObject
         bpy.context.scene.objects.active = prevActiveObject
         prevActiveObject = None
     else:
@@ -154,6 +160,9 @@ def restoreSelectedObjects():
 
         for o in selectedObjectsSave:
             o.select_set(True)
+
+        bpy.context.view_layer.objects.active = prevActiveObject
+        prevActiveObject = None
 
         selectedObject = None
         selectedObjectsSave = []
@@ -202,10 +211,10 @@ def get_tex_image(bl_tex):
     return getattr(bl_tex, 'image', None)
 
 def get_texture_name(bl_texture):
-    if (isinstance(bl_texture, (bpy.types.ShaderNodeTexImage, 
+    if (isinstance(bl_texture, (bpy.types.ShaderNodeTexImage,
             bpy.types.ShaderNodeTexEnvironment))):
         tex_name = bl_texture.image.name
-    elif (isinstance(bl_texture, (bpy.types.ShaderNodeTexture, 
+    elif (isinstance(bl_texture, (bpy.types.ShaderNodeTexture,
             bpy.types.MaterialTextureSlot, bpy.types.WorldTextureSlot))):
         tex_name = bl_texture.texture.name
     else:
@@ -213,16 +222,10 @@ def get_texture_name(bl_texture):
 
     return tex_name
 
+def mat4_is_identity(mat4):
+    return mat4 == mathutils.Matrix.Identity(4)
 
-def get_obj_matrix_parent_inverse_status(obj):
-
-    is_identity = obj.matrix_parent_inverse == mathutils.Matrix.Identity(4)
-    is_decomposable = mat4_is_decomposable(obj.matrix_parent_inverse)
-
-    return is_identity, is_decomposable
-
-def mat4_is_decomposable(mat4):
-
+def mat4_is_trs_decomposable(mat4):
     # don't use mathutils.Matrix.is_orthogonal_axis_vectors property, because it
     # doesn't normalize vectors before checking
 
@@ -231,9 +234,34 @@ def mat4_is_decomposable(mat4):
     v1 = mat[1].normalized()
     v2 = mat[2].normalized()
 
-    return (abs(v0.dot(v1)) < ORTHO_EPS 
-            and abs(v0.dot(v2)) < ORTHO_EPS 
+    return (abs(v0.dot(v1)) < ORTHO_EPS
+            and abs(v0.dot(v2)) < ORTHO_EPS
             and abs(v1.dot(v2)) < ORTHO_EPS)
+
+def mat4_svd_decompose_to_mats(mat4):
+    """
+    Decompose the given matrix into a couple of TRS-decomposable matrices or
+    Returns None in case of an error.
+    """
+
+    try:
+        u, s, vh = np.linalg.svd(mat4.to_3x3())
+        mat_u = mathutils.Matrix(u)
+        mat_s = mathutils.Matrix([[s[0], 0, 0], [0, s[1], 0], [0, 0, s[2]]])
+        mat_vh = mathutils.Matrix(vh)
+
+        # NOTE: a potential reflection part in U and VH matrices isn't considered
+        mat_trans = mathutils.Matrix.Translation(mat4.to_translation())
+        if bpy.app.version < (2,80,0):
+            mat_left = mat_trans * (mat_u * mat_s).to_4x4()
+        else:
+            mat_left = mat_trans @ (mat_u @ mat_s).to_4x4()
+
+        return (mat_left, mat_vh.to_4x4())
+
+    except np.linalg.LinAlgError:
+        # numpy failed to decompose the matrix
+        return None
 
 def find_armature(obj):
 
@@ -261,7 +289,7 @@ def update_orbit_camera_view(cam_obj, scene):
     target_obj = cam_obj.data.v3d.orbit_target_object
 
     eye = cam_obj.matrix_world.to_translation()
-    target = (cam_obj.data.v3d.orbit_target if target_obj is None 
+    target = (cam_obj.data.v3d.orbit_target if target_obj is None
             else target_obj.matrix_world.to_translation())
 
     quat = get_lookat_aligned_up_matrix(eye, target).to_quaternion()
@@ -273,8 +301,8 @@ def update_orbit_camera_view(cam_obj, scene):
     cam_obj.rotation_quaternion = quat
     cam_obj.rotation_mode = rot_mode
 
-    # need to update the camera state (i.e. world matrix) immediately in case of 
-    # several consecutive UI updates 
+    # need to update the camera state (i.e. world matrix) immediately in case of
+    # several consecutive UI updates
     scene.update()
 
 def get_lookat_aligned_up_matrix(eye, target):
@@ -300,3 +328,10 @@ def get_lookat_aligned_up_matrix(eye, target):
         axis_y,
         axis_z,
     ]).transposed()
+
+def obj_data_uses_line_rendering(bl_obj_data):
+    line_settings = getattr(getattr(bl_obj_data, 'v3d', None), 'line_rendering_settings', None)
+    return bool(line_settings and line_settings.enable)
+
+def getObjectAllCollections(blObj):
+    return [coll for coll in bpy.data.collections if blObj in coll.all_objects[:]]

@@ -31,3 +31,12 @@ class NodeMaterialWrapper():
             super().__setattr__(attr, value)
         else:
             setattr(self._material, attr, value)
+
+    def __getitem__(self, key):
+        return self._material[key]
+
+    def __setitem__(self, key, value):
+        if key == 'node_tree':
+            super()[key] = value
+        else:
+            self._material[key] = value

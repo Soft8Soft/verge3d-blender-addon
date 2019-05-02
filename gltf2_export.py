@@ -41,19 +41,19 @@ def prepare(export_settings):
     """
     if bpy.context.active_object is not None and bpy.context.active_object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
-    
+
     filter_apply(export_settings)
-    
-    export_settings['gltf_original_frame'] = bpy.context.scene.frame_current 
-    
+
+    export_settings['gltf_original_frame'] = bpy.context.scene.frame_current
+
     export_settings['gltf_use_no_color'] = []
-    
+
     export_settings['gltf_joint_cache'] = {}
-    
+
     if export_settings['gltf_animations']:
         bpy.context.scene.frame_set(0)
 
-    
+
 def finish(export_settings):
     """
     Brings back Blender into its original state before export and cleans up temporary objects.
@@ -65,8 +65,8 @@ def finish(export_settings):
     if export_settings['temporary_materials'] is not None:
         for temporary_mat in export_settings['temporary_materials']:
             bpy.data.materials.remove(temporary_mat)
-            
-    bpy.context.scene.frame_set(export_settings['gltf_original_frame'])  
+
+    bpy.context.scene.frame_set(export_settings['gltf_original_frame'])
 
 def compressLZMA(path, settings):
 
@@ -82,7 +82,7 @@ def compressLZMA(path, settings):
     printLog('INFO', 'Compressing file: ' + path)
 
     import http.client
-    
+
     with open(path, 'rb') as fin:
         conn = http.client.HTTPConnection(settings['gltf_app_manager_host'])
         headers = {'Content-type': 'application/octet-stream'}
@@ -104,11 +104,11 @@ def save(operator, context, export_settings):
     printLog('INFO', 'Starting glTF 2.0 export')
     bpy.context.window_manager.progress_begin(0, 100)
     bpy.context.window_manager.progress_update(0)
-    
+
     #
-    
+
     prepare(export_settings)
-    
+
     #
 
     glTF = {}
@@ -123,10 +123,10 @@ def save(operator, context, export_settings):
     if export_settings['gltf_format'] == 'ASCII' and not export_settings['gltf_strip']:
         indent = 4
         separators = separators=(', ', ' : ')
-    
-    glTF_encoded = json.dumps(glTF, indent=indent, separators=separators, 
+
+    glTF_encoded = json.dumps(glTF, indent=indent, separators=separators,
             sort_keys=True, ensure_ascii=False)
-    
+
     #
 
     if export_settings['gltf_format'] == 'ASCII':
@@ -134,7 +134,7 @@ def save(operator, context, export_settings):
         file.write(glTF_encoded)
         file.write("\n")
         file.close()
-        
+
         binary = export_settings['gltf_binary']
         if len(binary) > 0 and not export_settings['gltf_embed_buffers']:
             file = open(export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename'], "wb")
@@ -143,7 +143,7 @@ def save(operator, context, export_settings):
 
         compressLZMA(export_settings['gltf_filepath'], export_settings)
         compressLZMA(export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename'], export_settings)
-        
+
     else:
         file = open(export_settings['gltf_filepath'], "wb")
 
@@ -161,14 +161,14 @@ def save(operator, context, export_settings):
         length = 12 + 8 + length_gtlf
         if length_bin > 0:
             length += 8 + length_bin
-        
+
         # Header (Version 2)
         file.write('glTF'.encode())
         file.write(struct.pack("I", 2))
         file.write(struct.pack("I", length))
-        
+
         # Chunk 0 (JSON)
-        file.write(struct.pack("I", length_gtlf)) 
+        file.write(struct.pack("I", length_gtlf))
         file.write('JSON'.encode())
         file.write(glTF_data)
         for i in range(0, spaces_gltf):
@@ -176,20 +176,20 @@ def save(operator, context, export_settings):
 
         # Chunk 1 (BIN)
         if length_bin > 0:
-            file.write(struct.pack("I", length_bin)) 
+            file.write(struct.pack("I", length_bin))
             file.write('BIN\0'.encode())
             file.write(binary)
             for i in range(0, zeros_bin):
                 file.write('\0'.encode())
-            
+
         file.close()
 
         compressLZMA(export_settings['gltf_filepath'], export_settings)
-        
+
     #
-    
+
     finish(export_settings)
-    
+
     #
 
     printLog('INFO', 'Finished glTF 2.0 export')

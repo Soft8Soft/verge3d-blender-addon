@@ -42,10 +42,52 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    export_custom_props = bpy.props.BoolProperty(
+        name = 'Export Custom Properties',
+        description = 'Export object custom properties',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    export_animations = bpy.props.BoolProperty(
+        name = 'Export Animations',
+        description = 'Export animations',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    export_frame_range = bpy.props.BoolProperty(
+        name = 'Export Within Playback Range',
+        description = 'Export within playback range',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    export_move_keyframes = bpy.props.BoolProperty(
+        name = 'Keyframes Start With 0',
+        description = 'Keyframes start with 0',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
     lzma_enabled = bpy.props.BoolProperty(
         name = 'Enable LZMA Compression',
         description = 'Enable LZMA Compression',
         default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    aa_method = bpy.props.EnumProperty(
+        name='Anti-aliasing',
+        description = 'Preferred anti-aliasing method',
+        default = 'AUTO',
+        items = [
+            ('AUTO', 'Auto', 'Use system default method'),
+            ('MSAA4', 'MSAA 4x', 'Prefer 4x MSAA on supported hardware'),
+            ('MSAA8', 'MSAA 8x', 'Prefer 8x MSAA on supported hardware'),
+            ('MSAA16', 'MSAA 16x', 'Prefer 16x MSAA on supported hardware'),
+            ('FXAA', 'FXAA', 'Prefer FXAA'),
+        ],
         options = NO_ANIM_OPTS
     )
 
@@ -98,6 +140,12 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         name = 'Bake Text',
         description = 'Export Font objects as meshes',
         default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    # mandatory indices for UIList Exported Collections
+    collections_exported_idx = bpy.props.IntProperty(
+        default = 0,
         options = NO_ANIM_OPTS
     )
 
@@ -164,7 +212,7 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
         soft_max = 1,
         options = NO_ANIM_OPTS
     )
-    
+
 
 class V3DSceneSettings(bpy.types.PropertyGroup):
     outline = bpy.props.PointerProperty(
@@ -224,8 +272,8 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
 
     render_order = bpy.props.IntProperty(
         name = 'Rendering Order',
-        description = ('The rendering-order index. The smaller the index, the ' 
-                + 'earlier the object will be rendered. Useful for sorting' 
+        description = ('The rendering-order index. The smaller the index, the '
+                + 'earlier the object will be rendered. Useful for sorting'
                 + ' transparent objects.'),
         default = 0,
         options = NO_ANIM_OPTS
@@ -367,6 +415,13 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    fps_story_height = bpy.props.FloatProperty(
+        name = 'Story Height',
+        description = 'First-person story height, specify proper value for multi-story buildings',
+        default = 3,
+        options = NO_ANIM_OPTS
+    )
+
 
 class V3DShadowSettings(bpy.types.PropertyGroup):
     """Shadow settings are part of lamp settngs"""
@@ -444,7 +499,7 @@ def alpha_add_update(self, context):
         return
 
     mat = context.material
-    
+
     if mat.v3d.alpha_add == True:
         mat.game_settings.alpha_blend = 'ADD'
     else:
@@ -502,8 +557,31 @@ class V3DTextureSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
+    falloff_factor = bpy.props.FloatProperty(
+        name = 'Falloff Factor',
+        description = 'How much the noise falls off with distance and for acute angles',
+        min = 0,
+        max = 1,
+        default = 0,
+        precision = 2,
+        step = 0.01,
+        options = NO_ANIM_OPTS
+    )
+
+    dispersion_factor = bpy.props.FloatProperty(
+        name = 'Strength Factor',
+        description = 'Noise Strength Factor',
+        min = 0,
+        max = 1,
+        default = 1,
+        precision = 2,
+        step = 0.01,
+        options = NO_ANIM_OPTS
+    )
+
 class V3DLineRenderingSettings(bpy.types.PropertyGroup):
-    
+
     enable = bpy.props.BoolProperty(
         name = 'Enable Line Rendering',
         description = 'Render the object as constant-width lines',
@@ -544,7 +622,19 @@ class V3DMeshSettings(bpy.types.PropertyGroup):
         type = V3DLineRenderingSettings
     )
 
+class V3DCollectionSettings(bpy.types.PropertyGroup):
+
+    enable_export = bpy.props.BoolProperty(
+        name = 'Enable Collection Export',
+        description = 'Allow export of the collection\'s objects',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
 def register():
+    if bpy.app.version >= (2,80,0):
+        bpy.utils.register_class(V3DCollectionSettings)
+
     bpy.utils.register_class(V3DExportSettings)
     bpy.utils.register_class(V3DWorldSettings)
     bpy.utils.register_class(V3DOutlineSettings)
@@ -555,6 +645,7 @@ def register():
     bpy.utils.register_class(V3DLightSettings)
     bpy.utils.register_class(V3DMaterialSettings)
     bpy.utils.register_class(V3DTextureSettings)
+    bpy.utils.register_class(V3DTextureNoiseSettings)
     bpy.utils.register_class(V3DLineRenderingSettings)
     bpy.utils.register_class(V3DCurveSettings)
     bpy.utils.register_class(V3DMeshSettings)
@@ -605,6 +696,11 @@ def register():
         type = V3DTextureSettings
     )
 
+    bpy.types.ShaderNodeTexNoise.v3d = bpy.props.PointerProperty(
+        name = "Verge3D noise texture settings",
+        type = V3DTextureNoiseSettings
+    )
+
     bpy.types.Curve.v3d = bpy.props.PointerProperty(
         name = "Verge3D curve settings",
         type = V3DCurveSettings
@@ -615,9 +711,16 @@ def register():
         type = V3DMeshSettings
     )
 
+    if bpy.app.version >= (2,80,0):
+        bpy.types.Collection.v3d = bpy.props.PointerProperty(
+            name = "Verge3D collection settings",
+            type = V3DCollectionSettings
+        )
+
 
 def unregister():
     bpy.utils.unregister_class(V3DTextureSettings)
+    bpy.utils.unregister_class(V3DTextureNoiseSettings)
     bpy.utils.unregister_class(V3DMaterialSettings)
     bpy.utils.unregister_class(V3DLightSettings)
     bpy.utils.unregister_class(V3DLineRenderingSettings)
@@ -631,6 +734,9 @@ def unregister():
     bpy.utils.unregister_class(V3DWorldSettings)
     bpy.utils.unregister_class(V3DExportSettings)
 
+    if bpy.app.version >= (2,80,0):
+        bpy.utils.unregister_class(V3DCollectionSettings)
+
     del bpy.types.Material.v3d
     if bpy.app.version < (2,80,0):
         del bpy.types.Lamp.v3d
@@ -643,3 +749,5 @@ def unregister():
     del bpy.types.Scene.v3d_export
     del bpy.types.Scene.v3d
     del bpy.types.World.v3d
+    if bpy.app.version >= (2,80,0):
+        del bpy.types.Collection.v3d

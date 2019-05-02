@@ -39,7 +39,7 @@ class V3DPanel():
     def poll(cls, context):
 
         if (hasattr(context, cls.poll_datablock) and
-                getattr(context, cls.poll_datablock) and 
+                getattr(context, cls.poll_datablock) and
                 context.scene.render.engine in cls.COMPAT_ENGINES):
             return True
         else:
@@ -64,25 +64,48 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
 
         # global export settings
 
-        v3d_export = context.scene.v3d_export
+        v3d_export = bpy.data.scenes[0].v3d_export
 
         row = layout.row()
         row.prop(v3d_export, 'copyright')
 
-        row = layout.row()
-        row.prop(v3d_export, 'export_constraints')
-    
-        row = layout.row()
-        row.prop(v3d_export, 'bake_modifiers')
+        if bpy.app.version >= (2,80,0):
+            col = layout.column()
+            col.label(text='Export Collections:')
+            col.template_list("COLLECTION_UL_export", "", bpy.data,
+                    "collections", context.scene.v3d_export, "collections_exported_idx", rows=4)
+
+        box = layout.box()
+        box.label(text='Animation:')
+        row = box.row()
+        row.prop(v3d_export, 'export_animations')
+        row = box.row()
+        row.prop(v3d_export, 'export_frame_range')
+        row = box.row()
+        row.prop(v3d_export, 'export_move_keyframes')
+        row = box.row()
+        row.prop(v3d_export, 'bake_armature_actions')
 
         row = layout.row()
-        row.prop(v3d_export, 'bake_armature_actions')
+        row.prop(v3d_export, 'export_constraints')
+
+        row = layout.row()
+        row.prop(v3d_export, 'export_custom_props')
+
+        row = layout.row()
+        row.prop(v3d_export, 'bake_modifiers')
 
         row = layout.row()
         row.prop(v3d_export, 'bake_text')
 
         row = layout.row()
         row.prop(v3d_export, 'lzma_enabled')
+
+        split = layout.split()
+        col = split.column()
+        col.label(text='Anti-Aliasing:')
+        col = split.column()
+        col.prop(v3d_export, 'aa_method', text='')
 
         row = layout.row()
         row.prop(v3d_export, 'use_hdr')
@@ -129,6 +152,38 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.active = outlineActive
         row.prop(outline, 'hidden_edge_color')
+
+class COLLECTION_UL_export(bpy.types.UIList):
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_property, index, flt_flag):
+        col = layout.column()
+        col.prop(item, 'name', text='', emboss=False)
+        col = layout.column()
+        col.prop(item.v3d, 'enable_export', text='')
+
+    def filter_items(self, context, data, property):
+
+        coll_list = getattr(data, property)
+        filter_name = self.filter_name.lower()
+
+        flt_flags = [self.bitflag_filter_item
+            if filter_name in item.name.lower()
+            else 0 for i, item in enumerate(coll_list, 1)
+        ]
+
+        if self.use_filter_sort_alpha:
+            flt_neworder = [x[1] for x in sorted(
+                    zip(
+                        [x[0] for x in sorted(enumerate(coll_list), key=lambda x: x[1].name)],
+                        range(len(coll_list))
+                    )
+                )
+            ]
+        else:
+            flt_neworder = []
+
+        return flt_flags, flt_neworder
+
 
 class V3D_PT_RenderLayerSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
@@ -226,10 +281,13 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
             row = layout.row()
             row.prop(v3d, 'fps_gaze_level')
 
+            row = layout.row()
+            row.prop(v3d, 'fps_story_height')
+
         row = layout.row()
         row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'enable_pan')
-        
+
         row = layout.row()
         row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'rotate_speed')
@@ -237,7 +295,7 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'move_speed')
-        
+
         if v3d.controls == 'ORBIT':
 
             box = layout.box()
@@ -328,7 +386,7 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
                 row = layout.row()
                 row.label(text='Not available for this light type')
         else:
-            layout.active = light.use_shadow if type != 'HEMI' else False 
+            layout.active = light.use_shadow if type != 'HEMI' else False
 
             if type == 'SUN' or type == 'AREA':
                 row = layout.row()
@@ -436,7 +494,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
             if blend_back:
                 row = layout.row()
                 row.label(text='Overridden by the "Options->Show Backside" option.', icon='INFO')
-            
+
             row = layout.row()
             row.prop(material.v3d, 'render_side')
             row.active = not blend_back
@@ -477,18 +535,34 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         node = context.active_node
-        return node is not None and isinstance(node, bpy.types.ShaderNodeTexImage)
+        return node is not None and (
+                isinstance(node, bpy.types.ShaderNodeTexImage)
+                or isinstance(node, bpy.types.ShaderNodeTexNoise)
+        )
 
     def draw(self, context):
         layout = self.layout
 
         node = context.active_node
 
-        row = layout.row()
-        row.label(text='Anisotropic Filtering:')
+        if isinstance(node, bpy.types.ShaderNodeTexImage):
 
-        row = layout.row()
-        row.prop(node.v3d, 'anisotropy', text='Ratio')
+            row = layout.row()
+            row.label(text='Anisotropic Filtering:')
+
+            row = layout.row()
+            row.prop(node.v3d, 'anisotropy', text='Ratio')
+
+        elif isinstance(node, bpy.types.ShaderNodeTexNoise):
+
+            row = layout.row()
+            row.label(text='Noise Parameters:')
+
+            row = layout.row()
+            row.prop(node.v3d, 'falloff_factor')
+
+            row = layout.row()
+            row.prop(node.v3d, 'dispersion_factor')
 
 
 def exec_browser(url):
@@ -638,6 +712,9 @@ def register():
     bpy.utils.register_class(V3D_OT_SneakPeek)
     bpy.utils.register_class(V3D_OT_ReexportAll)
 
+    if bpy.app.version >= (2,80,0):
+        bpy.utils.register_class(COLLECTION_UL_export)
+
 def unregister():
 
     bpy.utils.unregister_class(V3D_PT_NodeSettings)
@@ -655,6 +732,9 @@ def unregister():
     bpy.utils.unregister_class(V3D_OT_SneakPeek)
     bpy.utils.unregister_class(V3D_OT_AppManager)
     bpy.utils.unregister_class(V3D_OT_OrbitCameraUpdateView)
+
+    if bpy.app.version >= (2,80,0):
+        bpy.utils.unregister_class(COLLECTION_UL_export)
 
     bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
     bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)
