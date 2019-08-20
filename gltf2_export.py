@@ -66,11 +66,19 @@ def finish(export_settings):
         for temporary_mat in export_settings['temporary_materials']:
             bpy.data.materials.remove(temporary_mat)
 
+    # HACK: fix user count for materials, which can be 0 in case of copying objects
+    # for bpy.data.meshes.new_from_object operation
+    for obj in bpy.data.objects:
+        if obj.data is not None and hasattr(obj.data, 'materials'):
+            mats = obj.data.materials
+            for i in range(len(mats)):
+                mats[i] = mats[i]
+
     bpy.context.scene.frame_set(export_settings['gltf_original_frame'])
 
 def compressLZMA(path, settings):
 
-    if settings['gltf_format'] == 'FB' or settings['gltf_sneak_peek']:
+    if settings['gltf_sneak_peek']:
         return
 
     if not settings['gltf_lzma_enabled']:

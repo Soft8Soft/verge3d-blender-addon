@@ -113,9 +113,10 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'use_shadows')
 
-        row = layout.row()
-        row.active = v3d_export.use_shadows
-        row.prop(v3d_export, 'shadow_map_type')
+        if bpy.app.version < (2,80,0):
+            row = layout.row()
+            row.active = v3d_export.use_shadows
+            row.prop(v3d_export, 'shadow_map_type')
 
         row = layout.row()
         row.active = v3d_export.use_shadows
@@ -385,12 +386,11 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
             else:
                 row = layout.row()
                 row.label(text='Not available for this light type')
-        else:
-            layout.active = light.use_shadow if type != 'HEMI' else False
 
-            if type == 'SUN' or type == 'AREA':
+        else:
+            if type == 'SUN':
                 row = layout.row()
-                row.prop(shadow, 'camera_size', text='Shadow Size')
+                row.prop(shadow, 'camera_size', text='Shadow Size (fallback)')
 
 
 class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):

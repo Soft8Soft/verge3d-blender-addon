@@ -52,7 +52,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 12, 0),
+    "version": (2, 14, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -94,7 +94,8 @@ class ExportGLTF2_Base():
         export_settings['gltf_format'] = self.export_format
         export_settings['gltf_copyright'] = v3d_export.copyright
         export_settings['gltf_use_shadows'] = v3d_export.use_shadows
-        export_settings['gltf_shadow_map_type'] = v3d_export.shadow_map_type
+        if bpy.app.version < (2,80,0):
+            export_settings['gltf_shadow_map_type'] = v3d_export.shadow_map_type
         export_settings['gltf_shadow_map_side'] = v3d_export.shadow_map_side
         export_settings['gltf_bake_modifiers'] = v3d_export.bake_modifiers
         export_settings['gltf_bake_armature_actions'] = v3d_export.bake_armature_actions
@@ -167,24 +168,11 @@ class V3D_OT_ExportGLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
 
     export_format = 'BINARY'
 
-class V3D_OT_ExportFB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
-    '''Export scene to glTF 2.0 binary format compatible with Facebook'''
-    bl_idname = 'export_scene.v3d_fb'
-    bl_label = 'Export Verge3D Facebook GLB'
-
-    filename_ext = '.glb'
-    filter_glob = StringProperty(default='*.glb', options={'HIDDEN'})
-
-    export_format = 'FB'
-
 def menu_func_export_v3d_gltf(self, context):
     self.layout.operator(V3D_OT_ExportGLTF.bl_idname, text='Verge3D glTF (.gltf)')
 
 def menu_func_export_v3d_glb(self, context):
     self.layout.operator(V3D_OT_ExportGLB.bl_idname, text='Verge3D glTF Binary (.glb)')
-
-def menu_func_export_v3d_fb(self, context):
-    self.layout.operator(V3D_OT_ExportFB.bl_idname, text='Facebook GLB (.glb)')
 
 def get_root():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -218,7 +206,6 @@ def register():
 
     bpy.utils.register_class(V3D_OT_ExportGLTF)
     bpy.utils.register_class(V3D_OT_ExportGLB)
-    bpy.utils.register_class(V3D_OT_ExportFB)
 
     custom_props.register()
     custom_ui.register()
@@ -226,11 +213,9 @@ def register():
     if bpy.app.version < (2,80,0):
         bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_gltf)
         bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_glb)
-        bpy.types.INFO_MT_file_export.append(menu_func_export_v3d_fb)
     else:
         bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_gltf)
         bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_glb)
-        bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_fb)
 
     if bpy.app.version < (2,80,0):
         bpy.app.handlers.load_post.append(apply_v3d_render_engine_fix)
@@ -244,7 +229,6 @@ def unregister():
 
     bpy.utils.unregister_class(V3D_OT_ExportGLTF)
     bpy.utils.unregister_class(V3D_OT_ExportGLB)
-    bpy.utils.unregister_class(V3D_OT_ExportFB)
 
     custom_props.unregister()
     custom_ui.unregister()
@@ -252,11 +236,9 @@ def unregister():
     if bpy.app.version < (2,80,0):
         bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_gltf)
         bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_glb)
-        bpy.types.INFO_MT_file_export.remove(menu_func_export_v3d_fb)
     else:
         bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_gltf)
         bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_glb)
-        bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_fb)
 
 @persistent
 def apply_v3d_render_engine_fix(dummy):

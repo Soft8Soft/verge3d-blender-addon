@@ -811,8 +811,8 @@ def create_default_material_cycles():
                         }
                     ]
                 },
-                "useCastShadows" : False,
-                "useShadows" : False
+                "useCastShadows" : True,
+                "useShadows" : True
             }
         },
         "name" : DEFAULT_MAT_NAME
@@ -883,8 +883,8 @@ def create_default_material_internal():
                         }
                     ]
                 },
-                "useCastShadows" : False,
-                "useShadows" : False
+                "useCastShadows" : True,
+                "useShadows" : True
             }
         },
         "name" : DEFAULT_MAT_NAME

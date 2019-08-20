@@ -13,6 +13,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import math
+
 import bpy
 import numpy as np
 import mathutils
@@ -106,11 +108,7 @@ def getLightCyclesStrength(bl_light):
         else:
             return 1
     else:
-        # point and spot light have 100 as default strength
-        if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
-            return 100 * bl_light.energy
-        else:
-            return bl_light.energy
+        return bl_light.energy
 
 
 def getLightCyclesColor(bl_light):
@@ -303,7 +301,11 @@ def update_orbit_camera_view(cam_obj, scene):
 
     # need to update the camera state (i.e. world matrix) immediately in case of
     # several consecutive UI updates
-    scene.update()
+
+    if bpy.app.version < (2,80,0):
+        scene.update()
+    else:
+        bpy.context.view_layer.update()
 
 def get_lookat_aligned_up_matrix(eye, target):
 
@@ -335,3 +337,80 @@ def obj_data_uses_line_rendering(bl_obj_data):
 
 def getObjectAllCollections(blObj):
     return [coll for coll in bpy.data.collections if blObj in coll.all_objects[:]]
+
+def getBlurPixelRadius(context, blLight):
+
+    if blLight.type == 'SUN':
+        relativeRadius = (blLight.shadow_buffer_soft / 100
+                * int(context.scene.eevee.shadow_cascade_size))
+        # blur strength doesn't increase after a certain point
+        return min(max(relativeRadius, 0), 100)
+    else:
+        blurGrade = math.floor(blLight.shadow_buffer_soft
+                * int(context.scene.eevee.shadow_cube_size) / 1000)
+        blurGrade = min(blurGrade, 9)
+
+        # some approximation of Blender blur radius
+        if blurGrade > 2:
+            return 4.22 * (blurGrade - 1.5)
+        else:
+            return blurGrade
+
+def transfer_shape_keys(obj_from, obj_to, depsgraph):
+    '''
+    obj_from should be in the current view layer to be evaluated by depsgraph
+    obj_to should not have shape keys
+    obj_from (after evaluating) and obj_to should have the same amount of vertices
+
+    Returns a boolean flag indicating successful transfer.
+    '''
+
+    if obj_from.data.shape_keys is None:
+        return True
+
+    key_blocks_from = obj_from.data.shape_keys.key_blocks
+    keys_from = [key for key in key_blocks_from if key != key.relative_key
+            and key != obj_from.data.shape_keys.reference_key]
+
+    key_names = [key.name for key in keys_from]
+    key_values = [key.value for key in keys_from]
+
+    key_positions = []
+    for key in keys_from:
+        key.value = 0
+
+    same_vertex_count = True
+    for key in keys_from:
+
+        key.value = 1
+        obj_from.update_tag()
+        bpy.context.view_layer.update()
+
+        verts = obj_from.evaluated_get(depsgraph).data.vertices
+        if len(verts) != len(obj_to.data.vertices):
+            same_vertex_count = False
+            break
+
+        key_pos = [0] * 3 * len(verts)
+        verts.foreach_get('co', key_pos)
+        key_positions.append(key_pos)
+        key.value = 0
+
+    if same_vertex_count:
+        # basis shape key
+        obj_to.shape_key_add(name=obj_from.data.shape_keys.reference_key.name)
+
+        vert_co = [0] * 3 * len(obj_to.data.vertices)
+        for i in range(len(key_names)):
+
+            key_block = obj_to.shape_key_add(name=key_names[i])
+            key_block.value = key_values[i]
+            key_block.data.foreach_set('co', key_positions[i])
+    else:
+        # don't create nothing if vertex count isn't constant
+        pass
+
+    for i in range(len(keys_from)):
+        keys_from[i].value = key_values[i]
+
+    return same_vertex_count

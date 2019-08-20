@@ -101,7 +101,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     use_shadows = bpy.props.BoolProperty(
         name = 'Enable Shadows',
         description = 'Enable shadows, use lamp settings to confiure shadow params',
-        default = False,
+        default = True,
         options = NO_ANIM_OPTS
     )
 

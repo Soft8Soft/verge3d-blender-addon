@@ -1020,7 +1020,7 @@ def generateCamera(bl_camera, glTF):
     vf = bl_camera.view_frame(scene=bpy.context.scene)
     aspectRatio = (vf[0].x - vf[2].x) / (vf[0].y - vf[2].y)
 
-    if bl_camera.type == 'PERSP':
+    if bl_camera.type == 'PERSP' or bl_camera.type == 'PANO':
         camera['type'] = 'perspective'
 
         perspective = {}
@@ -1210,9 +1210,16 @@ def generateLights(operator, context, export_settings, glTF):
 
             cameraFar = bl_light.v3d.shadow.camera_far
 
+            orthoSize = bl_light.v3d.shadow.camera_size
+
             light['shadow'] = {
                 'mapSize': int(bl_light.v3d.shadow.map_size),
-                'cameraSize': bl_light.v3d.shadow.camera_size,
+
+                'cameraOrthoLeft': -orthoSize / 2,
+                'cameraOrthoRight': orthoSize / 2,
+                'cameraOrthoBottom': -orthoSize / 2,
+                'cameraOrthoTop': orthoSize / 2,
+
                 'cameraFov': bl_light.v3d.shadow.camera_fov,
                 'cameraNear': cameraNear,
                 'cameraFar': cameraFar,
@@ -1228,23 +1235,33 @@ def generateLights(operator, context, export_settings, glTF):
                 cameraNear = SPOT_SHADOW_MIN_NEAR
             cameraFar = bl_light.shadow_buffer_clip_end
 
-            if bl_light.type == 'SPOT':
-                cameraFov = bl_light.spot_size
-            else :
-                cameraFov = bl_light.v3d.shadow.camera_fov
+            orthoSize = bl_light.v3d.shadow.camera_size
 
+            eeveeCtx = context.scene.eevee
             light['shadow'] = {
-                'mapSize': int(context.scene.eevee.shadow_cascade_size),
-                'cameraSize': bl_light.v3d.shadow.camera_size,
-                'cameraFov': cameraFov,
+                'mapSize': int(eeveeCtx.shadow_cascade_size
+                        if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
+
+                # used as a shadow size for PCF fallback
+                'cameraOrthoLeft': -orthoSize / 2,
+                'cameraOrthoRight': orthoSize / 2,
+                'cameraOrthoBottom': -orthoSize / 2,
+                'cameraOrthoTop': orthoSize / 2,
+
+                'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
                 'cameraNear': cameraNear,
                 'cameraFar': cameraFar,
-                'radius': bl_light.shadow_buffer_soft,
+                'radius': getBlurPixelRadius(context, bl_light),
                 # NOTE: negate bias since the negative is more appropriate in most cases
                 # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.shadow_buffer_bias * 0.0015
+                'bias': -bl_light.shadow_buffer_bias,
+                'expBias': bl_light.shadow_buffer_exp
             }
 
+            if bl_light.type == 'SUN':
+                light['shadow']['csm'] = {
+                    'maxDistance': bl_light.shadow_cascade_max_distance
+                }
 
         if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
 
@@ -1720,14 +1737,20 @@ def generateMeshes(operator, context, export_settings, glTF):
             if blender_mesh.shape_keys is not None:
                 morph_max = len(blender_mesh.shape_keys.key_blocks) - 1
                 if morph_max > 0:
+
                     weights = []
+                    targetNames = []
 
                     for blender_shape_key in blender_mesh.shape_keys.key_blocks:
                         if blender_shape_key != blender_shape_key.relative_key:
                             weights.append(blender_shape_key.value)
+                            targetNames.append(blender_shape_key.name)
 
                     mesh['weights'] = weights
 
+                    if 'extras' not in mesh:
+                        mesh['extras'] = {}
+                    mesh['extras']['targetNames'] = targetNames
 
         #
 
@@ -1737,7 +1760,7 @@ def generateMeshes(operator, context, export_settings, glTF):
             if props is not None:
                 if 'extras' not in mesh:
                     mesh['extras'] = {}
-                mesh['extras']['custom_props'] = props
+                mesh['extras']['customProps'] = props
 
         #
 
@@ -1890,7 +1913,6 @@ def generateNodeInstance(operator, context, export_settings, glTF, bl_object):
     if (bpy.app.version >= (2,80,0) and bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'FONT'] and
             export_settings['gltf_use_shadows']):
         v3d_data['useShadows'] = bl_object.v3d.use_shadows
-        v3d_data['useCastShadows'] = bl_object.display.show_shadows
 
     if bpy.app.version < (2,80,0) and len(bl_object.users_group):
         v3d_data['groupNames'] = []
@@ -1911,7 +1933,7 @@ def generateNodeInstance(operator, context, export_settings, glTF, bl_object):
         if props is not None:
             if 'extras' not in node:
                 node['extras'] = {}
-            node['extras']['custom_props'] = props
+            node['extras']['customProps'] = props
 
     node['name'] = bl_object.name
 
@@ -2977,9 +2999,13 @@ def generateMaterials(operator, context, export_settings, glTF):
             v3d_data['blendMode'] = blend_mode
 
         # receive
-        if bpy.app.version < (2,80,0) and export_settings['gltf_use_shadows']:
-            v3d_data['useShadows'] = bl_mat.use_shadows
-            v3d_data['useCastShadows'] = bl_mat.use_cast_shadows
+        if export_settings['gltf_use_shadows']:
+            if bpy.app.version < (2,80,0):
+                v3d_data['useShadows'] = bl_mat.use_shadows
+                v3d_data['useCastShadows'] = bl_mat.use_cast_shadows
+            else:
+                # useShadows is assigned on objects not materials
+                v3d_data['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
 
         if export_settings['gltf_custom_props']:
             props = create_custom_property(bl_mat)
@@ -2987,7 +3013,7 @@ def generateMaterials(operator, context, export_settings, glTF):
             if props is not None:
                 if 'extras' not in material:
                     material['extras'] = {}
-                material['extras']['custom_props'] = props
+                material['extras']['customProps'] = props
 
         materials.append(material)
 
@@ -3047,7 +3073,7 @@ def generateScenes(operator, context, export_settings, glTF):
 
         v3d_data['light'] = light
 
-        if bl_scene.world and export_settings['gltf_format'] != 'FB':
+        if bl_scene.world:
             world_mat = get_material_index(glTF, WORLD_NODE_MAT_NAME.substitute(
                     name=bl_scene.world.name))
             if world_mat >= 0:
@@ -3058,7 +3084,7 @@ def generateScenes(operator, context, export_settings, glTF):
 
         if export_settings['gltf_use_shadows']:
             v3d_data['shadowMap'] = {
-                'type' : export_settings['gltf_shadow_map_type'],
+                'type' : export_settings['gltf_shadow_map_type'] if bpy.app.version < (2,80,0) else 'ESM',
                 'renderReverseSided' : True if export_settings['gltf_shadow_map_side'] == 'BACK' else False,
                 'renderSingleSided' : False if export_settings['gltf_shadow_map_side'] == 'BOTH' else True
             }
@@ -3070,72 +3096,20 @@ def generateScenes(operator, context, export_settings, glTF):
 
         outline = bl_scene.v3d.outline
 
-        if bpy.app.version < (2,80,0):
-            fx_settings = getView3DSpaceProp('fx_settings')
-        else:
-            fx_settings = bl_scene.eevee
-
-        use_dof = fx_settings.use_dof if fx_settings and bl_scene.camera else False
-        use_ssao = False
-        if fx_settings:
-            if bpy.app.version < (2,80,0) and fx_settings.use_ssao:
-                use_ssao = True
-            elif bpy.app.version >= (2,80,0) and fx_settings.use_gtao:
-                use_ssao = True
-
-        #use_bloom = False if bpy.app.version <= (2,80,0) else fx_settings.use_bloom
-
-        # NOTE: disable all postprocessing except outline
-        use_bloom = False
-        use_dof = False
-        use_ssao = False
-
-        if outline.enabled or use_dof or use_ssao or use_bloom:
+        if outline.enabled:
             v3d_data['postprocessing'] = []
 
-            if outline.enabled:
-                effect = {
-                    'type': 'outline',
-                    'edgeStrength': outline.edge_strength,
-                    'edgeGlow': outline.edge_glow,
-                    'edgeThickness': outline.edge_thickness,
-                    'pulsePeriod': outline.pulse_period,
-                    'visibleEdgeColor': extract_vec(outline.visible_edge_color),
-                    'hiddenEdgeColor': extract_vec(outline.hidden_edge_color)
-                }
+            effect = {
+                'type': 'outline',
+                'edgeStrength': outline.edge_strength,
+                'edgeGlow': outline.edge_glow,
+                'edgeThickness': outline.edge_thickness,
+                'pulsePeriod': outline.pulse_period,
+                'visibleEdgeColor': extract_vec(outline.visible_edge_color),
+                'hiddenEdgeColor': extract_vec(outline.hidden_edge_color)
+            }
 
-                v3d_data['postprocessing'].append(effect)
-
-            if use_ssao:
-                effect = {
-                    'type': 'ssao'
-                }
-
-                v3d_data['postprocessing'].append(effect)
-
-            if use_dof:
-                camera = bl_scene.camera.data
-                if camera.dof_object:
-                    focus = (camera.dof_object.location - bl_scene.camera.location).length
-                else:
-                    focus = camera.dof_distance
-
-                effect = {
-                    'type': 'dof',
-                    'focus': focus
-                }
-
-                v3d_data['postprocessing'].append(effect)
-
-            if use_bloom:
-                effect = {
-                    'type': 'bloom',
-                    'threshold': fx_settings.bloom_threshold,
-                    'radius': fx_settings.bloom_radius,
-                    'strength': fx_settings.bloom_intensity
-                }
-
-                v3d_data['postprocessing'].append(effect)
+            v3d_data['postprocessing'].append(effect)
 
         scene['extras']['animFrameRate'] = bl_scene.render.fps
 
@@ -3143,7 +3117,7 @@ def generateScenes(operator, context, export_settings, glTF):
             props = create_custom_property(bl_scene.world)
 
             if props is not None:
-                scene['extras']['custom_props'] = props
+                scene['extras']['customProps'] = props
 
 
         scene['name'] = bl_scene.name

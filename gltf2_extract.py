@@ -404,7 +404,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
     printLog('INFO', 'Extracting primitive')
 
-    if blender_mesh.has_custom_normals:
+    if blender_mesh.has_custom_normals or blender_mesh.use_auto_smooth:
         blender_mesh.calc_normals_split()
 
     use_tangents = False
@@ -499,6 +499,29 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         for blender_shape_key in blender_mesh.shape_keys.key_blocks:
             if blender_shape_key != blender_shape_key.relative_key:
                 blender_shape_keys.append(blender_shape_key)
+
+    # lazy normals calculation to optimize shape keys processing
+    _shape_key_normals = {}
+    def get_shape_key_normals(key, normal_type):
+        if _shape_key_normals.get(key.name) is None:
+            _shape_key_normals[key.name] = {
+                'vertex': None,
+                'polygon': None,
+                'split': None,
+            }
+
+        if _shape_key_normals[key.name].get(normal_type) is None:
+            if normal_type == 'polygon':
+                normals = key.normals_polygon_get()
+            elif normal_type == 'split':
+                normals = key.normals_split_get()
+            else:
+                normals = key.normals_vertex_get()
+
+            _shape_key_normals[key.name][normal_type] = normals
+
+        return _shape_key_normals[key.name][normal_type]
+
 
     #
     # Convert polygon to primitive indices and eliminate invalid ones. Assign to material.
@@ -608,7 +631,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             v = convert_swizzle_location(vertex.co)
             if blender_polygon.use_smooth:
 
-                if blender_mesh.has_custom_normals:
+                if blender_mesh.has_custom_normals or blender_mesh.use_auto_smooth:
                     n = convert_swizzle_location(blender_mesh.loops[loop_index].normal)
                 else:
                     n = convert_swizzle_location(vertex.normal)
@@ -718,12 +741,21 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
                     n_morph = None
 
-                    if blender_polygon.use_smooth:
-                        temp_normals = blender_shape_key.normals_vertex_get()
-                        n_morph = (temp_normals[vertex_index * 3 + 0], temp_normals[vertex_index * 3 + 1], temp_normals[vertex_index * 3 + 2])
+                    if blender_mesh.use_auto_smooth:
+                        temp_normals = get_shape_key_normals(blender_shape_key, 'split')
+                        n_morph = (temp_normals[loop_index * 3 + 0],
+                                temp_normals[loop_index * 3 + 1],
+                                temp_normals[loop_index * 3 + 2])
+                    elif blender_polygon.use_smooth:
+                        temp_normals = get_shape_key_normals(blender_shape_key, 'vertex')
+                        n_morph = (temp_normals[vertex_index * 3 + 0],
+                                temp_normals[vertex_index * 3 + 1],
+                                temp_normals[vertex_index * 3 + 2])
                     else:
-                        temp_normals = blender_shape_key.normals_polygon_get()
-                        n_morph = (temp_normals[blender_polygon.index * 3 + 0], temp_normals[blender_polygon.index * 3 + 1], temp_normals[blender_polygon.index * 3 + 2])
+                        temp_normals = get_shape_key_normals(blender_shape_key, 'polygon')
+                        n_morph = (temp_normals[blender_polygon.index * 3 + 0],
+                                temp_normals[blender_polygon.index * 3 + 1],
+                                temp_normals[blender_polygon.index * 3 + 2])
 
                     n_morph = convert_swizzle_location(n_morph)
 
@@ -1346,6 +1378,8 @@ def extract_node_graph(node_tree, export_settings, glTF):
             else:
                 node['texture'] = index
 
+            node['projection'] = bl_node.projection;
+
         elif bl_node.type == 'TEX_IMAGE':
             index = get_texture_index(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
 
@@ -1353,6 +1387,8 @@ def extract_node_graph(node_tree, export_settings, glTF):
                 node['type'] = 'TEX_IMAGE_NONE'
             else:
                 node['texture'] = index
+
+            node['projection'] = bl_node.projection;
 
         elif bl_node.type == 'TEX_GRADIENT':
             node['gradientType'] = bl_node.gradient_type
@@ -1509,7 +1545,7 @@ def extract_color_ramp(color_ramp):
     curve = {
         'input' : [],
         'output' : [],
-        'interpolation' : 'LINEAR'
+        'interpolation' : ('STEP' if color_ramp.interpolation == 'CONSTANT' else 'LINEAR')
     }
 
     for e in color_ramp.elements:
@@ -2050,10 +2086,14 @@ def extractColorSpace(bl_tex):
     if (isinstance(bl_tex, (bpy.types.ShaderNodeTexImage,
             bpy.types.ShaderNodeTexEnvironment))):
 
-        if bl_tex.color_space == 'COLOR':
-            colorSpace = 'srgb'
+        # COMPAT: < (2,80,64)
+        if hasattr(bl_tex, 'color_space'):
+            if bl_tex.color_space == 'COLOR':
+                colorSpace = 'srgb'
+            else:
+                colorSpace = 'non-color'
         else:
-            colorSpace = 'non-color'
+            colorSpace = get_tex_image(bl_tex).colorspace_settings.name.lower()
     else:
         # possible c/s values:
         # 'Filmic Log', 'Linear', 'Linear ACES', 'Non-Color', 'Raw', 'sRGB', 'VD16', 'XYZ'

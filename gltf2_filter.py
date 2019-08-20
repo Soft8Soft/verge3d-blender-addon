@@ -127,13 +127,6 @@ def filter_apply(export_settings):
 
                 skip = False
 
-                use_auto_smooth = current_blender_mesh.use_auto_smooth
-                if use_auto_smooth and current_blender_mesh.shape_keys is not None:
-                    use_auto_smooth = False
-
-                    printLog('WARNING', 'Auto smooth and shape keys cannot'
-                            + ' be exported in parallel. Falling back to non auto smooth.')
-
                 need_triangulation = False
                 if current_blender_mesh.uv_layers.active and len(current_blender_mesh.uv_layers) > 0:
                     for poly in current_blender_mesh.polygons:
@@ -147,7 +140,7 @@ def filter_apply(export_settings):
                     if mod.show_render:
                         got_modifiers = True
 
-                if (got_modifiers and export_settings['gltf_bake_modifiers']) or use_auto_smooth or need_triangulation:
+                if (got_modifiers and export_settings['gltf_bake_modifiers']) or need_triangulation:
 
                     copy_obj = current_blender_object.copy()
 
@@ -157,30 +150,60 @@ def filter_apply(export_settings):
                         if mod.type == 'ARMATURE':
                             copy_obj.modifiers.remove(mod)
 
-                    if use_auto_smooth and not export_settings['gltf_bake_modifiers']:
-                        copy_obj.modifiers.clear()
-
-                    if use_auto_smooth:
-                        blender_modifier = copy_obj.modifiers.new('Temporary_Auto_Smooth', 'EDGE_SPLIT')
-
-                        blender_modifier.split_angle = current_blender_mesh.auto_smooth_angle
-                        blender_modifier.use_edge_angle = current_blender_mesh.has_custom_normals == False
+                    # if there originally were non-armature modifiers disable
+                    # shape key export and just bake them
+                    bake_shape_keys = len(copy_obj.modifiers) > 0
 
                     if need_triangulation:
                         blender_modifier = copy_obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
-                        # seems to produce smoother results
-                        blender_modifier.ngon_method = 'CLIP'
 
                     if bpy.app.version < (2,80,0):
                         current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW', calc_tessface=True)
+
+                        # NOTE: don't care about potentially missing shape keys
+                        # for outdated Blender versions
                     else:
                         # NOTE: link copy_obj and update the view layer to make
                         # the depsgraph able to apply modifiers to the object
-                        dg = bpy.context.depsgraph
+                        dg = bpy.context.evaluated_depsgraph_get()
                         dg.scene.collection.objects.link(copy_obj)
                         copy_obj.update_tag()
                         bpy.context.view_layer.update()
-                        current_blender_mesh = copy_obj.to_mesh(dg, apply_modifiers=True)
+
+                        if not bake_shape_keys:
+                            copy_obj_sk = copy_obj.data.shape_keys
+
+                            # make all shape key values zero, because they affect
+                            # evaluated_get() and here we need just the base mesh
+                            if copy_obj_sk is not None:
+                                weights = [0] * len(copy_obj_sk.key_blocks)
+                                copy_obj_sk.key_blocks.foreach_get('value', weights)
+                                copy_obj_sk.key_blocks.foreach_set('value',
+                                        [0] * len(copy_obj_sk.key_blocks))
+                                copy_obj.update_tag()
+                                bpy.context.view_layer.update()
+
+                        copy_obj_eval = copy_obj.evaluated_get(dg)
+                        current_blender_mesh = bpy.data.meshes.new_from_object(
+                                copy_obj_eval, preserve_all_data_layers=True, depsgraph=dg)
+
+                        if not bake_shape_keys:
+                            # need to restore shape keys, because evaluated_get() and
+                            # new_from_object() are destructive operations
+                            if copy_obj_sk is not None:
+                                copy_obj_sk.key_blocks.foreach_set('value', weights)
+
+                                # need an object to create shape keys, can not do it
+                                # on the mesh itself
+                                tmp_obj = bpy.data.objects.new(name='tmp',
+                                        object_data=current_blender_mesh)
+                                success = transfer_shape_keys(copy_obj, tmp_obj, dg)
+                                bpy.data.objects.remove(tmp_obj)
+
+                                if not success:
+                                    printLog('WARNING', 'Could not generate shape keys because they change vertex count. Object "'
+                                            + current_blender_object.name + '".')
+
                         dg.scene.collection.objects.unlink(copy_obj)
 
                     if current_blender_mesh is not None:
@@ -200,7 +223,6 @@ def filter_apply(export_settings):
         filtered_vertex_groups[getPtr(blender_mesh)] = current_blender_object.vertex_groups
 
     # CURVES (as well as surfaces and texts)
-
     filtered_curves = []
 
     for bl_curve in bpy.data.curves:
@@ -239,7 +261,17 @@ def filter_apply(export_settings):
                     if bpy.app.version < (2,80,0):
                         current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW')
                     else:
-                        current_blender_mesh = copy_obj.to_mesh(bpy.context.depsgraph, True)
+                        dg = bpy.context.evaluated_depsgraph_get()
+
+                        dg.scene.collection.objects.link(copy_obj)
+                        copy_obj.update_tag()
+                        bpy.context.view_layer.update()
+
+                        copy_obj_eval = copy_obj.evaluated_get(dg)
+                        current_blender_mesh = bpy.data.meshes.new_from_object(copy_obj_eval)
+
+                        dg.scene.collection.objects.unlink(copy_obj)
+
                     if current_blender_mesh is not None:
                         current_blender_mesh.name = bl_curve.name
                         current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
@@ -294,7 +326,7 @@ def filter_apply(export_settings):
                     filtered_materials.append(mat)
 
     curr_world = bpy.context.scene.world
-    if export_settings['gltf_format'] != 'FB' and curr_world is not None:
+    if curr_world is not None:
 
         world_mat = bpy.data.materials.new(WORLD_NODE_MAT_NAME.substitute(
                 name=curr_world.name))
