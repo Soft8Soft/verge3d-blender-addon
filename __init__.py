@@ -52,7 +52,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 14, 0),
+    "version": (2, 15, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -103,6 +103,7 @@ class ExportGLTF2_Base():
         export_settings['gltf_export_constraints'] = v3d_export.export_constraints
         export_settings['gltf_custom_props'] = v3d_export.export_custom_props
         export_settings['gltf_lzma_enabled'] = v3d_export.lzma_enabled
+        export_settings['gltf_optimize_attrs'] = v3d_export.optimize_attrs
         export_settings['gltf_aa_method'] = v3d_export.aa_method
         export_settings['gltf_use_hdr'] = v3d_export.use_hdr
         export_settings['gltf_animations'] = v3d_export.export_animations
@@ -128,7 +129,7 @@ class ExportGLTF2_Base():
 
         export_settings['gltf_embed_buffers'] = False
         export_settings['gltf_embed_images'] = False
-        export_settings['gltf_strip'] = False
+        export_settings['gltf_strip'] = True
 
         # valid values are: 'UNSIGNED_INT', 'UNSIGNED_SHORT', 'UNSIGNED_BYTE'
         export_settings['gltf_indices'] = 'UNSIGNED_INT'

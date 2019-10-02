@@ -77,6 +77,13 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    optimize_attrs = bpy.props.BoolProperty(
+        name = 'Optimize Mesh Attributes',
+        description = 'Remove unused geometry attributes (such as tangents) from exported meshes',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
     aa_method = bpy.props.EnumProperty(
         name='Anti-aliasing',
         description = 'Preferred anti-aliasing method',

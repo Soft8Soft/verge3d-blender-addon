@@ -1202,6 +1202,10 @@ def generateLights(operator, context, export_settings, glTF):
         if not export_settings['gltf_use_shadows']:
             useShadows = False
 
+        # HACK: temporary disable shadows for Blender 2.81
+        if bpy.app.version >= (2,81,0):
+            useShadows = False
+
         if useShadows and bpy.app.version < (2,80,0):
             cameraNear = bl_light.v3d.shadow.camera_near
             # usability improvement
@@ -2605,7 +2609,8 @@ def generateTextures(operator, context, export_settings, glTF):
             if blender_texture.interpolation == 'Closest':
                 magFilter = WEBGL_FILTERS['NEAREST']
             wrap = WEBGL_WRAPPINGS['REPEAT']
-            if blender_texture.extension == 'CLIP':
+
+            if blender_texture.extension == 'CLIP' or blender_texture.extension == 'EXTEND':
                 wrap = WEBGL_WRAPPINGS['CLAMP_TO_EDGE']
 
             uri = get_image_exported_uri(export_settings, get_tex_image(blender_texture))
@@ -3110,6 +3115,11 @@ def generateScenes(operator, context, export_settings, glTF):
             }
 
             v3d_data['postprocessing'].append(effect)
+
+        if bl_scene.view_settings.view_transform == 'Filmic':
+            v3d_data['toneMapping'] = {
+                'type': 'filmicBlender'
+            }
 
         scene['extras']['animFrameRate'] = bl_scene.render.fps
 

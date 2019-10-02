@@ -384,13 +384,50 @@ def extract_primitive_pack(a, indices, use_tangents):
     return result_primitive
 
 
-def check_use_node_attrs(bl_mat):
+def checkUseNodeAttrs(bl_mat):
     mat_type = get_material_type(bl_mat)
 
     if mat_type == 'NODE' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bpy.app.version < (2,80,0) and bl_mat.use_shadeless):
         return True
     else:
         return False
+
+def checkNodeNeedsTangents(bl_node):
+    if (isinstance(bl_node, bpy.types.ShaderNodeNormalMap) or
+        isinstance(bl_node, bpy.types.ShaderNodeTangent)):
+        return True
+
+    if isinstance(bl_node, bpy.types.ShaderNodeNewGeometry):
+        for bl_output in bl_node.outputs:
+            if bl_output.identifier == 'Tangent' and bl_output.is_linked:
+                return True
+
+    return False
+
+
+def checkUseTangents(bl_mesh, export_settings):
+
+    optimizeAttrs = export_settings['gltf_optimize_attrs']
+
+    if bl_mesh.uv_layers.active and len(bl_mesh.uv_layers) > 0:
+
+        if not optimizeAttrs:
+            return True
+
+        for bl_material in bl_mesh.materials:
+            if bl_material and bl_material.use_nodes and bl_material.node_tree != None:
+                for bl_node in bl_material.node_tree.nodes:
+                    if checkNodeNeedsTangents(bl_node):
+                        return True
+
+        # do not optimize for older Blender versions
+        if bpy.app.version < (2,80,0):
+            return True
+
+    if optimizeAttrs:
+        printLog('DEBUG', 'Do not export tangent attributes')
+
+    return False
 
 def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         blender_joint_indices, export_settings):
@@ -402,18 +439,19 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
     need_skin_attributes = export_settings['gltf_skins'] and len(blender_joint_indices) > 0
 
-    printLog('INFO', 'Extracting primitive')
+    printLog('INFO', 'Extracting {} primitives'.format(blender_mesh.name))
 
     if blender_mesh.has_custom_normals or blender_mesh.use_auto_smooth:
         blender_mesh.calc_normals_split()
 
     use_tangents = False
-    if blender_mesh.uv_layers.active and len(blender_mesh.uv_layers) > 0:
+    if checkUseTangents(blender_mesh, export_settings):
         try:
             blender_mesh.calc_tangents()
             use_tangents = True
         except:
             printLog('WARNING', 'Could not calculate tangents. Please try to triangulate the mesh first.')
+
 
     #
     # Gathering position, normal and texcoords.
@@ -443,7 +481,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         else:
             material_primitives.append({
                 'material' : bl_material.name,
-                'useNodeAttrs' : check_use_node_attrs(bl_material),
+                'useNodeAttrs' : checkUseNodeAttrs(bl_material),
                 'indices' : [],
                 'attributes' : copy.deepcopy(primitive_attributes)
             })
@@ -1313,15 +1351,16 @@ def extract_node_graph(node_tree, export_settings, glTF):
             # reproducing ShaderNodeMapping
             # https://docs.blender.org/api/current/bpy.types.ShaderNodeMapping.html
 
-            node['rotation'] = extract_vec(bl_node.rotation)
-            node['scale'] = extract_vec(bl_node.scale)
-            node['translation'] = extract_vec(bl_node.translation)
+            if bpy.app.version < (2,81,0):
+                node['rotation'] = extract_vec(bl_node.rotation)
+                node['scale'] = extract_vec(bl_node.scale)
+                node['translation'] = extract_vec(bl_node.translation)
 
-            node['max'] = extract_vec(bl_node.max)
-            node['min'] = extract_vec(bl_node.min)
+                node['max'] = extract_vec(bl_node.max)
+                node['min'] = extract_vec(bl_node.min)
 
-            node['useMax'] = bl_node.use_max
-            node['useMin'] = bl_node.use_min
+                node['useMax'] = bl_node.use_max
+                node['useMin'] = bl_node.use_min
 
             node['vectorType'] = bl_node.vector_type
 
@@ -1388,7 +1427,11 @@ def extract_node_graph(node_tree, export_settings, glTF):
             else:
                 node['texture'] = index
 
-            node['projection'] = bl_node.projection;
+            node['projection'] = bl_node.projection
+            node['projectionBlend'] = bl_node.projection_blend
+
+            if bl_node.extension == 'CLIP':
+                node['clampToEdgeNoExtend'] = True
 
         elif bl_node.type == 'TEX_GRADIENT':
             node['gradientType'] = bl_node.gradient_type
@@ -1447,7 +1490,10 @@ def extract_node_graph(node_tree, export_settings, glTF):
             bl_inp_type = bl_input.rna_type.identifier
             if (bl_inp_type == 'NodeSocketColor' or
                     bl_inp_type == 'NodeSocketVector' or
-                    bl_inp_type == 'NodeSocketVectorDirection'):
+                    bl_inp_type == 'NodeSocketVectorDirection' or
+                    bl_inp_type == 'NodeSocketVectorEuler' or
+                    bl_inp_type == 'NodeSocketVectorTranslation' or
+                    bl_inp_type == 'NodeSocketVectorXYZ'):
                 node['inputs'].append(extract_vec(bl_input.default_value))
             elif bl_inp_type == 'NodeSocketVirtual':
                 # NOTE: last in the list should be safe to omit it

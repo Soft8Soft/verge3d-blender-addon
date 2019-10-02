@@ -101,6 +101,9 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'lzma_enabled')
 
+        row = layout.row()
+        row.prop(v3d_export, 'optimize_attrs')
+
         split = layout.split()
         col = split.column()
         col.label(text='Anti-Aliasing:')
@@ -493,7 +496,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
             if blend_back:
                 row = layout.row()
-                row.label(text='Overridden by the "Options->Show Backside" option.', icon='INFO')
+                row.label(text='Overridden by the "Settings->Show Backface" option.', icon='INFO')
 
             row = layout.row()
             row.prop(material.v3d, 'render_side')
@@ -661,8 +664,32 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
                         ver = re.search('\d\.\d\d', fileinfo).group(0)
                         verMaj, verMin = [int(n) for n in ver.split('.')]
 
-                        # ignore uncompatible blender 2.80 files
-                        if bpy.app.version < (2,80,0) and (verMaj > 2 or verMin >= 80):
+                        # ignore incompatible blender files
+
+                        if verMaj != 2:
+                            continue
+
+                        if (bpy.app.version < (2,80,0) and verMin >= 80) or (bpy.app.version >= (2,80,0) and verMin < 80):
+                            continue
+
+                        IGNORE = [
+                            'voronoi.blend',
+                            'wave_texture.blend',
+                            'refraction_bsdf.blend',
+                            'principled_transmission.blend',
+                            'glass_bsdf.blend',
+                            'puff.blend',
+                            'tv_stand.blend',
+                            'load_unload.blend',
+                            'chair.blend',
+                            'table.blend',
+                            'gem_*.blend',
+                        ]
+                        ignore = False
+                        for pattern in IGNORE:
+                            if fnmatch.fnmatch(name, pattern):
+                                ignore = True
+                        if ignore:
                             continue
 
                     gltfpath = os.path.splitext(blendpath)[0] + '.gltf'

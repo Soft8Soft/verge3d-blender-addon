@@ -155,7 +155,10 @@ def filter_apply(export_settings):
                     bake_shape_keys = len(copy_obj.modifiers) > 0
 
                     if need_triangulation:
-                        blender_modifier = copy_obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
+                        mod = copy_obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
+                        if bpy.app.version >= (2,80,46):
+                            mod.quad_method = 'FIXED'
+                            mod.keep_custom_normals = True
 
                     if bpy.app.version < (2,80,0):
                         current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW', calc_tessface=True)
@@ -168,6 +171,11 @@ def filter_apply(export_settings):
                         dg = bpy.context.evaluated_depsgraph_get()
                         dg.scene.collection.objects.link(copy_obj)
                         copy_obj.update_tag()
+
+                        # hidden objects don't get modifiers applied, so make
+                        # objects visible before updating the view layer
+                        copy_obj.hide_viewport = False
+
                         bpy.context.view_layer.update()
 
                         if not bake_shape_keys:
