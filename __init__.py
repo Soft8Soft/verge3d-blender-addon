@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (2, 15, 0),
+    "version": (2, 16, 1),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -124,12 +124,12 @@ class ExportGLTF2_Base():
         export_settings['temporary_meshes'] = None
         export_settings['temporary_materials'] = None
 
+        export_settings['gltf_strip'] = True
 
         # SOME LEGACY OPTIONS
 
         export_settings['gltf_embed_buffers'] = False
         export_settings['gltf_embed_images'] = False
-        export_settings['gltf_strip'] = True
 
         # valid values are: 'UNSIGNED_INT', 'UNSIGNED_SHORT', 'UNSIGNED_BYTE'
         export_settings['gltf_indices'] = 'UNSIGNED_INT'

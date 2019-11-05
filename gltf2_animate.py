@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

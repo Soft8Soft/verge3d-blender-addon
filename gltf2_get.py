@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -201,78 +201,82 @@ def get_texture_index_by_texture(export_settings, glTF, bl_texture):
 
     return -1
 
-def get_texture_index_node(export_settings, glTF, name, shader_node_group):
+def get_texture_index_node(export_settings, glTF, name, shaderNode):
     """
     Return the texture index in the glTF array.
     """
 
-    if shader_node_group is None:
+    if shaderNode is None:
         return -1
 
-    if not isinstance(shader_node_group, bpy.types.ShaderNodeGroup):
+    if not isinstance(shaderNode, (bpy.types.ShaderNodeGroup, bpy.types.ShaderNodeBsdfPrincipled)):
         return -1
 
-    if shader_node_group.inputs.get(name) is None:
+    if shaderNode.inputs.get(name) is None:
         return -1
 
-    if len(shader_node_group.inputs[name].links) == 0:
+    if len(shaderNode.inputs[name].links) == 0:
         return -1
 
-    from_node = shader_node_group.inputs[name].links[0].from_node
+    fromNode = shaderNode.inputs[name].links[0].from_node
 
-    #
+    if isinstance(fromNode, bpy.types.ShaderNodeNormalMap):
+        fromNode = fromNode.inputs['Color'].links[0].from_node
 
-    if not isinstance(from_node, bpy.types.ShaderNodeTexImage):
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
+        fromNode = fromNode.inputs['Image'].links[0].from_node
+
+    if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return -1
 
-    if get_tex_image(from_node) is None or get_tex_image(from_node).size[0] == 0 or get_tex_image(from_node).size[1] == 0:
+    if get_tex_image(fromNode) is None or get_tex_image(fromNode).size[0] == 0 or get_tex_image(fromNode).size[1] == 0:
         return -1
 
-    return get_texture_index_by_texture(export_settings, glTF, from_node)
+    return get_texture_index_by_texture(export_settings, glTF, fromNode)
 
 
-def get_texcoord_index(glTF, name, shader_node_group):
+def get_texcoord_index(glTF, name, shaderNode):
     """
     Return the texture coordinate index, if assigend and used.
     """
 
-    if shader_node_group is None:
+    if shaderNode is None:
         return 0
 
-    if not isinstance(shader_node_group, bpy.types.ShaderNodeGroup):
+    if not isinstance(shaderNode, (bpy.types.ShaderNodeGroup, bpy.types.ShaderNodeBsdfPrincipled)):
         return 0
 
-    if shader_node_group.inputs.get(name) is None:
+    if shaderNode.inputs.get(name) is None:
         return 0
 
-    if len(shader_node_group.inputs[name].links) == 0:
+    if len(shaderNode.inputs[name].links) == 0:
         return 0
 
-    from_node = shader_node_group.inputs[name].links[0].from_node
+    fromNode = shaderNode.inputs[name].links[0].from_node
 
-    #
+    if isinstance(fromNode, bpy.types.ShaderNodeNormalMap):
+        fromNode = fromNode.inputs['Color'].links[0].from_node
 
-    if not isinstance(from_node, bpy.types.ShaderNodeTexImage):
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
+        fromNode = fromNode.inputs['Image'].links[0].from_node
+
+    if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return 0
 
-    #
-
-    if len(from_node.inputs['Vector'].links) == 0:
+    if len(fromNode.inputs['Vector'].links) == 0:
         return 0
 
-    input_node = from_node.inputs['Vector'].links[0].from_node
+    inputNode = fromNode.inputs['Vector'].links[0].fromNode
 
-    if not isinstance(input_node, bpy.types.ShaderNodeUVMap):
+    if not isinstance(inputNode, bpy.types.ShaderNodeUVMap):
         return 0
 
-    if input_node.uv_map == '':
+    if inputNode.uv_map == '':
         return 0
 
-    #
-
-    # Try to gather map index.
+    # try to gather map index.
     for blender_mesh in bpy.data.meshes:
-        texCoordIndex = blender_mesh.uv_layers.find(input_node.uv_map)
+        texCoordIndex = blender_mesh.uv_layers.find(inputNode.uv_map)
         if texCoordIndex >= 0:
             return texCoordIndex
 
@@ -333,7 +337,7 @@ def get_cycles_node_types():
 
 def get_material_type(bl_material):
     """
-    get blender material type: PBR, CYCLES, NODE, BASIC
+    get blender material type: PBR, CYCLES, INTERNAL, BASIC
     """
 
     if not bl_material.use_nodes or bl_material.node_tree == None:
@@ -344,6 +348,9 @@ def get_material_type(bl_material):
                 bl_node.node_tree.name.startswith('Verge3D PBR')):
             return 'PBR'
 
+    if bl_material.v3d.gltf_compat:
+        return 'PBR'
+
     # NOTE: temporary
     if bpy.app.version > (2,80,0):
         return 'CYCLES'
@@ -352,7 +359,7 @@ def get_material_type(bl_material):
         if type(bl_node) in get_cycles_node_types():
             return 'CYCLES'
 
-    return 'NODE'
+    return 'INTERNAL'
 
 def get_material_index(glTF, name):
     """

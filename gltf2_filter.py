@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,6 +49,100 @@ def flatten_collection_unique(collection, dest_set):
             # prevent possible infinite recursion for collections
             if is_unique:
                 flatten_collection_unique(bl_obj.instance_collection, dest_set)
+
+
+def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
+    """
+    Prepare the data of the given MESH object before export by making such
+    operations as:
+        - applying all suitable modifiers if any
+        - triangulate mesh ngons if tangents export is needed
+        - restore shape keys after the previous operations if it's possible or needed
+    """
+
+    generated_objs = []
+    generated_meshes = []
+
+
+    # APPLY MODIFIERS
+    need_apply_mods = bake_modifiers is True and obj_has_exported_modifiers(obj_original)
+
+    obj_mods_applied = obj_original
+    if need_apply_mods:
+        obj_mods_applied = obj_original.copy()
+        obj_del_not_exported_modifiers(obj_mods_applied)
+        obj_apply_modifiers(obj_mods_applied)
+
+        generated_objs.append(obj_mods_applied)
+        generated_meshes.append(obj_mods_applied.data)
+
+
+    # TRIANGULATE
+    need_tangents = mesh_need_tangents_for_export(obj_mods_applied.data, optimize_tangents)
+    if not need_tangents:
+        printLog('DEBUG',
+                'Tangent attribute will not be exported for mesh "%s"'
+                % obj_original.data.name)
+    need_triangulation = need_tangents and mesh_has_ngons(obj_mods_applied.data)
+
+    obj_triangulated = obj_mods_applied
+    if need_triangulation:
+        obj_triangulated = obj_mods_applied.copy()
+        obj_del_not_exported_modifiers(obj_triangulated)
+        obj_add_tri_modifier(obj_triangulated)
+
+        # Triangulation modifier doesn't affect vertices, therefore this operation
+        # can preserve shape keys. To do this we need to remove shape keys to not
+        # bake them into the new mesh.
+
+        # NOTE: need to copy object data before changes because it's shared with
+        # the object coming from the previous operation (due to .copy() not
+        # creating a new mesh datablock)
+        tmp_data = obj_triangulated.data.copy()
+        obj_triangulated.data = tmp_data
+        obj_triangulated.shape_key_clear()
+
+        obj_apply_modifiers(obj_triangulated)
+
+        generated_objs.append(obj_triangulated)
+        generated_meshes.append(tmp_data)
+        generated_meshes.append(obj_triangulated.data)
+
+
+    # TRANSFER SHAPE KEYS
+
+    # transfer shape keys to the new object only if:
+    #   - shape keys were removed during mesh processing
+    #   - shape keys were not baked into the mesh geometry (always baked during
+    #     the APPLY MODIFIERS operation; TRIANGULATION doesn't bake them)
+    shape_keys_removed = (obj_original.data.shape_keys is not None
+            and obj_triangulated.data.shape_keys is None)
+    need_transfer_sk = shape_keys_removed and not need_apply_mods
+
+    obj_sk_transfered = obj_triangulated
+    if need_transfer_sk:
+        obj_sk_transfered = obj_triangulated.copy()
+        dg = bpy.context.evaluated_depsgraph_get()
+
+        success = obj_transfer_shape_keys(obj_original, obj_sk_transfered, dg)
+        if not success:
+            printLog('WARNING', 'Could not generate shape keys because they '
+                    + 'change vertex count. Object "' + obj_original.name + '".')
+
+        generated_objs.append(obj_sk_transfered)
+        # no new mesh was generated
+
+
+    resulting_mesh = obj_sk_transfered.data
+
+    for tmp_obj in generated_objs:
+        bpy.data.objects.remove(tmp_obj)
+    for tmp_mesh in generated_meshes:
+        if tmp_mesh != resulting_mesh:
+            bpy.data.meshes.remove(tmp_mesh)
+
+    return resulting_mesh
+
 
 def filter_apply(export_settings):
     """
@@ -127,100 +221,59 @@ def filter_apply(export_settings):
 
                 skip = False
 
-                need_triangulation = False
-                if current_blender_mesh.uv_layers.active and len(current_blender_mesh.uv_layers) > 0:
-                    for poly in current_blender_mesh.polygons:
-                        # tangents can only be calculated for tris/quads
-                        # (later via mesh.calc_tangents())
-                        if poly.loop_total > 4:
-                            need_triangulation = True
+                if bpy.app.version >= (2,80,0):
 
-                got_modifiers = False
-                for mod in current_blender_object.modifiers:
-                    if mod.show_render:
-                        got_modifiers = True
+                    mesh_for_export = mesh_obj_get_export_data(
+                            current_blender_object,
+                            export_settings['gltf_bake_modifiers'],
+                            export_settings['gltf_optimize_attrs'])
 
-                if (got_modifiers and export_settings['gltf_bake_modifiers']) or need_triangulation:
+                    if mesh_for_export != current_blender_mesh:
+                        # a new mesh was generated
+                        mesh_for_export[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
+                        temporary_meshes.append(mesh_for_export)
+                        current_blender_mesh = mesh_for_export
 
-                    copy_obj = current_blender_object.copy()
+                else:
+                    # logic for outdated Blender versions
 
-                    # don't apply the ARMATURE modifier, which is always
-                    # used for a skinned mesh
-                    for mod in copy_obj.modifiers:
-                        if mod.type == 'ARMATURE':
-                            copy_obj.modifiers.remove(mod)
+                    need_triangulation = False
+                    if current_blender_mesh.uv_layers.active and len(current_blender_mesh.uv_layers) > 0:
+                        for poly in current_blender_mesh.polygons:
+                            # tangents can only be calculated for tris/quads
+                            # (later via mesh.calc_tangents())
+                            if poly.loop_total > 4:
+                                need_triangulation = True
 
-                    # if there originally were non-armature modifiers disable
-                    # shape key export and just bake them
-                    bake_shape_keys = len(copy_obj.modifiers) > 0
+                    got_modifiers = False
+                    for mod in current_blender_object.modifiers:
+                        if mod.show_render:
+                            got_modifiers = True
 
-                    if need_triangulation:
-                        mod = copy_obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
-                        if bpy.app.version >= (2,80,46):
-                            mod.quad_method = 'FIXED'
-                            mod.keep_custom_normals = True
 
-                    if bpy.app.version < (2,80,0):
-                        current_blender_mesh = copy_obj.to_mesh(bpy.context.scene, True, 'PREVIEW', calc_tessface=True)
+                    if (got_modifiers and export_settings['gltf_bake_modifiers']) or need_triangulation:
 
-                        # NOTE: don't care about potentially missing shape keys
-                        # for outdated Blender versions
-                    else:
-                        # NOTE: link copy_obj and update the view layer to make
-                        # the depsgraph able to apply modifiers to the object
-                        dg = bpy.context.evaluated_depsgraph_get()
-                        dg.scene.collection.objects.link(copy_obj)
-                        copy_obj.update_tag()
+                        copy_obj = current_blender_object.copy()
 
-                        # hidden objects don't get modifiers applied, so make
-                        # objects visible before updating the view layer
-                        copy_obj.hide_viewport = False
+                        # don't apply the ARMATURE modifier, which is always
+                        # used for a skinned mesh
+                        for mod in copy_obj.modifiers:
+                            if mod.type == 'ARMATURE':
+                                copy_obj.modifiers.remove(mod)
 
-                        bpy.context.view_layer.update()
+                        if need_triangulation:
+                            copy_obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
 
-                        if not bake_shape_keys:
-                            copy_obj_sk = copy_obj.data.shape_keys
+                        current_blender_mesh = copy_obj.to_mesh(bpy.context.scene,
+                                True, 'PREVIEW', calc_tessface=True)
 
-                            # make all shape key values zero, because they affect
-                            # evaluated_get() and here we need just the base mesh
-                            if copy_obj_sk is not None:
-                                weights = [0] * len(copy_obj_sk.key_blocks)
-                                copy_obj_sk.key_blocks.foreach_get('value', weights)
-                                copy_obj_sk.key_blocks.foreach_set('value',
-                                        [0] * len(copy_obj_sk.key_blocks))
-                                copy_obj.update_tag()
-                                bpy.context.view_layer.update()
+                        if current_blender_mesh is not None:
+                            current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
+                            temporary_meshes.append(current_blender_mesh)
+                        else:
+                            skip = True
 
-                        copy_obj_eval = copy_obj.evaluated_get(dg)
-                        current_blender_mesh = bpy.data.meshes.new_from_object(
-                                copy_obj_eval, preserve_all_data_layers=True, depsgraph=dg)
-
-                        if not bake_shape_keys:
-                            # need to restore shape keys, because evaluated_get() and
-                            # new_from_object() are destructive operations
-                            if copy_obj_sk is not None:
-                                copy_obj_sk.key_blocks.foreach_set('value', weights)
-
-                                # need an object to create shape keys, can not do it
-                                # on the mesh itself
-                                tmp_obj = bpy.data.objects.new(name='tmp',
-                                        object_data=current_blender_mesh)
-                                success = transfer_shape_keys(copy_obj, tmp_obj, dg)
-                                bpy.data.objects.remove(tmp_obj)
-
-                                if not success:
-                                    printLog('WARNING', 'Could not generate shape keys because they change vertex count. Object "'
-                                            + current_blender_object.name + '".')
-
-                        dg.scene.collection.objects.unlink(copy_obj)
-
-                    if current_blender_mesh is not None:
-                        current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
-                        temporary_meshes.append(current_blender_mesh)
-                    else:
-                        skip = True
-
-                    bpy.data.objects.remove(copy_obj)
+                        bpy.data.objects.remove(copy_obj)
 
                 break
 
@@ -393,10 +446,10 @@ def filter_apply(export_settings):
         if group.users == 0:
             continue
 
-        # only groups used by 'NODE' and 'CYCLES' materials
+        # only groups used by 'INTERNAL' and 'CYCLES' materials
         for bl_material in filtered_materials:
             mat_type = get_material_type(bl_material)
-            if mat_type == 'NODE' or mat_type == 'CYCLES':
+            if mat_type == 'INTERNAL' or mat_type == 'CYCLES':
                 if (group not in filtered_node_groups and
                         group in extract_material_node_trees(bl_material.node_tree)):
                     filtered_node_groups.append(group)
@@ -406,7 +459,7 @@ def filter_apply(export_settings):
     filtered_textures = []
 
     for blender_material in filtered_materials:
-        # PBR, NODE, CYCLES materials
+        # PBR, INTERNAL, CYCLES materials
         if blender_material.node_tree and blender_material.use_nodes:
             for bl_node in blender_material.node_tree.nodes:
                 if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and

@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -44,6 +44,9 @@ def prepare(export_settings):
 
     filter_apply(export_settings)
 
+    if bpy.app.version >= (2,81,0):
+        prepare_shadow_casters(export_settings)
+
     export_settings['gltf_original_frame'] = bpy.context.scene.frame_current
 
     export_settings['gltf_use_no_color'] = []
@@ -53,6 +56,15 @@ def prepare(export_settings):
     if export_settings['gltf_animations']:
         bpy.context.scene.frame_set(0)
 
+def prepare_shadow_casters(export_settings):
+
+    shadow_casters = []
+    if export_settings['gltf_use_shadows']:
+        shadow_casters = [obj for obj in export_settings['filtered_objects_with_dg']
+                if obj_casts_shadows(obj)]
+
+    export_settings['shadow_casters_bound_box_world'] \
+            = objects_get_bound_box_world(shadow_casters)
 
 def finish(export_settings):
     """
@@ -128,7 +140,9 @@ def save(operator, context, export_settings):
     indent = None
     separators = separators=(',', ':')
 
-    if export_settings['gltf_format'] == 'ASCII' and not export_settings['gltf_strip']:
+    jsonStrip = export_settings['gltf_strip'] and not export_settings['gltf_sneak_peek']
+
+    if export_settings['gltf_format'] == 'ASCII' and not jsonStrip:
         indent = 4
         separators = separators=(', ', ' : ')
 
@@ -150,7 +164,10 @@ def save(operator, context, export_settings):
             file.close()
 
         compressLZMA(export_settings['gltf_filepath'], export_settings)
-        compressLZMA(export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename'], export_settings)
+
+        bin_path = export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename']
+        if os.path.isfile(bin_path):
+            compressLZMA(bin_path, export_settings)
 
     else:
         file = open(export_settings['gltf_filepath'], "wb")

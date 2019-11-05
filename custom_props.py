@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018 Soft8Soft LLC
+# Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -545,6 +545,13 @@ class V3DMaterialSettings(bpy.types.PropertyGroup):
     dithering = bpy.props.BoolProperty(
         name = 'Dithering',
         description = 'Apply color dithering to eliminate banding artefacts',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    gltf_compat = bpy.props.BoolProperty(
+        name = 'glTF 2.0 compatible',
+        description = 'Force material to be compatible with glTF 2.0 standard',
         default = False,
         options = NO_ANIM_OPTS
     )

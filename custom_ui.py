@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018 Soft8Soft LLC
+# Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -390,10 +390,32 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
                 row = layout.row()
                 row.label(text='Not available for this light type')
 
-        else:
+        elif bpy.app.version < (2,81,0):
+
             if type == 'SUN':
+
+                row = layout.row()
+                row.label(text='Shadow:')
+
                 row = layout.row()
                 row.prop(shadow, 'camera_size', text='Shadow Size (fallback)')
+            else:
+                row = layout.row()
+                row.label(text='Not available for this light type')
+
+        else:
+
+            if type == 'POINT' or type == 'SPOT' or type == 'SUN':
+
+                row = layout.row()
+                row.label(text='Shadow:')
+
+                row = layout.row()
+                row.prop(shadow, 'radius', text='Blur Radius')
+
+            else:
+                row = layout.row()
+                row.label(text='Not available for this light type')
 
 
 class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
@@ -508,6 +530,9 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(material.v3d, 'dithering')
+
+        row = layout.row()
+        row.prop(material.v3d, 'gltf_compat')
 
 class V3D_PT_TextureSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'

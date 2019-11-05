@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -387,47 +387,10 @@ def extract_primitive_pack(a, indices, use_tangents):
 def checkUseNodeAttrs(bl_mat):
     mat_type = get_material_type(bl_mat)
 
-    if mat_type == 'NODE' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bpy.app.version < (2,80,0) and bl_mat.use_shadeless):
+    if mat_type == 'INTERNAL' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bpy.app.version < (2,80,0) and bl_mat.use_shadeless):
         return True
     else:
         return False
-
-def checkNodeNeedsTangents(bl_node):
-    if (isinstance(bl_node, bpy.types.ShaderNodeNormalMap) or
-        isinstance(bl_node, bpy.types.ShaderNodeTangent)):
-        return True
-
-    if isinstance(bl_node, bpy.types.ShaderNodeNewGeometry):
-        for bl_output in bl_node.outputs:
-            if bl_output.identifier == 'Tangent' and bl_output.is_linked:
-                return True
-
-    return False
-
-
-def checkUseTangents(bl_mesh, export_settings):
-
-    optimizeAttrs = export_settings['gltf_optimize_attrs']
-
-    if bl_mesh.uv_layers.active and len(bl_mesh.uv_layers) > 0:
-
-        if not optimizeAttrs:
-            return True
-
-        for bl_material in bl_mesh.materials:
-            if bl_material and bl_material.use_nodes and bl_material.node_tree != None:
-                for bl_node in bl_material.node_tree.nodes:
-                    if checkNodeNeedsTangents(bl_node):
-                        return True
-
-        # do not optimize for older Blender versions
-        if bpy.app.version < (2,80,0):
-            return True
-
-    if optimizeAttrs:
-        printLog('DEBUG', 'Do not export tangent attributes')
-
-    return False
 
 def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         blender_joint_indices, export_settings):
@@ -445,7 +408,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         blender_mesh.calc_normals_split()
 
     use_tangents = False
-    if checkUseTangents(blender_mesh, export_settings):
+    if mesh_need_tangents_for_export(blender_mesh, export_settings['gltf_optimize_attrs']):
         try:
             blender_mesh.calc_tangents()
             use_tangents = True
@@ -637,9 +600,14 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                 triangles = mathutils.geometry.tessellate_polygon((polyline,))
 
                 for triangle in triangles:
-                    loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
-                    loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
-                    loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
+                    if bpy.app.version >= (2,81,0):
+                        for loop_idx in triangle:
+                            loop_index_list.append(blender_polygon.loop_indices[loop_idx])
+                    else:
+                        # old Blender version had bug with flipped triangles
+                        loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
+                        loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
+                        loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
 
         else:
             continue
@@ -1848,16 +1816,6 @@ def getView3DSpaceProp(prop):
 
     return None
 
-
-def extract_material_node_trees(node_tree):
-
-    out = [node_tree]
-
-    for bl_node in node_tree.nodes:
-        if isinstance(bl_node, bpy.types.ShaderNodeGroup):
-            out += extract_material_node_trees(bl_node.node_tree)
-
-    return out
 
 def extract_constraints(glTF, bl_obj):
     bl_constraints = bl_obj.constraints

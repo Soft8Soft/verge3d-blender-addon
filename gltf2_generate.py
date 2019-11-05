@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2018 Soft8Soft LLC
+# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@ import base64
 import bpy
 import copy
 import json
+import math
 import pathlib
 import os.path
 import shutil
@@ -49,6 +50,11 @@ CAM_ANGLE_EPSILON = math.pi / 180
 # Blender uses the "less or equal" condition for clipping values, but the engine
 # uses just "less"
 ALPHA_CUTOFF_EPS = 1e-4
+
+SUN_DEFAULT_NEAR = 0.1
+SUN_DEFAULT_FAR = 100
+SUN_MAX_FAR = 10000
+SHADOW_BB_Z_COEFF = 1.01
 
 def generateAsset(operator, context, export_settings, glTF):
     """
@@ -1202,70 +1208,147 @@ def generateLights(operator, context, export_settings, glTF):
         if not export_settings['gltf_use_shadows']:
             useShadows = False
 
-        # HACK: temporary disable shadows for Blender 2.81
-        if bpy.app.version >= (2,81,0):
-            useShadows = False
+        if useShadows:
 
-        if useShadows and bpy.app.version < (2,80,0):
-            cameraNear = bl_light.v3d.shadow.camera_near
-            # usability improvement
-            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
-                cameraNear = SPOT_SHADOW_MIN_NEAR
+            if bpy.app.version < (2,80,0):
 
-            cameraFar = bl_light.v3d.shadow.camera_far
+                cameraNear = bl_light.v3d.shadow.camera_near
+                # usability improvement
+                if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
+                    cameraNear = SPOT_SHADOW_MIN_NEAR
 
-            orthoSize = bl_light.v3d.shadow.camera_size
+                cameraFar = bl_light.v3d.shadow.camera_far
 
-            light['shadow'] = {
-                'mapSize': int(bl_light.v3d.shadow.map_size),
+                orthoSize = bl_light.v3d.shadow.camera_size
 
-                'cameraOrthoLeft': -orthoSize / 2,
-                'cameraOrthoRight': orthoSize / 2,
-                'cameraOrthoBottom': -orthoSize / 2,
-                'cameraOrthoTop': orthoSize / 2,
+                light['shadow'] = {
+                    'mapSize': int(bl_light.v3d.shadow.map_size),
 
-                'cameraFov': bl_light.v3d.shadow.camera_fov,
-                'cameraNear': cameraNear,
-                'cameraFar': cameraFar,
-                'radius': bl_light.v3d.shadow.radius,
-                # NOTE: negate bias since the negative is more appropriate in most cases
-                # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.v3d.shadow.bias
-            }
-        elif useShadows:
-            cameraNear = bl_light.shadow_buffer_clip_start
-            # usability improvement
-            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
-                cameraNear = SPOT_SHADOW_MIN_NEAR
-            cameraFar = bl_light.shadow_buffer_clip_end
+                    'cameraOrthoLeft': -orthoSize / 2,
+                    'cameraOrthoRight': orthoSize / 2,
+                    'cameraOrthoBottom': -orthoSize / 2,
+                    'cameraOrthoTop': orthoSize / 2,
 
-            orthoSize = bl_light.v3d.shadow.camera_size
-
-            eeveeCtx = context.scene.eevee
-            light['shadow'] = {
-                'mapSize': int(eeveeCtx.shadow_cascade_size
-                        if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
-
-                # used as a shadow size for PCF fallback
-                'cameraOrthoLeft': -orthoSize / 2,
-                'cameraOrthoRight': orthoSize / 2,
-                'cameraOrthoBottom': -orthoSize / 2,
-                'cameraOrthoTop': orthoSize / 2,
-
-                'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
-                'cameraNear': cameraNear,
-                'cameraFar': cameraFar,
-                'radius': getBlurPixelRadius(context, bl_light),
-                # NOTE: negate bias since the negative is more appropriate in most cases
-                # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.shadow_buffer_bias,
-                'expBias': bl_light.shadow_buffer_exp
-            }
-
-            if bl_light.type == 'SUN':
-                light['shadow']['csm'] = {
-                    'maxDistance': bl_light.shadow_cascade_max_distance
+                    'cameraFov': bl_light.v3d.shadow.camera_fov,
+                    'cameraNear': cameraNear,
+                    'cameraFar': cameraFar,
+                    'radius': bl_light.v3d.shadow.radius,
+                    # NOTE: negate bias since the negative is more appropriate in most cases
+                    # but keeping it positive in the UI is more user-friendly
+                    'bias': -bl_light.v3d.shadow.bias
                 }
+
+            elif bpy.app.version < (2,81,0):
+
+                cameraNear = bl_light.shadow_buffer_clip_start
+                # usability improvement
+                if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
+                    cameraNear = SPOT_SHADOW_MIN_NEAR
+                cameraFar = bl_light.shadow_buffer_clip_end
+
+                orthoSize = bl_light.v3d.shadow.camera_size
+
+                eeveeCtx = context.scene.eevee
+                light['shadow'] = {
+                    'mapSize': int(eeveeCtx.shadow_cascade_size
+                            if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
+
+                    # used as a shadow size for PCF fallback
+                    'cameraOrthoLeft': -orthoSize / 2,
+                    'cameraOrthoRight': orthoSize / 2,
+                    'cameraOrthoBottom': -orthoSize / 2,
+                    'cameraOrthoTop': orthoSize / 2,
+
+                    'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
+                    'cameraNear': cameraNear,
+                    'cameraFar': cameraFar,
+                    'radius': getBlurPixelRadius(context, bl_light),
+                    # NOTE: negate bias since the negative is more appropriate in most cases
+                    # but keeping it positive in the UI is more user-friendly
+                    'bias': -bl_light.shadow_buffer_bias,
+                    'expBias': bl_light.shadow_buffer_exp
+                }
+
+                if bl_light.type == 'SUN':
+                    light['shadow']['csm'] = {
+                        'maxDistance': bl_light.shadow_cascade_max_distance
+                    }
+
+            else:
+
+                eeveeCtx = context.scene.eevee
+
+                if bl_light.type == 'SUN':
+
+                    cameraNear = SUN_DEFAULT_NEAR
+                    cameraFar = SUN_DEFAULT_FAR
+
+                    for bl_obj in export_settings['filtered_objects_with_dg']:
+
+                        if bl_obj.type != 'LIGHT':
+                            continue
+
+                        if bl_obj.data == bl_light:
+
+                            light_view_mat = bl_obj.matrix_world.normalized().inverted()
+                            bb_min = mathutils.Vector.Fill(3, utils.BOUND_BOX_MAX)
+                            bb_max = mathutils.Vector.Fill(3, -utils.BOUND_BOX_MAX)
+
+                            for corner in export_settings['shadow_casters_bound_box_world']:
+                                corner_view = light_view_mat @ corner
+                                bb_min.x = min(bb_min.x, corner_view.x)
+                                bb_min.y = min(bb_min.y, corner_view.y)
+                                bb_min.z = min(bb_min.z, corner_view.z)
+                                bb_max.x = max(bb_max.x, corner_view.x)
+                                bb_max.y = max(bb_max.y, corner_view.y)
+                                bb_max.z = max(bb_max.z, corner_view.z)
+
+                            # increase far value with SHADOW_BB_Z_COEFF to prevent
+                            # potential Z-fighting issues
+                            cameraFar = clamp(max(bb_min.length, bb_max.length),
+                                    SUN_DEFAULT_NEAR, SUN_MAX_FAR) * SHADOW_BB_Z_COEFF
+
+                            break
+
+                else:
+                    cameraNear = max(bl_light.shadow_buffer_clip_start,
+                            SPOT_SHADOW_MIN_NEAR) # usability improvement
+                    cameraFar = math.sqrt(
+                        max(bl_light.color.r, bl_light.color.g, bl_light.color.b)
+                        * max(1, bl_light.specular_factor)
+                        * abs(bl_light.energy / 100)
+                        / eeveeCtx.light_threshold
+                    )
+
+                light['shadow'] = {
+                    'mapSize': int(eeveeCtx.shadow_cascade_size
+                            if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
+
+                    # NOTE: not used in 2.81 PCFPOISSON shadows
+                    # - for POINT/SPOT - determined by near, far and fov settings
+                    # - for SUN - PCFPOISSON uses automatic calculation of the
+                    #   frustum based on 'maxDistance'
+                    'cameraOrthoLeft': -1,
+                    'cameraOrthoRight': 1,
+                    'cameraOrthoBottom': -1,
+                    'cameraOrthoTop': 1,
+
+                    'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
+                    'cameraNear': cameraNear,
+                    'cameraFar': cameraFar,
+                    'radius': bl_light.v3d.shadow.radius,
+                    # NOTE: negate bias since the negative is more appropriate in most cases
+                    # but keeping it positive in the UI is more user-friendly
+                    'bias': -bl_light.shadow_buffer_bias * 0.0018,
+                    # empirical value that gives good results
+                    'slopeScaledBias': 2.5
+                }
+
+                if bl_light.type == 'SUN':
+                    light['shadow']['csm'] = {
+                        'maxDistance': bl_light.shadow_cascade_max_distance
+                    }
+
 
         if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
 
@@ -2785,75 +2868,55 @@ def generateMaterials(operator, context, export_settings, glTF):
 
         if mat_type == 'PBR':
             for blender_node in bl_mat.node_tree.nodes:
-                if isinstance(blender_node, bpy.types.ShaderNodeGroup):
+                if (isinstance(blender_node, bpy.types.ShaderNodeGroup) and
+                    blender_node.node_tree.name.startswith('Verge3D PBR')):
 
                     alpha = 1.0
 
-                    if blender_node.node_tree.name.startswith('Verge3D PBR'):
-                        #
-                        # Property: pbrMetallicRoughness
-                        #
+                    material['pbrMetallicRoughness'] = {}
 
-                        material['pbrMetallicRoughness'] = {}
+                    pbrMetallicRoughness = material['pbrMetallicRoughness']
 
-                        pbrMetallicRoughness = material['pbrMetallicRoughness']
+                    index = get_texture_index_node(export_settings, glTF, 'BaseColor', blender_node)
+                    if index >= 0:
+                        baseColorTexture = {
+                            'index' : index
+                        }
 
-                        #
-                        # Base color texture
-                        #
-                        index = get_texture_index_node(export_settings, glTF, 'BaseColor', blender_node)
-                        if index >= 0:
-                            baseColorTexture = {
-                                'index' : index
-                            }
+                        texCoord = get_texcoord_index(glTF, 'BaseColor', blender_node)
+                        if texCoord > 0:
+                            baseColorTexture['texCoord'] = texCoord
 
-                            texCoord = get_texcoord_index(glTF, 'BaseColor', blender_node)
-                            if texCoord > 0:
-                                baseColorTexture['texCoord'] = texCoord
+                        pbrMetallicRoughness['baseColorTexture'] = baseColorTexture
 
-                            pbrMetallicRoughness['baseColorTexture'] = baseColorTexture
-
-                        #
-                        # Base color factor
-                        #
-                        baseColorFactor = get_vec4(blender_node.inputs['BaseColorFactor'].default_value, [1.0, 1.0, 1.0, 1.0])
-                        if baseColorFactor[0] != 1.0 or baseColorFactor[1] != 1.0 or baseColorFactor[2] != 1.0 or baseColorFactor[3] != 1.0:
-                            pbrMetallicRoughness['baseColorFactor'] = baseColorFactor
-                            alpha = baseColorFactor[3]
-
-                        #
-                        # Metallic factor
-                        #
-                        metallicFactor = get_scalar(blender_node.inputs['MetallicFactor'].default_value, 1.0)
-                        if metallicFactor != 1.0:
-                            pbrMetallicRoughness['metallicFactor'] = metallicFactor
-
-                        #
-                        # Roughness factor
-                        #
-                        roughnessFactor = get_scalar(blender_node.inputs['RoughnessFactor'].default_value, 1.0)
-                        if roughnessFactor != 1.0:
-                            pbrMetallicRoughness['roughnessFactor'] = roughnessFactor
-
-                        #
-                        # Metallic roughness texture
-                        #
-                        index = get_texture_index_node(export_settings, glTF, 'MetallicRoughness', blender_node)
-                        if index >= 0:
-                            metallicRoughnessTexture = {
-                                'index' : index
-                            }
-
-                            texCoord = get_texcoord_index(glTF, 'MetallicRoughness', blender_node)
-                            if texCoord > 0:
-                                metallicRoughnessTexture['texCoord'] = texCoord
-
-                            pbrMetallicRoughness['metallicRoughnessTexture'] = metallicRoughnessTexture
+                    baseColorFactor = get_vec4(blender_node.inputs['BaseColorFactor'].default_value, [1.0, 1.0, 1.0, 1.0])
+                    if baseColorFactor[0] != 1.0 or baseColorFactor[1] != 1.0 or baseColorFactor[2] != 1.0 or baseColorFactor[3] != 1.0:
+                        pbrMetallicRoughness['baseColorFactor'] = baseColorFactor
+                        alpha = baseColorFactor[3]
 
 
-                    #
-                    # Emissive texture
-                    #
+                    metallicFactor = get_scalar(blender_node.inputs['MetallicFactor'].default_value, 1.0)
+                    if metallicFactor != 1.0:
+                        pbrMetallicRoughness['metallicFactor'] = metallicFactor
+
+                    roughnessFactor = get_scalar(blender_node.inputs['RoughnessFactor'].default_value, 1.0)
+                    if roughnessFactor != 1.0:
+                        pbrMetallicRoughness['roughnessFactor'] = roughnessFactor
+
+
+                    index = get_texture_index_node(export_settings, glTF, 'MetallicRoughness', blender_node)
+                    if index >= 0:
+                        metallicRoughnessTexture = {
+                            'index' : index
+                        }
+
+                        texCoord = get_texcoord_index(glTF, 'MetallicRoughness', blender_node)
+                        if texCoord > 0:
+                            metallicRoughnessTexture['texCoord'] = texCoord
+
+                        pbrMetallicRoughness['metallicRoughnessTexture'] = metallicRoughnessTexture
+
+
                     index = get_texture_index_node(export_settings, glTF, 'Emissive', blender_node)
                     if index >= 0:
                         emissiveTexture = {
@@ -2866,16 +2929,12 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                         material['emissiveTexture'] = emissiveTexture
 
-                    #
-                    # Emissive factor
-                    #
+
                     emissiveFactor = get_vec3(blender_node.inputs['EmissiveFactor'].default_value, [0.0, 0.0, 0.0])
                     if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
                         material['emissiveFactor'] = emissiveFactor
 
-                    #
-                    # Normal texture
-                    #
+
                     index = get_texture_index_node(export_settings, glTF, 'Normal', blender_node)
                     if index >= 0:
                         normalTexture = {
@@ -2893,9 +2952,7 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                         material['normalTexture'] = normalTexture
 
-                    #
-                    # Occlusion texture
-                    #
+
                     if len(blender_node.inputs['Occlusion'].links) > 0:
                         index = get_texture_index_node(export_settings, glTF, 'Occlusion', blender_node)
                         if index >= 0:
@@ -2914,20 +2971,124 @@ def generateMaterials(operator, context, export_settings, glTF):
 
                             material['occlusionTexture'] = occlusionTexture
 
-                    #
-                    # Alpha
-                    #
-                    index = get_texture_index_node(export_settings, glTF, 'Alpha', blender_node)
-                    if index >= 0 or alpha < 1.0:
-                        alphaMode = 'BLEND'
-                        if get_scalar(blender_node.inputs['AlphaMode'].default_value, 0.0) >= 0.5:
-                            alphaMode = 'MASK'
+                    if bpy.app.version < (2,80,0):
+                        # NOTE: implementation of BGE "Backface Culling"
+                        if not bl_mat.game_settings.use_backface_culling:
+                            material['doubleSided'] = True
+                    else:
+                        if bl_mat.v3d.render_side == 'DOUBLE':
+                            material['doubleSided'] = True
 
-                            material['alphaCutoff'] = (
-                                    get_scalar(blender_node.inputs['AlphaCutoff'].default_value, 0.5)
-                                    + ALPHA_CUTOFF_EPS)
+                    # Use Color_0
 
-                        material['alphaMode'] = alphaMode
+                    if get_scalar(blender_node.inputs['Use COLOR_0'].default_value, 0.0) < 0.5:
+                        export_settings['gltf_use_no_color'].append(bl_mat.name)
+
+
+                elif isinstance(blender_node, bpy.types.ShaderNodeBsdfPrincipled):
+
+                    material['pbrMetallicRoughness'] = {}
+                    pbrMetallicRoughness = material['pbrMetallicRoughness']
+
+                    alpha = get_scalar(blender_node.inputs['Alpha'].default_value, 1.0)
+
+                    baseColorFactor = get_vec4(blender_node.inputs['Base Color'].default_value, [1.0, 1.0, 1.0, 1.0])
+                    baseColorFactor[3] = alpha
+
+                    index = get_texture_index_node(export_settings, glTF, 'Base Color', blender_node)
+                    if index >= 0:
+                        baseColorTexture = {
+                            'index' : index
+                        }
+
+                        texCoord = get_texcoord_index(glTF, 'Base Color', blender_node)
+                        if texCoord > 0:
+                            baseColorTexture['texCoord'] = texCoord
+
+                        pbrMetallicRoughness['baseColorTexture'] = baseColorTexture
+
+                        baseColorFactor[0] = 1.0
+                        baseColorFactor[1] = 1.0
+                        baseColorFactor[2] = 1.0
+
+                    if (baseColorFactor[0] != 1.0 or baseColorFactor[1] != 1.0 or
+                        baseColorFactor[2] != 1.0 or baseColorFactor[3] != 1.0):
+                        pbrMetallicRoughness['baseColorFactor'] = baseColorFactor
+
+
+                    index = get_texture_index_node(export_settings, glTF, 'Metallic', blender_node)
+                    if index < 0:
+                        index = get_texture_index_node(export_settings, glTF, 'Roughness', blender_node)
+
+                    if index >= 0:
+                        metallicRoughnessTexture = {
+                            'index' : index
+                        }
+
+                        texCoord = get_texcoord_index(glTF, 'Metallic', blender_node)
+                        if texCoord == 0:
+                            texCoord = get_texcoord_index(glTF, 'Roughness', blender_node)
+
+                        if texCoord > 0:
+                            metallicRoughnessTexture['texCoord'] = texCoord
+
+                        pbrMetallicRoughness['metallicRoughnessTexture'] = metallicRoughnessTexture
+
+                        # seek for 'occlusion' substring in texture name
+                        if 'occlusion' in glTF['textures'][index]['name']:
+                            occlusionTexture = {
+                                'index' : index
+                            }
+
+                            if texCoord > 0:
+                                occlusionTexture['texCoord'] = texCoord
+
+                            material['occlusionTexture'] = occlusionTexture
+
+                    else:
+                        metallicFactor = get_scalar(blender_node.inputs['Metallic'].default_value, 1.0)
+                        if metallicFactor != 1.0:
+                            pbrMetallicRoughness['metallicFactor'] = metallicFactor
+
+                        roughnessFactor = get_scalar(blender_node.inputs['Roughness'].default_value, 1.0)
+                        if roughnessFactor != 1.0:
+                            pbrMetallicRoughness['roughnessFactor'] = roughnessFactor
+
+
+                    index = get_texture_index_node(export_settings, glTF, 'Emission', blender_node)
+                    if index >= 0:
+                        emissiveTexture = {
+                            'index' : index
+                        }
+
+                        texCoord = get_texcoord_index(glTF, 'Emission', blender_node)
+                        if texCoord > 0:
+                            emissiveTexture['texCoord'] = texCoord
+
+                        material['emissiveTexture'] = emissiveTexture
+                        material['emissiveFactor'] = [1.0, 1.0, 1.0]
+                    else:
+                        emissiveFactor = get_vec3(blender_node.inputs['Emission'].default_value, [0.0, 0.0, 0.0])
+                        if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
+                            material['emissiveFactor'] = emissiveFactor
+
+
+                    index = get_texture_index_node(export_settings, glTF, 'Normal', blender_node)
+                    if index >= 0:
+                        normalTexture = {
+                            'index' : index
+                        }
+
+                        texCoord = get_texcoord_index(glTF, 'Normal', blender_node)
+                        if texCoord > 0:
+                            normalTexture['texCoord'] = texCoord
+
+                        scale = get_scalar(blender_node.inputs['Normal'].links[0].from_node.inputs['Strength'].default_value, 1.0)
+
+                        if scale != 1.0:
+                            normalTexture['scale'] = scale
+
+                        material['normalTexture'] = normalTexture
 
                     if bpy.app.version < (2,80,0):
                         # NOTE: implementation of BGE "Backface Culling"
@@ -2937,34 +3098,10 @@ def generateMaterials(operator, context, export_settings, glTF):
                         if bl_mat.v3d.render_side == 'DOUBLE':
                             material['doubleSided'] = True
 
-                    #
-                    # Use Color_0
-                    #
-
-                    if get_scalar(blender_node.inputs['Use COLOR_0'].default_value, 0.0) < 0.5:
-                        export_settings['gltf_use_no_color'].append(bl_mat.name)
-
 
         else:
             # Basic and Node-based materials
 
-            alphaMode = 'OPAQUE'
-
-            if bpy.app.version < (2,80,0):
-                if bl_mat.use_transparency:
-                    if bl_mat.transparency_method == 'MASK':
-                        alphaMode = 'MASK'
-                    else:
-                        alphaMode = 'BLEND'
-            else:
-                if bl_mat.blend_method == 'CLIP':
-                    alphaMode = 'MASK'
-                    material['alphaCutoff'] = bl_mat.alpha_threshold + ALPHA_CUTOFF_EPS
-                elif bl_mat.blend_method != 'OPAQUE':
-                    alphaMode = 'BLEND'
-
-            if alphaMode != 'OPAQUE':
-                material['alphaMode'] = alphaMode
 
             if bpy.app.version < (2,80,0):
                 # NOTE: implementation of BGE "Alpha Add"
@@ -2991,11 +3128,30 @@ def generateMaterials(operator, context, export_settings, glTF):
             if bl_mat.v3d.dithering == True:
                 v3d_data['dithering'] = bl_mat.v3d.dithering
 
-            if mat_type == 'NODE' or mat_type == 'CYCLES':
+            if mat_type == 'INTERNAL' or mat_type == 'CYCLES':
                 v3d_data['nodeGraph'] = extract_node_graph(bl_mat.node_tree,
                         export_settings, glTF)
             else:
                 v3d_data['nodeGraph'] = composeNodeGraph(bl_mat, export_settings, glTF)
+
+
+        alphaMode = 'OPAQUE'
+
+        if bpy.app.version < (2,80,0):
+            if bl_mat.use_transparency:
+                if bl_mat.transparency_method == 'MASK':
+                    alphaMode = 'MASK'
+                else:
+                    alphaMode = 'BLEND'
+        else:
+            if bl_mat.blend_method == 'CLIP':
+                alphaMode = 'MASK'
+                material['alphaCutoff'] = bl_mat.alpha_threshold + ALPHA_CUTOFF_EPS
+            elif bl_mat.blend_method != 'OPAQUE':
+                alphaMode = 'BLEND'
+
+        if alphaMode != 'OPAQUE':
+            material['alphaMode'] = alphaMode
 
         material['name'] = bl_mat.name
 
@@ -3088,8 +3244,16 @@ def generateScenes(operator, context, export_settings, glTF):
                 v3d_data['physicallyCorrectLights'] = True
 
         if export_settings['gltf_use_shadows']:
+
+            if bpy.app.version < (2,80,0):
+                shadow_type = export_settings['gltf_shadow_map_type']
+            elif bpy.app.version < (2,81,0):
+                shadow_type = 'ESM'
+            else:
+                shadow_type = 'PCFPOISSON'
+
             v3d_data['shadowMap'] = {
-                'type' : export_settings['gltf_shadow_map_type'] if bpy.app.version < (2,80,0) else 'ESM',
+                'type': shadow_type,
                 'renderReverseSided' : True if export_settings['gltf_shadow_map_side'] == 'BACK' else False,
                 'renderSingleSided' : False if export_settings['gltf_shadow_map_side'] == 'BOTH' else True
             }

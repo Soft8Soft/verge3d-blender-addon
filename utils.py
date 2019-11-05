@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2018 Soft8Soft LLC
+# Copyright (c) 2017-2019 Soft8Soft LLC
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,11 +21,15 @@ import mathutils
 
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
+BOUND_BOX_MAX = 1e10
 
 selectedObject = None
 selectedObjectsSave = []
 # 2.79
 prevActiveObject = None
+
+def clamp(val, minval, maxval):
+    return max(minval, min(maxval, val))
 
 def integer_to_bl_suffix(val):
 
@@ -356,14 +360,79 @@ def getBlurPixelRadius(context, blLight):
         else:
             return blurGrade
 
-def transfer_shape_keys(obj_from, obj_to, depsgraph):
-    '''
-    obj_from should be in the current view layer to be evaluated by depsgraph
-    obj_to should not have shape keys
-    obj_from (after evaluating) and obj_to should have the same amount of vertices
+
+def obj_has_exported_modifiers(obj):
+    """
+    Check if an object has any modifiers that should be applied before export.
+    """
+
+    return any([modifier_needs_export(mod) for mod in obj.modifiers])
+
+def obj_del_not_exported_modifiers(obj):
+    """
+    Remove modifiers that shouldn't be applied before export from an object.
+    """
+
+    for mod in obj.modifiers:
+        if not modifier_needs_export(mod):
+            obj.modifiers.remove(mod)
+
+def obj_add_tri_modifier(obj):
+    mod = obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
+    mod.quad_method = 'FIXED'
+
+    # NOTE: >= 2.80.46
+    mod.keep_custom_normals = True
+
+def obj_apply_modifiers(obj):
+    """
+    Creates a new mesh from applying modifiers to the mesh of the given object.
+    Assignes the newly created mesh to the given object. The old mesh's user
+    count will be decreased by 1.
+    """
+
+    dg = bpy.context.evaluated_depsgraph_get()
+
+    need_linking = dg.scene.collection.objects.find(obj.name) == -1
+    need_showing = obj.hide_viewport
+
+    # NOTE: link the object if it's not in the 'Master Collection' and update
+    # the view layer to make the depsgraph able to apply modifiers to the object
+    if need_linking:
+        dg.scene.collection.objects.link(obj)
+
+    obj.update_tag()
+
+    # a hidden object doesn't get its modifiers applied, need to make it visible
+    # before updating the view layer
+    if need_showing:
+        obj.hide_viewport = False
+
+    bpy.context.view_layer.update()
+
+    # NOTE: some modifiers can remove UV layers from an object after applying
+    # (e.g. Skin), which is a consistent behavior regarding uv usage in the
+    # viewport (e.g. degenerate tangent space in the Normal Map node)
+    obj_eval = obj.evaluated_get(dg)
+
+    obj.data = bpy.data.meshes.new_from_object(obj_eval,
+            preserve_all_data_layers=True, depsgraph=dg)
+    obj.modifiers.clear()
+
+    if need_linking:
+        dg.scene.collection.objects.unlink(obj)
+    if need_showing:
+        obj.hide_viewport = True
+
+def obj_transfer_shape_keys(obj_from, obj_to, depsgraph):
+    """
+    Transfer shape keys from one object to another if it's possible:
+        - obj_from should be in the current view layer to be evaluated by depsgraph
+        - obj_to should not have shape keys
+        - obj_from (after evaluating) and obj_to should have the same amount of vertices
 
     Returns a boolean flag indicating successful transfer.
-    '''
+    """
 
     if obj_from.data.shape_keys is None:
         return True
@@ -414,3 +483,112 @@ def transfer_shape_keys(obj_from, obj_to, depsgraph):
         keys_from[i].value = key_values[i]
 
     return same_vertex_count
+
+def obj_casts_shadows(obj):
+
+    # no materials means a single default material (always casts)
+    if len(obj.material_slots) == 0:
+        return True
+
+    for mat_slot in obj.material_slots:
+        # default material (always casts) or a material with not NONE shadow method
+        if mat_slot.material is None or mat_slot.material.shadow_method != 'NONE':
+            return True
+
+    return False
+
+def objects_get_bound_box_world(objects):
+
+    bound_box = [
+        mathutils.Vector(), mathutils.Vector(), mathutils.Vector(),
+        mathutils.Vector(), mathutils.Vector(), mathutils.Vector(),
+        mathutils.Vector(), mathutils.Vector()
+    ]
+
+    minVec = mathutils.Vector.Fill(3, BOUND_BOX_MAX)
+    maxVec = mathutils.Vector.Fill(3, -BOUND_BOX_MAX)
+
+    for obj in objects:
+        for corner in obj.bound_box:
+            corner_world = obj.matrix_world @ mathutils.Vector(corner)
+            minVec.x = min(minVec.x, corner_world.x)
+            minVec.y = min(minVec.y, corner_world.y)
+            minVec.z = min(minVec.z, corner_world.z)
+            maxVec.x = max(maxVec.x, corner_world.x)
+            maxVec.y = max(maxVec.y, corner_world.y)
+            maxVec.z = max(maxVec.z, corner_world.z)
+
+    for i in range(8):
+        bound_box[i].x = minVec.x if i >> 0 & 1 == 0 else maxVec.x
+        bound_box[i].y = minVec.y if i >> 1 & 1 == 0 else maxVec.y
+        bound_box[i].z = minVec.z if i >> 2 & 1 == 0 else maxVec.z
+
+    return bound_box
+
+def mesh_need_tangents_for_export(mesh, optimize_tangents):
+    """
+    Check if it's needed to export tangents for the given mesh.
+    """
+
+    return (mesh_has_uv_layers(mesh) and (mesh_materials_use_tangents(mesh)
+            or not optimize_tangents))
+
+def mesh_has_uv_layers(mesh):
+    return bool(mesh.uv_layers.active and len(mesh.uv_layers) > 0)
+
+def mesh_materials_use_tangents(mesh):
+
+    for mat in mesh.materials:
+        if mat and mat.use_nodes and mat.node_tree != None:
+            node_trees = extract_material_node_trees(mat.node_tree)
+            for node_tree in node_trees:
+                for bl_node in node_tree.nodes:
+                    if mat_node_use_tangents(bl_node):
+                        return True
+
+        # HACK: in most cases this one indicates that object linking is used
+        # disable tangent optimizations for such cases
+        elif mat == None:
+            return True
+
+    return False
+
+def mat_node_use_tangents(bl_node):
+    if (isinstance(bl_node, bpy.types.ShaderNodeNormalMap) or
+        isinstance(bl_node, bpy.types.ShaderNodeTangent)):
+        return True
+
+    if isinstance(bl_node, bpy.types.ShaderNodeNewGeometry):
+        for out in bl_node.outputs:
+            if out.identifier == 'Tangent' and out.is_linked:
+                return True
+
+    return False
+
+def extract_material_node_trees(node_tree):
+    """NOTE: located here since it's needed for mesh_materials_use_tangents()"""
+
+    out = [node_tree]
+
+    for bl_node in node_tree.nodes:
+        if isinstance(bl_node, bpy.types.ShaderNodeGroup):
+            out += extract_material_node_trees(bl_node.node_tree)
+
+    return out
+
+
+def mesh_has_ngons(mesh):
+    for poly in mesh.polygons:
+        if poly.loop_total > 4:
+            return True
+
+    return False
+
+def modifier_needs_export(mod):
+    """
+    Modifiers that are applied before export shouldn't be:
+        - hidden during render (a way to disable export of a modifier)
+        - ARMATURE modifiers (used separately via skinning)
+    """
+
+    return mod.show_render and mod.type != 'ARMATURE'
