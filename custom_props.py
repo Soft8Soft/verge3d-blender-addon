@@ -22,69 +22,69 @@ from . import utils
 NO_ANIM_OPTS = set()
 
 class V3DExportSettings(bpy.types.PropertyGroup):
-    bake_modifiers = bpy.props.BoolProperty(
+    bake_modifiers: bpy.props.BoolProperty(
         name = 'Bake Modifiers',
         description = 'Apply mesh modifiers (except armature modifers) before export ',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    copyright = bpy.props.StringProperty(
+    copyright: bpy.props.StringProperty(
         name = 'Copyright',
         description = 'Assign if you want your copyright info to be present in all exported files',
         default = ''
     )
 
-    export_constraints = bpy.props.BoolProperty(
+    export_constraints: bpy.props.BoolProperty(
         name = 'Export Constraints',
         description = 'Export object constraints',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    export_custom_props = bpy.props.BoolProperty(
+    export_custom_props: bpy.props.BoolProperty(
         name = 'Export Custom Properties',
         description = 'Export object custom properties',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    export_animations = bpy.props.BoolProperty(
+    export_animations: bpy.props.BoolProperty(
         name = 'Export Animations',
         description = 'Export animations',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    export_frame_range = bpy.props.BoolProperty(
+    export_frame_range: bpy.props.BoolProperty(
         name = 'Export Within Playback Range',
         description = 'Export within playback range',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    export_move_keyframes = bpy.props.BoolProperty(
+    export_move_keyframes: bpy.props.BoolProperty(
         name = 'Keyframes Start With 0',
         description = 'Keyframes start with 0',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    lzma_enabled = bpy.props.BoolProperty(
+    lzma_enabled: bpy.props.BoolProperty(
         name = 'Enable LZMA Compression',
         description = 'Enable LZMA Compression',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    optimize_attrs = bpy.props.BoolProperty(
+    optimize_attrs: bpy.props.BoolProperty(
         name = 'Optimize Mesh Attributes',
         description = 'Remove unused geometry attributes (such as tangents) from exported meshes',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    aa_method = bpy.props.EnumProperty(
+    aa_method: bpy.props.EnumProperty(
         name='Anti-aliasing',
         description = 'Preferred anti-aliasing method',
         default = 'AUTO',
@@ -98,21 +98,21 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    use_hdr = bpy.props.BoolProperty(
+    use_hdr: bpy.props.BoolProperty(
         name = 'Use HDR Rendering',
         description = 'Enable HDR rendering pipeline on compatible hardware',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    use_shadows = bpy.props.BoolProperty(
+    use_shadows: bpy.props.BoolProperty(
         name = 'Enable Shadows',
         description = 'Enable shadows, use lamp settings to confiure shadow params',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    shadow_map_type = bpy.props.EnumProperty(
+    shadow_map_type: bpy.props.EnumProperty(
         name='Map Type',
         description = 'Shadow Map Type',
         default = 'PCFSOFT',
@@ -124,7 +124,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    shadow_map_side = bpy.props.EnumProperty(
+    shadow_map_side: bpy.props.EnumProperty(
         name='Map Side',
         description = 'Which side of the objects will be rendered to shadow maps',
         default = 'FRONT',
@@ -136,14 +136,14 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    bake_armature_actions = bpy.props.BoolProperty(
+    bake_armature_actions: bpy.props.BoolProperty(
         name = 'Bake Armature Actions',
         description = '',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    bake_text = bpy.props.BoolProperty(
+    bake_text: bpy.props.BoolProperty(
         name = 'Bake Text',
         description = 'Export Font objects as meshes',
         default = False,
@@ -151,7 +151,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     # mandatory indices for UIList Exported Collections
-    collections_exported_idx = bpy.props.IntProperty(
+    collections_exported_idx: bpy.props.IntProperty(
         default = 0,
         options = NO_ANIM_OPTS
     )
@@ -162,36 +162,36 @@ class V3DWorldSettings(bpy.types.PropertyGroup):
 class V3DOutlineSettings(bpy.types.PropertyGroup):
     """Outline settings are part of scene settings"""
 
-    enabled = bpy.props.BoolProperty(
+    enabled: bpy.props.BoolProperty(
         name = 'Enabled',
         description = 'Enable outline effect',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    edge_strength = bpy.props.FloatProperty(
+    edge_strength: bpy.props.FloatProperty(
         name = 'Edge Strength',
         description = 'Outline Edge Strength',
         default = 3,
         min = 0,
         options = NO_ANIM_OPTS
     )
-    edge_glow = bpy.props.FloatProperty(
+    edge_glow: bpy.props.FloatProperty(
         name = 'Edge Glow',
         description = 'Outline edge glow',
         default = 0,
         min = 0,
         options = NO_ANIM_OPTS
     )
-    edge_thickness = bpy.props.FloatProperty(
+    edge_thickness: bpy.props.FloatProperty(
         name = 'Edge Thickness',
         description = 'Outline edge thickness',
         default = 1,
-        min = 0,
+        min = 1,
         options = NO_ANIM_OPTS
     )
 
-    pulse_period = bpy.props.FloatProperty(
+    pulse_period: bpy.props.FloatProperty(
         name = 'Pulse Period',
         description = 'Outline pulse period',
         default = 0,
@@ -199,7 +199,7 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    visible_edge_color = bpy.props.FloatVectorProperty(
+    visible_edge_color: bpy.props.FloatVectorProperty(
         name = 'Visible Edge Color',
         description = 'Outline visible edge color',
         default = (1.0, 1.0, 1.0, 1.0),
@@ -209,7 +209,7 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
         soft_max = 1,
         options = NO_ANIM_OPTS
     )
-    hidden_edge_color = bpy.props.FloatVectorProperty(
+    hidden_edge_color: bpy.props.FloatVectorProperty(
         name = 'Hidden Edge Color',
         description = 'Outline hidden edge color',
         default = (0.1, 0.1, 0.1, 1.0),
@@ -220,14 +220,21 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    render_hidden_edge: bpy.props.BoolProperty(
+        name = 'Render Hidden Edge',
+        description = 'Render the hidden edge part or not',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
 
 class V3DSceneSettings(bpy.types.PropertyGroup):
-    outline = bpy.props.PointerProperty(
+    outline: bpy.props.PointerProperty(
         name = 'Outline settings',
         type = V3DOutlineSettings
     )
 
-    export_layers = bpy.props.BoolVectorProperty(
+    export_layers: bpy.props.BoolVectorProperty(
         name = 'Export Layers',
         description = 'Exported layers - Shift-Click/Drag to select multple',
         size = 20,
@@ -237,14 +244,14 @@ class V3DSceneSettings(bpy.types.PropertyGroup):
     )
 
 class V3DObjectSettings(bpy.types.PropertyGroup):
-    anim_auto = bpy.props.BoolProperty(
+    anim_auto: bpy.props.BoolProperty(
         name = 'Auto Start',
         description = 'Auto start animation',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    anim_loop = bpy.props.EnumProperty(
+    anim_loop: bpy.props.EnumProperty(
         name='Loop Mode',
         description = 'Animation looping mode',
         default = 'REPEAT',
@@ -256,28 +263,28 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    anim_repeat_infinite = bpy.props.BoolProperty(
+    anim_repeat_infinite: bpy.props.BoolProperty(
         name = 'Repeat Infinitely',
         description = 'Repeat animation infinite',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    anim_repeat_count = bpy.props.FloatProperty(
+    anim_repeat_count: bpy.props.FloatProperty(
         name = 'Repeat Count',
         description = 'Animation repeat count',
         default = 1,
         options = NO_ANIM_OPTS
     )
 
-    anim_offset = bpy.props.FloatProperty(
+    anim_offset: bpy.props.FloatProperty(
         name = 'Offset',
         description = 'Animation offset, frames',
         default = 0,
         options = NO_ANIM_OPTS
     )
 
-    render_order = bpy.props.IntProperty(
+    render_order: bpy.props.IntProperty(
         name = 'Rendering Order',
         description = ('The rendering-order index. The smaller the index, the '
                 + 'earlier the object will be rendered. Useful for sorting'
@@ -286,14 +293,14 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    frustum_culling = bpy.props.BoolProperty(
+    frustum_culling: bpy.props.BoolProperty(
         name = 'Frustum Culling',
         description = 'Perform frustum culling for this object.',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    use_shadows = bpy.props.BoolProperty(
+    use_shadows: bpy.props.BoolProperty(
         name = 'Receive Shadows',
         description = 'Allow this object to receive shadows',
         default = True,
@@ -305,7 +312,7 @@ def orbit_target_update(self, context):
 
 class V3DCameraSettings(bpy.types.PropertyGroup):
 
-    controls = bpy.props.EnumProperty(
+    controls: bpy.props.EnumProperty(
         name = 'Controls',
         description = 'Camera controls type',
         default = 'ORBIT',
@@ -318,42 +325,42 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    enable_pan = bpy.props.BoolProperty(
+    enable_pan: bpy.props.BoolProperty(
         name = 'Allow Panning',
         description = 'Allow camera panning',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    rotate_speed = bpy.props.FloatProperty(
+    rotate_speed: bpy.props.FloatProperty(
         name = 'Rotation Speed',
         description = 'Camera rotation speed factor',
         default = 1,
         options = NO_ANIM_OPTS
     )
 
-    move_speed = bpy.props.FloatProperty(
+    move_speed: bpy.props.FloatProperty(
         name = 'Movement Speed',
         description = 'Camera movement speed factor',
         default = 1,
         options = NO_ANIM_OPTS
     )
 
-    orbit_min_distance = bpy.props.FloatProperty(
+    orbit_min_distance: bpy.props.FloatProperty(
         name = 'Min Dist',
         description = 'Orbit camera minimum distance',
         default = 0,
         options = NO_ANIM_OPTS
     )
 
-    orbit_max_distance = bpy.props.FloatProperty(
+    orbit_max_distance: bpy.props.FloatProperty(
         name = 'Max Dist',
         description = 'Orbit camera maximum distance',
         default = 100,
         options = NO_ANIM_OPTS
     )
 
-    orbit_min_polar_angle = bpy.props.FloatProperty(
+    orbit_min_polar_angle: bpy.props.FloatProperty(
         name = 'Min Angle',
         description = 'Orbit camera minimum polar (vertical) angle',
         default = 0,
@@ -362,7 +369,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    orbit_max_polar_angle = bpy.props.FloatProperty(
+    orbit_max_polar_angle: bpy.props.FloatProperty(
         name = 'Max Angle',
         description = 'Orbit camera maximum polar (vertical) angle',
         default = math.pi,
@@ -371,7 +378,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    orbit_min_azimuth_angle = bpy.props.FloatProperty(
+    orbit_min_azimuth_angle: bpy.props.FloatProperty(
         name = 'Min Angle',
         description = 'Orbit camera minimum azimuth (horizontal) angle',
         default = 0,
@@ -380,7 +387,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    orbit_max_azimuth_angle = bpy.props.FloatProperty(
+    orbit_max_azimuth_angle: bpy.props.FloatProperty(
         name = 'Max Angle',
         description = 'Orbit camera maximum azimuth (horizontal) angle',
         default = 2 * math.pi,
@@ -389,7 +396,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    orbit_target_object = bpy.props.PointerProperty(
+    orbit_target_object: bpy.props.PointerProperty(
         type = bpy.types.Object,
         name = 'Target Object',
         description = "Object which center is used as the camera's target point",
@@ -397,7 +404,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         update = orbit_target_update
     )
 
-    orbit_target = bpy.props.FloatVectorProperty(
+    orbit_target: bpy.props.FloatVectorProperty(
         name = 'Target',
         description = 'Target point for orbit camera',
         default = (0.0, 0.0, 0.0),
@@ -408,21 +415,21 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         update = orbit_target_update
     )
 
-    fps_collision_material = bpy.props.PointerProperty(
+    fps_collision_material: bpy.props.PointerProperty(
         type = bpy.types.Material,
         name = 'Collision Material',
         description = 'First-person control collision material (floor and walls)',
         options = NO_ANIM_OPTS
     )
 
-    fps_gaze_level = bpy.props.FloatProperty(
+    fps_gaze_level: bpy.props.FloatProperty(
         name = 'Gaze Level',
         description = 'First-person gaze (head) level',
         default = 1.8,
         options = NO_ANIM_OPTS
     )
 
-    fps_story_height = bpy.props.FloatProperty(
+    fps_story_height: bpy.props.FloatProperty(
         name = 'Story Height',
         description = 'First-person story height, specify proper value for multi-story buildings',
         default = 3,
@@ -432,7 +439,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
 
 class V3DShadowSettings(bpy.types.PropertyGroup):
     """Shadow settings are part of lamp settngs"""
-    bias = bpy.props.FloatProperty(
+    bias: bpy.props.FloatProperty(
         name = 'Bias',
         description = 'Shadow map bias',
         default = 0.0015,
@@ -441,7 +448,7 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    map_size = bpy.props.EnumProperty(
+    map_size: bpy.props.EnumProperty(
         name = 'Map Size',
         description = 'Shadow map size in pixels',
         default = '1024',
@@ -456,7 +463,7 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    radius = bpy.props.FloatProperty(
+    radius: bpy.props.FloatProperty(
         name = 'Radius',
         description = 'Shadow map blur radius',
         default = 1,
@@ -464,28 +471,28 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    camera_near = bpy.props.FloatProperty(
+    camera_near: bpy.props.FloatProperty(
         name = 'Near',
         description = 'Shadow map camera near distance',
         default = 0.2,
         min = 0,
         options = NO_ANIM_OPTS
     )
-    camera_far = bpy.props.FloatProperty(
+    camera_far: bpy.props.FloatProperty(
         name = 'Far',
         description = 'Shadow map camera far distance',
         default = 100,
         min = 0,
         options = NO_ANIM_OPTS
     )
-    camera_size = bpy.props.FloatProperty(
+    camera_size: bpy.props.FloatProperty(
         name = 'Size',
         description = 'Shadow map camera size for directional light',
         default = 10,
         min = 0,
         options = NO_ANIM_OPTS
     )
-    camera_fov = bpy.props.FloatProperty(
+    camera_fov: bpy.props.FloatProperty(
         name = 'FOV',
         description = 'Shadow map camera field of view for spot light',
         default = math.pi/2,
@@ -496,34 +503,15 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
     )
 
 class V3DLightSettings(bpy.types.PropertyGroup):
-    shadow = bpy.props.PointerProperty(
+    shadow: bpy.props.PointerProperty(
         name = 'Shadow Settings',
         type = V3DShadowSettings
     )
 
-def alpha_add_update(self, context):
-    if bpy.app.version >= (2,80,0):
-        return
-
-    mat = context.material
-
-    if mat.v3d.alpha_add == True:
-        mat.game_settings.alpha_blend = 'ADD'
-    else:
-        mat.game_settings.alpha_blend = 'OPAQUE'
-
 
 class V3DMaterialSettings(bpy.types.PropertyGroup):
-    # NOTE: keep this name for compatibility (blender 2.79 only)
-    alpha_add = bpy.props.BoolProperty(
-        name = 'Alpha Add Transparency',
-        description = 'Use Alpha Add transparency (disable depth write)',
-        default = False,
-        options = NO_ANIM_OPTS,
-        update = alpha_add_update
-    )
 
-    render_side = bpy.props.EnumProperty(
+    render_side: bpy.props.EnumProperty(
         name='Render Side',
         description = 'Which side of geometry will be rendered',
         default = 'FRONT',
@@ -535,21 +523,28 @@ class V3DMaterialSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    depth_write = bpy.props.BoolProperty(
+    depth_write: bpy.props.BoolProperty(
         name = 'Depth Write',
-        description = 'Depth write (disable to fix transparency sorting issues or render 2D overlays)',
+        description = 'Write to depth buffer. Disable it to fix various transparency sorting issues',
         default = True,
         options = NO_ANIM_OPTS
     )
 
-    dithering = bpy.props.BoolProperty(
+    depth_test: bpy.props.BoolProperty(
+        name = 'Depth Test',
+        description = 'Perform depth test. Disable it to render the material above all objects',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    dithering: bpy.props.BoolProperty(
         name = 'Dithering',
         description = 'Apply color dithering to eliminate banding artefacts',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    gltf_compat = bpy.props.BoolProperty(
+    gltf_compat: bpy.props.BoolProperty(
         name = 'glTF 2.0 compatible',
         description = 'Force material to be compatible with glTF 2.0 standard',
         default = False,
@@ -557,7 +552,7 @@ class V3DMaterialSettings(bpy.types.PropertyGroup):
     )
 
 class V3DTextureSettings(bpy.types.PropertyGroup):
-    anisotropy = bpy.props.EnumProperty(
+    anisotropy: bpy.props.EnumProperty(
         name = 'Anisotropic Filtering',
         description = 'Anisotropic filtering ratio',
         default = '1',
@@ -572,7 +567,7 @@ class V3DTextureSettings(bpy.types.PropertyGroup):
     )
 
 class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
-    falloff_factor = bpy.props.FloatProperty(
+    falloff_factor: bpy.props.FloatProperty(
         name = 'Falloff Factor',
         description = 'How much the noise falls off with distance and for acute angles',
         min = 0,
@@ -583,7 +578,7 @@ class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    dispersion_factor = bpy.props.FloatProperty(
+    dispersion_factor: bpy.props.FloatProperty(
         name = 'Strength Factor',
         description = 'Noise Strength Factor',
         min = 0,
@@ -596,14 +591,14 @@ class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
 
 class V3DLineRenderingSettings(bpy.types.PropertyGroup):
 
-    enable = bpy.props.BoolProperty(
+    enable: bpy.props.BoolProperty(
         name = 'Enable Line Rendering',
         description = 'Render the object as constant-width lines',
         default = False,
         options = NO_ANIM_OPTS
     )
 
-    color = bpy.props.FloatVectorProperty(
+    color: bpy.props.FloatVectorProperty(
         name = 'Line Color',
         description = 'Line color',
         default = (1.0, 1.0, 1.0),
@@ -614,7 +609,7 @@ class V3DLineRenderingSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    width = bpy.props.FloatProperty(
+    width: bpy.props.FloatProperty(
         name = 'Line Width (px)',
         description = 'Line width in pixels',
         default = 1,
@@ -624,21 +619,21 @@ class V3DLineRenderingSettings(bpy.types.PropertyGroup):
 
 class V3DCurveSettings(bpy.types.PropertyGroup):
 
-    line_rendering_settings = bpy.props.PointerProperty(
+    line_rendering_settings: bpy.props.PointerProperty(
         name = "Line Rendering Settings",
         type = V3DLineRenderingSettings
     )
 
 class V3DMeshSettings(bpy.types.PropertyGroup):
 
-    line_rendering_settings = bpy.props.PointerProperty(
+    line_rendering_settings: bpy.props.PointerProperty(
         name = "Line Rendering Settings",
         type = V3DLineRenderingSettings
     )
 
 class V3DCollectionSettings(bpy.types.PropertyGroup):
 
-    enable_export = bpy.props.BoolProperty(
+    enable_export: bpy.props.BoolProperty(
         name = 'Enable Collection Export',
         description = 'Allow export of the collection\'s objects',
         default = True,
@@ -646,9 +641,7 @@ class V3DCollectionSettings(bpy.types.PropertyGroup):
     )
 
 def register():
-    if bpy.app.version >= (2,80,0):
-        bpy.utils.register_class(V3DCollectionSettings)
-
+    bpy.utils.register_class(V3DCollectionSettings)
     bpy.utils.register_class(V3DExportSettings)
     bpy.utils.register_class(V3DWorldSettings)
     bpy.utils.register_class(V3DOutlineSettings)
@@ -685,16 +678,10 @@ def register():
         type = V3DCameraSettings
     )
 
-    if bpy.app.version < (2,80,0):
-        bpy.types.Lamp.v3d = bpy.props.PointerProperty(
-            name = "Verge3D light settings",
-            type = V3DLightSettings
-        )
-    else:
-        bpy.types.Light.v3d = bpy.props.PointerProperty(
-            name = "Verge3D light settings",
-            type = V3DLightSettings
-        )
+    bpy.types.Light.v3d = bpy.props.PointerProperty(
+        name = "Verge3D light settings",
+        type = V3DLightSettings
+    )
 
     bpy.types.Material.v3d = bpy.props.PointerProperty(
         name = "Verge3D material settings",
@@ -725,11 +712,10 @@ def register():
         type = V3DMeshSettings
     )
 
-    if bpy.app.version >= (2,80,0):
-        bpy.types.Collection.v3d = bpy.props.PointerProperty(
-            name = "Verge3D collection settings",
-            type = V3DCollectionSettings
-        )
+    bpy.types.Collection.v3d = bpy.props.PointerProperty(
+        name = "Verge3D collection settings",
+        type = V3DCollectionSettings
+    )
 
 
 def unregister():
@@ -748,14 +734,10 @@ def unregister():
     bpy.utils.unregister_class(V3DWorldSettings)
     bpy.utils.unregister_class(V3DExportSettings)
 
-    if bpy.app.version >= (2,80,0):
-        bpy.utils.unregister_class(V3DCollectionSettings)
+    bpy.utils.unregister_class(V3DCollectionSettings)
 
     del bpy.types.Material.v3d
-    if bpy.app.version < (2,80,0):
-        del bpy.types.Lamp.v3d
-    else:
-        del bpy.types.Light.v3d
+    del bpy.types.Light.v3d
     del bpy.types.Curve.v3d
     del bpy.types.Mesh.v3d
     del bpy.types.Camera.v3d
@@ -763,5 +745,4 @@ def unregister():
     del bpy.types.Scene.v3d_export
     del bpy.types.Scene.v3d
     del bpy.types.World.v3d
-    if bpy.app.version >= (2,80,0):
-        del bpy.types.Collection.v3d
+    del bpy.types.Collection.v3d

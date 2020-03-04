@@ -21,19 +21,18 @@ import shutil
 import subprocess
 import webbrowser
 
-import verge3d
+from pluginUtils.log import printLog
+from pluginUtils.path import getAppManagerHost, getManualURL, getRoot
 
-from .gltf2_debug import *
 from . import utils
 
 join = os.path.join
 norm = os.path.normpath
 
-APP_MANAGER_HOST="http://localhost:8668/"
-MANUAL_URL="https://www.soft8soft.com/docs/"
+from pluginUtils.manager import AppManagerConn
 
 class V3DPanel():
-    COMPAT_ENGINES = ['BLENDER_RENDER', 'CYCLES', 'BLENDER_EEVEE']
+    COMPAT_ENGINES = ['CYCLES', 'BLENDER_EEVEE']
 
     @classmethod
     def poll(cls, context):
@@ -44,10 +43,6 @@ class V3DPanel():
             return True
         else:
             return False
-
-    @classmethod
-    def checkRenderInternal(cls, context):
-        return context.scene.render.engine == 'BLENDER_RENDER'
 
 
 class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
@@ -69,11 +64,10 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'copyright')
 
-        if bpy.app.version >= (2,80,0):
-            col = layout.column()
-            col.label(text='Export Collections:')
-            col.template_list("COLLECTION_UL_export", "", bpy.data,
-                    "collections", context.scene.v3d_export, "collections_exported_idx", rows=4)
+        col = layout.column()
+        col.label(text='Export Collections:')
+        col.template_list("COLLECTION_UL_export", "", bpy.data,
+                "collections", context.scene.v3d_export, "collections_exported_idx", rows=4)
 
         box = layout.box()
         box.label(text='Animation:')
@@ -116,11 +110,6 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'use_shadows')
 
-        if bpy.app.version < (2,80,0):
-            row = layout.row()
-            row.active = v3d_export.use_shadows
-            row.prop(v3d_export, 'shadow_map_type')
-
         row = layout.row()
         row.active = v3d_export.use_shadows
         row.prop(v3d_export, 'shadow_map_side')
@@ -156,6 +145,9 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.active = outlineActive
         row.prop(outline, 'hidden_edge_color')
+        row = layout.row()
+        row.active = outlineActive
+        row.prop(outline, 'render_hidden_edge')
 
 class COLLECTION_UL_export(bpy.types.UIList):
 
@@ -253,9 +245,8 @@ class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
             row = layout.row()
             row.prop(v3d, 'frustum_culling')
 
-            if bpy.app.version >= (2,80,0):
-                row = layout.row()
-                row.prop(v3d, 'use_shadows')
+            row = layout.row()
+            row.prop(v3d, 'use_shadows')
 
 class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
     bl_space_type = 'PROPERTIES'
@@ -305,10 +296,7 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
             box = layout.box()
             box.label(text='Target Object/Point')
 
-            if bpy.app.version < (2,80,0):
-                split = box.split(0.5)
-            else:
-                split = box.split(factor=0.5)
+            split = box.split(factor=0.5)
 
             column = split.column()
             column.prop(v3d, 'orbit_target', text='Manual')
@@ -345,52 +333,16 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
-    poll_datablock = 'light' if bpy.app.version >= (2,80,0) else 'lamp'
+    poll_datablock = 'light'
 
     def draw(self, context):
         layout = self.layout
 
-        light = context.light if bpy.app.version >= (2,80,0) else context.lamp
+        light = context.light
         type = light.type
         shadow = light.v3d.shadow
 
-        if bpy.app.version < (2,80,0):
-            row = layout.row()
-            row.label(text='Shadow:')
-
-            if type == 'POINT' or type == 'SPOT' or type == 'SUN':
-
-                if not super().checkRenderInternal(context):
-                    row = layout.row()
-                    row.prop(light, 'shadow_method', expand=True)
-
-                shadowOn = light.shadow_method != 'NOSHADOW'
-
-                row = layout.row()
-                row.active = shadowOn
-                row.prop(shadow, 'map_size')
-
-                row = layout.row()
-                row.active = shadowOn
-                if type == 'SUN':
-                    row.prop(shadow, 'camera_size')
-                elif type == 'SPOT':
-                    row.prop(shadow, 'camera_fov')
-
-                row = layout.row()
-                row.active = shadowOn
-                row.prop(shadow, 'camera_near')
-                row.prop(shadow, 'camera_far')
-
-                row = layout.row()
-                row.active = shadowOn
-                row.prop(shadow, 'radius')
-                row.prop(shadow, 'bias')
-            else:
-                row = layout.row()
-                row.label(text='Not available for this light type')
-
-        elif bpy.app.version < (2,81,0):
+        if bpy.app.version < (2,81,0):
 
             if type == 'SUN':
 
@@ -488,45 +440,24 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         material = context.material
 
-        if bpy.app.version < (2,80,0):
+        layout.use_property_split = True
 
+        blend_back = utils.material_has_blend_backside(material)
+
+        if blend_back:
             row = layout.row()
-            row.prop(material.game_settings, 'use_backface_culling')
+            row.label(text='Overridden by the "Settings->Show Backface" option.', icon='INFO')
 
-            if not super().checkRenderInternal(context):
-                row = layout.row()
-                row.prop(material, 'use_cast_shadows')
+        row = layout.row()
+        row.prop(material.v3d, 'render_side')
+        row.active = not blend_back
 
-                row = layout.row()
-                row.prop(material, 'use_shadows', text='Receive Shadows')
+        row = layout.row()
+        row.prop(material.v3d, 'depth_write')
+        row.active = not blend_back and not material.blend_method == 'OPAQUE'
 
-                row = layout.row()
-                row.prop(material, "use_transparency")
-
-                row = layout.row()
-                row.active = material.use_transparency
-                row.prop(material, "transparency_method", expand=True)
-
-            row = layout.row()
-            row.active = material.use_transparency
-            row.prop(material.v3d, 'alpha_add')
-
-        else:
-            layout.use_property_split = True
-
-            blend_back = utils.material_has_blend_backside(material)
-
-            if blend_back:
-                row = layout.row()
-                row.label(text='Overridden by the "Settings->Show Backface" option.', icon='INFO')
-
-            row = layout.row()
-            row.prop(material.v3d, 'render_side')
-            row.active = not blend_back
-
-            row = layout.row()
-            row.prop(material.v3d, 'depth_write')
-            row.active = not blend_back and not material.blend_method == 'OPAQUE'
+        row = layout.row()
+        row.prop(material.v3d, 'depth_test')
 
         row = layout.row()
         row.prop(material.v3d, 'dithering')
@@ -593,10 +524,10 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
             row.prop(node.v3d, 'dispersion_factor')
 
 
-def exec_browser(url):
+def execBrowser(url):
     # always try to run server before starting browers
     # fixes several issues with closed Blender
-    verge3d.V3DServer.start()
+    AppManagerConn.start(getRoot(), 'BLENDER', True)
 
     try:
         webbrowser.open(url)
@@ -620,7 +551,7 @@ class V3D_OT_AppManager(bpy.types.Operator):
     bl_options = {"INTERNAL"}
 
     def execute(self, context):
-        exec_browser(APP_MANAGER_HOST)
+        execBrowser(getAppManagerHost())
         return {"FINISHED"}
 
 
@@ -631,7 +562,7 @@ class V3D_OT_SneakPeek(bpy.types.Operator):
     bl_options = {"INTERNAL"}
 
     def execute(self, context):
-        prev_dir = join(verge3d.get_root(), "player", "preview")
+        prev_dir = join(getRoot(), "player", "preview")
 
         if os.path.exists(prev_dir):
             shutil.rmtree(prev_dir)
@@ -640,16 +571,16 @@ class V3D_OT_SneakPeek(bpy.types.Operator):
         bpy.ops.export_scene.v3d_gltf(
                 filepath=join(prev_dir, "sneak_peek.gltf"), export_sneak_peek = True)
 
-        exec_browser(APP_MANAGER_HOST +
-                "player/player.html?load=preview/sneak_peek.gltf")
+        execBrowser(getAppManagerHost() +
+                'player/player.html?load=preview/sneak_peek.gltf')
 
         return {"FINISHED"}
 
 @persistent
 def loadHandler(dummy):
+
     printLog('INFO', 'Reexporting ' + V3D_OT_ReexportAll.currBlend)
     bpy.ops.export_scene.v3d_gltf(filepath=V3D_OT_ReexportAll.currGLTF)
-
     V3D_OT_ReexportAll.reexportNext()
 
 class V3D_OT_ReexportAll(bpy.types.Operator):
@@ -676,7 +607,7 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
                 bpy.app.handlers.load_post.remove(loadHandler)
 
     def execute(self, context):
-        apps = join(verge3d.get_root(), 'applications')
+        apps = join(getRoot(), 'applications')
 
         for root, dirs, files in os.walk(apps):
             for name in files:
@@ -694,22 +625,11 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
                         if verMaj != 2:
                             continue
 
-                        if (bpy.app.version < (2,80,0) and verMin >= 80) or (bpy.app.version >= (2,80,0) and verMin < 80):
+                        if verMin < 80:
                             continue
 
-                        IGNORE = [
-                            'voronoi.blend',
-                            'wave_texture.blend',
-                            'refraction_bsdf.blend',
-                            'principled_transmission.blend',
-                            'glass_bsdf.blend',
-                            'puff.blend',
-                            'tv_stand.blend',
-                            'load_unload.blend',
-                            'chair.blend',
-                            'table.blend',
-                            'gem_*.blend',
-                        ]
+                        IGNORE = []
+
                         ignore = False
                         for pattern in IGNORE:
                             if fnmatch.fnmatch(name, pattern):
@@ -721,9 +641,9 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
 
                     if os.path.exists(gltfpath):
                         self.__class__.exported.append((blendpath, gltfpath))
+                        self.__class__.exported.sort()
 
-            self.__class__.reexportNext()
-
+        self.__class__.reexportNext()
 
         return {"FINISHED"}
 
@@ -737,16 +657,13 @@ def v3d_menu_help(self, context):
 
     if context.scene.render.engine in V3DPanel.COMPAT_ENGINES:
         self.layout.separator()
-        self.layout.operator("wm.url_open", text="Verge3D User Manual", icon='URL').url = MANUAL_URL
+        self.layout.operator("wm.url_open", text="Verge3D User Manual", icon='URL').url = getManualURL()
 
 def register():
     bpy.types.VIEW3D_HT_header.append(v3d_sneak_peek)
     bpy.types.VIEW3D_HT_header.append(v3d_app_manager)
 
-    if bpy.app.version < (2,80,0):
-        bpy.types.INFO_MT_help.append(v3d_menu_help)
-    else:
-        bpy.types.TOPBAR_MT_help.append(v3d_menu_help)
+    bpy.types.TOPBAR_MT_help.append(v3d_menu_help)
 
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderLayerSettings)
@@ -764,8 +681,7 @@ def register():
     bpy.utils.register_class(V3D_OT_SneakPeek)
     bpy.utils.register_class(V3D_OT_ReexportAll)
 
-    if bpy.app.version >= (2,80,0):
-        bpy.utils.register_class(COLLECTION_UL_export)
+    bpy.utils.register_class(COLLECTION_UL_export)
 
 def unregister():
 
@@ -785,8 +701,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_OT_AppManager)
     bpy.utils.unregister_class(V3D_OT_OrbitCameraUpdateView)
 
-    if bpy.app.version >= (2,80,0):
-        bpy.utils.unregister_class(COLLECTION_UL_export)
+    bpy.utils.unregister_class(COLLECTION_UL_export)
 
     bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
     bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)

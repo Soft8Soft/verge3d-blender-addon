@@ -27,7 +27,9 @@ import math
 import os
 import tempfile
 
-from .gltf2_debug import *
+from pluginUtils.log import *
+import pluginUtils.gltf as gltf
+
 from .gltf2_get import *
 from .utils import *
 
@@ -95,10 +97,7 @@ def convert_swizzle_matrix(matrix):
     mat_sca[1][1] = scale[1]
     mat_sca[2][2] = scale[2]
 
-    if bpy.app.version < (2,80,0):
-        return mat_trans * mat_rot * mat_sca
-    else:
-        return mat_trans @ mat_rot @ mat_sca
+    return mat_trans @ mat_rot @ mat_sca
 
 def extract_primitive_floor(a, indices, use_tangents):
     """
@@ -122,7 +121,7 @@ def extract_primitive_floor(a, indices, use_tangents):
 
     source_attributes = a['attributes']
 
-    #
+
 
     texcoord_index = 0
     process_texcoord = True
@@ -137,7 +136,7 @@ def extract_primitive_floor(a, indices, use_tangents):
 
     texcoord_max = texcoord_index
 
-    #
+
 
     color_index = 0
     process_color = True
@@ -152,24 +151,24 @@ def extract_primitive_floor(a, indices, use_tangents):
 
     color_max = color_index
 
-    #
 
-    bone_index = 0
+
+    skinAttrIndex = 0
     process_bone = True
     while process_bone:
-        joint_id = 'JOINTS_' + str(bone_index)
-        weight_id = 'WEIGHTS_' + str(bone_index)
+        joint_id = 'JOINTS_' + str(skinAttrIndex)
+        weight_id = 'WEIGHTS_' + str(skinAttrIndex)
 
         if source_attributes.get(joint_id) is not None:
             attributes[joint_id] = []
             attributes[weight_id] = []
-            bone_index += 1
+            skinAttrIndex += 1
         else:
             process_bone = False
 
-    bone_max = bone_index
+    skinAttrIndexMax = skinAttrIndex
 
-    #
+
 
     morph_index = 0
     process_morph = True
@@ -189,7 +188,7 @@ def extract_primitive_floor(a, indices, use_tangents):
 
     morph_max = morph_index
 
-    #
+
 
     min_index = min(indices)
     max_index = max(indices)
@@ -216,9 +215,9 @@ def extract_primitive_floor(a, indices, use_tangents):
             for vi in range(0, 4):
                 attributes[color_id].append(source_attributes[color_id][old_index * 4 + vi])
 
-        for bone_index in range(0, bone_max):
-            joint_id = 'JOINTS_' + str(bone_index)
-            weight_id = 'WEIGHTS_' + str(bone_index)
+        for skinAttrIndex in range(0, skinAttrIndexMax):
+            joint_id = 'JOINTS_' + str(skinAttrIndex)
+            weight_id = 'WEIGHTS_' + str(skinAttrIndex)
             for vi in range(0, 4):
                 attributes[joint_id].append(source_attributes[joint_id][old_index * 4 + vi])
                 attributes[weight_id].append(source_attributes[weight_id][old_index * 4 + vi])
@@ -259,7 +258,7 @@ def extract_primitive_pack(a, indices, use_tangents):
 
     source_attributes = a['attributes']
 
-    #
+
 
     texcoord_index = 0
     process_texcoord = True
@@ -274,7 +273,7 @@ def extract_primitive_pack(a, indices, use_tangents):
 
     texcoord_max = texcoord_index
 
-    #
+
 
     color_index = 0
     process_color = True
@@ -289,24 +288,22 @@ def extract_primitive_pack(a, indices, use_tangents):
 
     color_max = color_index
 
-    #
 
-    bone_index = 0
+    skinAttrIndex = 0
     process_bone = True
     while process_bone:
-        joint_id = 'JOINTS_' + str(bone_index)
-        weight_id = 'WEIGHTS_' + str(bone_index)
+        joint_id = 'JOINTS_' + str(skinAttrIndex)
+        weight_id = 'WEIGHTS_' + str(skinAttrIndex)
 
         if source_attributes.get(joint_id) is not None:
             attributes[joint_id] = []
             attributes[weight_id] = []
-            bone_index += 1
+            skinAttrIndex += 1
         else:
             process_bone = False
 
-    bone_max = bone_index
+    skinAttrIndexMax = skinAttrIndex
 
-    #
 
     morph_index = 0
     process_morph = True
@@ -326,7 +323,7 @@ def extract_primitive_pack(a, indices, use_tangents):
 
     morph_max = morph_index
 
-    #
+
 
     old_to_new_indices = {}
     new_to_old_indices = {}
@@ -363,9 +360,9 @@ def extract_primitive_pack(a, indices, use_tangents):
             for vi in range(0, 4):
                 attributes[color_id].append(source_attributes[color_id][old_index * 4 + vi])
 
-        for bone_index in range(0, bone_max):
-            joint_id = 'JOINTS_' + str(bone_index)
-            weight_id = 'WEIGHTS_' + str(bone_index)
+        for skinAttrIndex in range(0, skinAttrIndexMax):
+            joint_id = 'JOINTS_' + str(skinAttrIndex)
+            weight_id = 'WEIGHTS_' + str(skinAttrIndex)
             for vi in range(0, 4):
                 attributes[joint_id].append(source_attributes[joint_id][old_index * 4 + vi])
                 attributes[weight_id].append(source_attributes[weight_id][old_index * 4 + vi])
@@ -387,20 +384,20 @@ def extract_primitive_pack(a, indices, use_tangents):
 def checkUseNodeAttrs(bl_mat):
     mat_type = get_material_type(bl_mat)
 
-    if mat_type == 'INTERNAL' or mat_type == 'CYCLES' or (mat_type == 'BASIC' and bpy.app.version < (2,80,0) and bl_mat.use_shadeless):
+    if mat_type == 'CYCLES':
         return True
     else:
         return False
 
 def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
-        blender_joint_indices, export_settings):
+        blender_joint_indices, exportSettings):
     """
     Extracting primitives from a mesh. Polygons are triangulated and sorted by material.
     Furthermore, primitives are splitted up, if the indices range is exceeded.
     Finally, triangles are also splitted up/dublicatted, if face normals are used instead of vertex normals.
     """
 
-    need_skin_attributes = export_settings['gltf_skins'] and len(blender_joint_indices) > 0
+    need_skin_attributes = exportSettings['skins'] and len(blender_joint_indices) > 0
 
     printLog('INFO', 'Extracting {} primitives'.format(blender_mesh.name))
 
@@ -408,7 +405,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         blender_mesh.calc_normals_split()
 
     use_tangents = False
-    if mesh_need_tangents_for_export(blender_mesh, export_settings['gltf_optimize_attrs']):
+    if mesh_need_tangents_for_export(blender_mesh, exportSettings['optimize_attrs']):
         try:
             blender_mesh.calc_tangents()
             use_tangents = True
@@ -416,9 +413,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             printLog('WARNING', 'Could not calculate tangents. Please try to triangulate the mesh first.')
 
 
-    #
     # Gathering position, normal and texcoords.
-    #
+
     primitive_attributes = {
         'POSITION' : [],
         'NORMAL' : []
@@ -458,7 +454,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
     if blender_mesh.uv_layers.active:
         texcoord_max = len(blender_mesh.uv_layers)
 
-    #
 
     vertex_colors = {}
 
@@ -473,9 +468,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             break
     color_max = color_index
 
-    #
 
-    bone_max = 0
+    skinAttrIndexMax = 0
     if need_skin_attributes:
         for blender_polygon in blender_mesh.polygons:
             for loop_index in blender_polygon.loop_indices:
@@ -486,9 +480,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                 bones_count = max(len(blender_mesh.vertices[vertex_index].groups), 1)
                 if bones_count % 4 == 0:
                     bones_count -= 1
-                bone_max = max(bone_max, bones_count // 4 + 1)
+                skinAttrIndexMax = max(skinAttrIndexMax, bones_count // 4 + 1)
 
-    #
 
     morph_max = 0
 
@@ -524,9 +517,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         return _shape_key_normals[key.name][normal_type]
 
 
-    #
     # Convert polygon to primitive indices and eliminate invalid ones. Assign to material.
-    #
 
     bm_tri = bmesh.new()
 
@@ -540,7 +531,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             primitive = material_primitives[blender_polygon.material_index]
             vertex_index_to_new_indices = material_vertex_map[blender_polygon.material_index]
 
-        export_color = primitive['material'] not in export_settings['gltf_use_no_color']
+        export_color = primitive['material'] not in exportSettings['use_no_color']
 
         attributes = primitive['attributes']
 
@@ -555,12 +546,9 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
             face_tangent.normalize()
 
-        #
-
         indices = primitive['indices']
 
         loop_index_list = []
-
 
 
         if len(blender_polygon.loop_indices) == 3:
@@ -568,46 +556,24 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         elif len(blender_polygon.loop_indices) > 3:
             # Triangulation of polygon. Using internal function, as non-convex polygons could exist.
 
-            if bpy.app.version < (2,80,0):
-                bm_tri.clear()
+            polyline = []
 
-                for loop_index in blender_polygon.loop_indices:
-                    vertex_index = blender_mesh.loops[loop_index].vertex_index
-                    bm_tri.verts.new(blender_mesh.vertices[vertex_index].co)
-                bm_tri.faces.new(bm_tri.verts)
+            for loop_index in blender_polygon.loop_indices:
+                vertex_index = blender_mesh.loops[loop_index].vertex_index
+                v = blender_mesh.vertices[vertex_index].co
+                polyline.append(mathutils.Vector((v[0], v[1], v[2])))
 
-                bm_tri.normal_update()
-                bm_tri.verts.index_update()
-                bm_tri.edges.index_update()
-                bm_tri.faces.index_update()
+            triangles = mathutils.geometry.tessellate_polygon((polyline,))
 
-                # use calc_tessafce instead of mathutils.geometry.tessellate_polygon
-                # because the latter can produce incorrect results in some specific cases
-                face_tuples = bm_tri.calc_tessface()
-                for ft in face_tuples:
-                    loop_index_list.append(blender_polygon.loop_indices[ft[0].vert.index])
-                    loop_index_list.append(blender_polygon.loop_indices[ft[1].vert.index])
-                    loop_index_list.append(blender_polygon.loop_indices[ft[2].vert.index])
-            else:
-                # old method, using it since bmesh.calc_tessface() was removed
-                polyline = []
-
-                for loop_index in blender_polygon.loop_indices:
-                    vertex_index = blender_mesh.loops[loop_index].vertex_index
-                    v = blender_mesh.vertices[vertex_index].co
-                    polyline.append(mathutils.Vector((v[0], v[1], v[2])))
-
-                triangles = mathutils.geometry.tessellate_polygon((polyline,))
-
-                for triangle in triangles:
-                    if bpy.app.version >= (2,81,0):
-                        for loop_idx in triangle:
-                            loop_index_list.append(blender_polygon.loop_indices[loop_idx])
-                    else:
-                        # old Blender version had bug with flipped triangles
-                        loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
-                        loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
-                        loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
+            for triangle in triangles:
+                if bpy.app.version >= (2,81,0):
+                    for loop_idx in triangle:
+                        loop_index_list.append(blender_polygon.loop_indices[loop_idx])
+                else:
+                    # old Blender version had bug with flipped triangles
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[0]])
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[2]])
+                    loop_index_list.append(blender_polygon.loop_indices[triangle[1]])
 
         else:
             continue
@@ -618,7 +584,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
             if vertex_index_to_new_indices.get(vertex_index) is None:
                 vertex_index_to_new_indices[vertex_index] = []
 
-            #
 
             v = None
             n = None
@@ -654,7 +619,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     # NOTE: to comply with glTF spec [0,0] upper left angle
                     uvs.append([uv.x, 1.0 - uv.y])
 
-            #
 
             if color_max > 0 and export_color:
                 for color_index in range(0, color_max):
@@ -662,11 +626,10 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     color = vertex_colors[color_name].data[loop_index].color
                     colors.append([color[0], color[1], color[2], 1.0])
 
-            #
 
             if need_skin_attributes:
 
-                bone_count = 0
+                skinAttrCount = 0
 
                 if vertex.groups is not None and len(vertex.groups) > 0:
                     joint = []
@@ -674,19 +637,17 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     for group_element in vertex.groups:
 
                         if len(joint) == 4:
-                            bone_count += 1
+                            skinAttrCount += 1
                             joints.append(joint)
                             weights.append(weight)
                             joint = []
                             weight = []
 
-                        #
 
                         vertex_group_index = group_element.group
 
                         vertex_group_name = blender_vertex_groups[vertex_group_index].name
 
-                        #
 
                         joint_index = 0
                         joint_weight = 0.0
@@ -695,13 +656,12 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                             joint_index = blender_joint_indices[vertex_group_name]
                             joint_weight = group_element.weight
 
-                        #
 
                         joint.append(joint_index)
                         weight.append(joint_weight)
 
                     if len(joint) > 0:
-                        bone_count += 1
+                        skinAttrCount += 1
 
                         for fill in range(0, 4 - len(joint)):
                             joint.append(0)
@@ -710,21 +670,20 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                         joints.append(joint)
                         weights.append(weight)
 
-                for fill in range(0, bone_max - bone_count):
+                for fill in range(0, skinAttrIndexMax - skinAttrCount):
                     joints.append([0, 0, 0, 0])
                     weights.append([0.0, 0.0, 0.0, 0.0])
 
-                #
 
                 # use the armature (the last joint) with the unity weight
                 # if no joints influence a vertex
                 weight_sum = 0
-                for bone_index in range(0, bone_max):
-                    weight_sum += sum(weights[bone_index])
+                for skinAttrIndex in range(0, skinAttrIndexMax):
+                    weight_sum += sum(weights[skinAttrIndex])
 
                 if weight_sum == 0:
-                    joints = [[0, 0, 0, 0] for i in range(0, bone_max)]
-                    weights = [[0, 0, 0, 0] for i in range(0, bone_max)]
+                    joints = [[0, 0, 0, 0] for i in range(0, skinAttrIndexMax)]
+                    weights = [[0, 0, 0, 0] for i in range(0, skinAttrIndexMax)]
 
                     # there will be a joint representing the armature itself,
                     # which will be placed at the end of the joint list in the glTF data
@@ -732,7 +691,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     weights[0][0] = 1.0
 
 
-            if morph_max > 0 and export_settings['gltf_morph']:
+            if morph_max > 0 and exportSettings['morph']:
                 for morph_index in range(0, morph_max):
                     blender_shape_key = blender_shape_keys[morph_index]
 
@@ -743,7 +702,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
                     target_positions.append(v_morph)
 
-                    #
 
                     n_morph = None
 
@@ -770,7 +728,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
                     target_normals.append(n_morph)
 
-                    #
 
                     if use_tangents:
                         rotation = n_morph.rotation_difference(n)
@@ -781,8 +738,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
                         target_tangents.append(t_morph)
 
-            #
-            #
 
             create = True
 
@@ -828,12 +783,12 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                                 break
 
                 if need_skin_attributes:
-                    for bone_index in range(0, bone_max):
-                        joint = joints[bone_index]
-                        weight = weights[bone_index]
+                    for skinAttrIndex in range(0, skinAttrIndexMax):
+                        joint = joints[skinAttrIndex]
+                        weight = weights[skinAttrIndex]
 
-                        joint_id = 'JOINTS_' + str(bone_index)
-                        weight_id = 'WEIGHTS_' + str(bone_index)
+                        joint_id = 'JOINTS_' + str(skinAttrIndex)
+                        weight_id = 'WEIGHTS_' + str(skinAttrIndex)
                         for i in range(0, 4):
                             if attributes[joint_id][current_new_index * 4 + i] != joint[i]:
                                 found = False
@@ -842,7 +797,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                                 found = False
                                 break
 
-                if export_settings['gltf_morph']:
+                if exportSettings['morph']:
                     for morph_index in range(0, morph_max):
                         target_position = target_positions[morph_index]
                         target_normal = target_normals[morph_index]
@@ -882,12 +837,8 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
             vertex_index_to_new_indices[vertex_index].append(new_index)
 
-            #
-            #
 
             indices.append(new_index)
-
-            #
 
             attributes['POSITION'].extend(v)
             attributes['NORMAL'].extend(n)
@@ -913,22 +864,22 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     attributes[color_id].extend(colors[color_index])
 
             if need_skin_attributes:
-                for bone_index in range(0, bone_max):
-                    joint_id = 'JOINTS_' + str(bone_index)
+                for skinAttrIndex in range(0, skinAttrIndexMax):
+                    joint_id = 'JOINTS_' + str(skinAttrIndex)
 
                     if attributes.get(joint_id) is None:
                         attributes[joint_id] = []
 
-                    attributes[joint_id].extend(joints[bone_index])
+                    attributes[joint_id].extend(joints[skinAttrIndex])
 
-                    weight_id = 'WEIGHTS_' + str(bone_index)
+                    weight_id = 'WEIGHTS_' + str(skinAttrIndex)
 
                     if attributes.get(weight_id) is None:
                         attributes[weight_id] = []
 
-                    attributes[weight_id].extend(weights[bone_index])
+                    attributes[weight_id].extend(weights[skinAttrIndex])
 
-            if export_settings['gltf_morph']:
+            if exportSettings['morph']:
                 for morph_index in range(0, morph_max):
                     target_position_id = 'MORPH_POSITION_' + str(morph_index)
 
@@ -954,18 +905,15 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
     bm_tri.free()
 
-    #
+
     # Add primitive plus split them if needed.
-    #
 
     result_primitives = []
 
     for primitive in material_primitives:
         export_color = True
-        if primitive['material'] in export_settings['gltf_use_no_color']:
+        if primitive['material'] in exportSettings['use_no_color']:
             export_color = False
-
-        #
 
         indices = primitive['indices']
 
@@ -986,21 +934,20 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
         joints = []
         weights = []
         if need_skin_attributes:
-            for bone_index in range(0, bone_max):
-                joints.append(primitive['attributes']['JOINTS_' + str(bone_index)])
-                weights.append(primitive['attributes']['WEIGHTS_' + str(bone_index)])
+            for skinAttrIndex in range(0, skinAttrIndexMax):
+                joints.append(primitive['attributes']['JOINTS_' + str(skinAttrIndex)])
+                weights.append(primitive['attributes']['WEIGHTS_' + str(skinAttrIndex)])
 
         target_positions = []
         target_normals = []
         target_tangents = []
-        if export_settings['gltf_morph']:
+        if exportSettings['morph']:
             for morph_index in range(0, morph_max):
                 target_positions.append(primitive['attributes']['MORPH_POSITION_' + str(morph_index)])
                 target_normals.append(primitive['attributes']['MORPH_NORMAL_' + str(morph_index)])
                 if use_tangents:
                     target_tangents.append(primitive['attributes']['MORPH_TANGENT_' + str(morph_index)])
 
-        #
 
         count = len(indices)
 
@@ -1009,20 +956,16 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
         max_index = max(indices)
 
-        #
 
         range_indices = 65536
-        if export_settings['gltf_indices'] == 'UNSIGNED_BYTE':
+        if exportSettings['indices'] == 'UNSIGNED_BYTE':
             range_indices = 256
-        elif export_settings['gltf_indices'] == 'UNSIGNED_INT':
+        elif exportSettings['indices'] == 'UNSIGNED_INT':
             range_indices = 4294967296
 
-        #
 
         if max_index >= range_indices:
-            #
             # Spliting result_primitives.
-            #
 
             # At start, all indicees are pending.
             pending_attributes = {
@@ -1065,7 +1008,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                 for weight in weights:
                     pending_attributes['WEIGHTS_' + str(weight_index)] = weight
                     weight_index += 1
-            if export_settings['gltf_morph']:
+            if exportSettings['morph']:
                 morph_index = 0
                 for target_position in target_positions:
                     pending_attributes['MORPH_POSITION_' + str(morph_index)] = target_position
@@ -1089,16 +1032,10 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
                 pending_indices = []
 
-                #
-                #
-
                 all_local_indices = []
 
                 for i in range(0, (max(process_indices) // range_indices) + 1):
                     all_local_indices.append([])
-
-                #
-                #
 
                 # For all faces ...
                 for face_index in range(0, len(process_indices), 3):
@@ -1141,25 +1078,23 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                     printLog('DEBUG', 'Creating temporary primitive for splitting')
 
         else:
-            #
             # No splitting needed.
-            #
             result_primitives.append(primitive)
 
             printLog('DEBUG', 'Adding primitive without splitting. Indices: ' + str(len(primitive['indices'])) + ' Vertices: ' + str(len(primitive['attributes']['POSITION']) // 3))
 
-    printLog('INFO', 'Primitives created: ' + str(len(result_primitives)))
+    printLog('DEBUG', 'Primitives created: ' + str(len(result_primitives)))
 
     return result_primitives
 
 
-def extract_line_primitives(glTF, blender_mesh, export_settings):
+def extract_line_primitives(glTF, blender_mesh, exportSettings):
     """
     Extracting line primitives from a mesh.
     Furthermore, primitives are splitted up, if the indices range is exceeded.
     """
 
-    printLog('INFO', 'Extracting line primitive')
+    printLog('DEBUG', 'Extracting line primitive')
 
     # material property currently isn't used for line meshes in the engine
     mat_name = (blender_mesh.materials[0].name if blender_mesh.materials
@@ -1193,9 +1128,9 @@ def extract_line_primitives(glTF, blender_mesh, export_settings):
     result_primitives = []
 
     range_indices = 65536
-    if export_settings['gltf_indices'] == 'UNSIGNED_BYTE':
+    if exportSettings['indices'] == 'UNSIGNED_BYTE':
         range_indices = 256
-    elif export_settings['gltf_indices'] == 'UNSIGNED_INT':
+    elif exportSettings['indices'] == 'UNSIGNED_INT':
         range_indices = 4294967296
 
     if len(set(orig_indices)) >= range_indices:
@@ -1271,7 +1206,7 @@ def extract_mat(mat):
             mat[0][2], mat[1][2], mat[2][2], mat[3][2],
             mat[0][3], mat[1][3], mat[2][3], mat[3][3]]
 
-def extract_node_graph(node_tree, export_settings, glTF):
+def extract_node_graph(node_tree, exportSettings, glTF):
 
     nodes = []
     edges = []
@@ -1281,7 +1216,7 @@ def extract_node_graph(node_tree, export_settings, glTF):
     for bl_node in bl_nodes:
         node = {
             'name': bl_node.name,
-            'type': bl_node.type
+            'type': bl_node.type + '_BL'
         }
 
         nodes.append(node);
@@ -1311,10 +1246,6 @@ def extract_node_graph(node_tree, export_settings, glTF):
             node['nodeGraph'] = get_node_graph_index(glTF,
                     bl_node.node_tree.name)
 
-        elif bl_node.type == 'LAMP':
-            # TODO
-            pass
-
         elif bl_node.type == 'MAPPING':
             # reproducing ShaderNodeMapping
             # https://docs.blender.org/api/current/bpy.types.ShaderNodeMapping.html
@@ -1332,32 +1263,8 @@ def extract_node_graph(node_tree, export_settings, glTF):
 
             node['vectorType'] = bl_node.vector_type
 
-        elif bl_node.type == 'MATERIAL' or bl_node.type == 'MATERIAL_EXT':
-            # reproducing ShaderNodeMaterial
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeMaterial.html
-
-            mat = bl_node.material
-
-            if mat:
-                node['materialName'] = mat.name
-
-                node['specularIntensity'] = mat.specular_intensity
-                node['specularHardness'] = mat.specular_hardness
-
-                node['useShadeless'] = mat.use_shadeless
-
-                # encoded inside inputs in MATERIAL_EXT:
-                if bl_node.type == 'MATERIAL':
-                    node['ambient'] = mat.ambient
-                    node['emit'] = mat.emit
-                    node['alpha'] = mat.alpha
-                    # specularAlpha for simple material node is not supported in Blender
-            else:
-                printLog('ERROR', 'No material in node')
-
-            node['useDiffuse'] = bl_node.use_diffuse
-            node['useSpecular'] = bl_node.use_specular
-            node['invertNormal'] = bl_node.invert_normal
+        elif bl_node.type == 'MAP_RANGE':
+            node['clamp'] = bl_node.clamp
 
         elif bl_node.type == 'MATH':
             # reproducing ShaderNodeMath
@@ -1377,8 +1284,12 @@ def extract_node_graph(node_tree, export_settings, glTF):
             # rename for uniformity with GEOMETRY node
             node['uvLayer'] = bl_node.uv_map
 
+        elif bl_node.type == 'TEX_COORD':
+            # NOTE: will be replaced by the corresponding index from glTF['nodes'] later
+            node['object'] = bl_node.object
+
         elif bl_node.type == 'TEX_ENVIRONMENT':
-            index = get_texture_index(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
+            index = gltf.getTextureIndex(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
 
             if index == -1:
                 node['type'] = 'TEX_ENVIRONMENT_NONE'
@@ -1388,7 +1299,7 @@ def extract_node_graph(node_tree, export_settings, glTF):
             node['projection'] = bl_node.projection;
 
         elif bl_node.type == 'TEX_IMAGE':
-            index = get_texture_index(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
+            index = gltf.getTextureIndex(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
 
             if index == -1:
                 node['type'] = 'TEX_IMAGE_NONE'
@@ -1415,29 +1326,22 @@ def extract_node_graph(node_tree, export_settings, glTF):
             node['groundAlbedo'] = bl_node.ground_albedo
 
         elif bl_node.type == 'TEX_VORONOI':
-            node['coloring'] = bl_node.coloring
-            if bpy.app.version < (2, 80, 0):
-                # backwards compatibility for old 2.79b builds without the 'distance'
-                # and 'feature' parameters
-                node['distance'] = bl_node.distance if hasattr(bl_node, 'distance') else 'DISTANCE'
-                node['feature'] = bl_node.feature if hasattr(bl_node, 'feature') else 'F1'
+
+            if bpy.app.version < (2, 81, 11):
+
+                node['coloring'] = bl_node.coloring
+                node['distance'] = bl_node.distance
+                node['feature'] = bl_node.feature
+
             else:
+                # only 3D is supported right now
+                # node['dimension'] = '3D'
                 node['distance'] = bl_node.distance
                 node['feature'] = bl_node.feature
 
         elif bl_node.type == 'TEX_WAVE':
             node['waveType'] = bl_node.wave_type
             node['waveProfile'] = bl_node.wave_profile
-
-        elif bl_node.type == 'TEXTURE':
-            # NOTE: using get_texture_index_by_texture() may result in wrong colorSpace if the texture is shared
-            # need to find out possible side effects when using this function
-            index = get_texture_index(glTF, get_texture_name(bl_node.texture)) if bl_node.texture else -1
-
-            if index == -1:
-                node['type'] = 'TEXTURE_NONE'
-            else:
-                node['texture'] = index
 
         elif bl_node.type == 'VALTORGB':
             node['curve'] = extract_color_ramp(bl_node.color_ramp)
@@ -1455,50 +1359,26 @@ def extract_node_graph(node_tree, export_settings, glTF):
 
         node['inputs'] = []
         for bl_input in bl_node.inputs:
-            bl_inp_type = bl_input.rna_type.identifier
-            if (bl_inp_type == 'NodeSocketColor' or
-                    bl_inp_type == 'NodeSocketVector' or
-                    bl_inp_type == 'NodeSocketVectorDirection' or
-                    bl_inp_type == 'NodeSocketVectorEuler' or
-                    bl_inp_type == 'NodeSocketVectorTranslation' or
-                    bl_inp_type == 'NodeSocketVectorXYZ'):
-                node['inputs'].append(extract_vec(bl_input.default_value))
-            elif bl_inp_type == 'NodeSocketVirtual':
-                # NOTE: last in the list should be safe to omit it
-                pass
-            elif bl_inp_type == 'NodeSocketShader':
-                # Cycles shader has no default value
-                node['inputs'].append([0, 0, 0, 0])
-            else:
-                # NOTE: the roughness value for the Glossy BSDF node is squared
-                # prior to 2.80
-                if (bpy.app.version < (2, 80, 0) and bl_node.type == 'BSDF_GLOSSY'
-                        and bl_input.identifier == 'Roughness'):
-                    node['inputs'].append(math.sqrt(bl_input.default_value))
-                else:
-                    node['inputs'].append(bl_input.default_value)
 
-        if bpy.app.version < (2, 80, 0):
-            # backwards compatibility for old 2.79b builds without the hidden
-            # 'exponent' input
-            if bl_node.type == 'TEX_VORONOI' and len(bl_node.inputs) == 2:
-                node['inputs'].append(0.5)
+            # An input of type CUSTOM is usually the last input/output socket
+            # in the "Group Input"/"Group Output" nodes, should be safe to omit
+            if bl_input.type == 'CUSTOM':
+                continue
+
+            defval = get_socket_defval_compat(bl_input)
+
+            node['inputs'].append(defval)
 
         node['outputs'] = []
         for bl_output in bl_node.outputs:
-            bl_out_type = bl_output.rna_type.identifier
-            if (bl_out_type == 'NodeSocketColor' or
-                    bl_out_type == 'NodeSocketVector' or
-                    bl_out_type == 'NodeSocketVectorDirection'):
-                node['outputs'].append(extract_vec(bl_output.default_value))
-            elif bl_out_type == 'NodeSocketVirtual':
-                # NOTE: last in the list should be safe to omit it
-                pass
-            elif bl_out_type == 'NodeSocketShader':
-                # Cycles shader has no default value
-                node['outputs'].append([0, 0, 0, 0])
-            else:
-                node['outputs'].append(bl_output.default_value)
+
+            # An input of type CUSTOM is usually the last input/output socket
+            # in the "Group Input"/"Group Output" nodes, should be safe to omit
+            if bl_output.type == 'CUSTOM':
+                continue
+
+            defval = get_socket_defval_compat(bl_output)
+            node['outputs'].append(defval)
 
         # "is_active_output" exists on both tree outputs and group outputs
         node["is_active_output"] = (hasattr(bl_node, "is_active_output")
@@ -1548,7 +1428,11 @@ def extract_curve_mapping(mapping, x_range):
         x = x_range[0] + pix_size * i
 
         for curve_map in mapping.curves:
-            data.append(curve_map.evaluate(x))
+
+            if bpy.app.version < (2, 82, 1):
+                data.append(curve_map.evaluate(x))
+            else:
+                data.append(mapping.evaluate(curve_map, x))
 
     return data
 
@@ -1577,182 +1461,49 @@ def find_node_socket_num(socket_list, identifier):
             return i
     return -1
 
-def composeNodeGraph(bl_mat, export_settings, glTF):
+def composeNodeGraph(bl_mat, exportSettings, glTF):
 
     graph = { 'nodes' : [], 'edges' : [] }
 
-    if bpy.app.version < (2,80,0):
-        appendNode(graph, {
-            'name': 'Output',
-            'type': 'OUTPUT',
-            'inputs': [
-                [1,1,1,1],
-                1,
-            ],
-            'outputs': [],
-            'is_active_output': True
-        })
+    appendNode(graph, {
+        'name': 'Output',
+        'type': 'OUTPUT_MATERIAL_BL',
+        'inputs': [
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0]
+        ],
+        'outputs': [],
+        'is_active_output': True
+    })
 
-        appendNode(graph, {
-            'name': 'Material',
-            'type': 'MATERIAL_EXT',
-            'materialName': 'Material',
-            'useDiffuse': True,
-            'useSpecular': True,
-            'invertNormal': False,
-            'specularHardness': bl_mat.specular_hardness,
-            'specularIntensity': bl_mat.specular_intensity,
-            'useShadeless': bl_mat.use_shadeless,
-            'inputs': [
-                extract_vec(bl_mat.diffuse_color) + [1],
-                extract_vec(bl_mat.specular_color) + [1],
-                bl_mat.diffuse_intensity,
-                [0, 0, 0],
-                [0, 0, 0, 0],
-                bl_mat.ambient,
-                bl_mat.emit,
-                bl_mat.specular_alpha,
-                0,
-                bl_mat.alpha,
-                0
-            ],
-            'outputs': [
-                [0, 0, 0, 0],
-                0,
-                [0, 0, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0, 0]
-            ]
-        }, 0, [(0, 0), (1, 1)])
-
-        texNodes = []
-
-        for bl_tex_slot in bl_mat.texture_slots:
-            if (bl_tex_slot and bl_tex_slot.texture and
-                bl_tex_slot.texture.type == 'IMAGE' and
-                get_tex_image(bl_tex_slot.texture) is not None):
-
-                blendType = bl_tex_slot.blend_type
-
-                # Diffuse texture
-
-                if bl_tex_slot.use_map_color_diffuse:
-                    index = get_texture_index_by_texture(export_settings,
-                            glTF, bl_tex_slot.texture)
-                    if index >= 0:
-                        mixIdx = appendMixRGBNode(graph, 'DiffuseMix', blendType,
-                                bl_tex_slot.diffuse_color_factor, 1, (0,0))
-                        texNodes.append(appendTextureNode(graph, 'Diffuse', index, mixIdx, [(1,2)]))
-
-                # Alpha texture
-
-                if bl_tex_slot.use_map_alpha:
-                    index = get_texture_index_by_texture(export_settings,
-                            glTF, bl_tex_slot.texture)
-                    if index >= 0:
-                        mixIdx = appendMixRGBNode(graph, 'AlphaMix', blendType,
-                                bl_tex_slot.alpha_factor, 1, (0,9))
-                        texNodes.append(appendTextureNode(graph, 'Alpha', index, mixIdx, [(1,2)]))
-
-                # Specular intensity texture
-                # NOTE: this one connected as color but interpreted as intensity
-                if bl_tex_slot.use_map_color_spec:
-                    index = get_texture_index_by_texture(export_settings,
-                            glTF, bl_tex_slot.texture)
-                    if index >= 0:
-                        mixIdx = appendMixRGBNode(graph, 'SpecularMix', blendType,
-                                bl_tex_slot.specular_color_factor, 1, (0,1))
-                        texNodes.append(appendTextureNode(graph, 'Specular', index, mixIdx, [(1,2)]))
-
-                # Emissive texture
-
-                if bl_tex_slot.use_map_emit:
-                    index = get_texture_index_by_texture(export_settings,
-                            glTF, bl_tex_slot.texture)
-                    if index >= 0:
-                        mixIdx = appendMixRGBNode(graph, 'EmissiveMix', blendType,
-                                bl_tex_slot.emit_factor, 1, (0,6))
-                        texNodes.append(appendTextureNode(graph, 'Emissive', index, mixIdx, [(1,2)]))
-
-                # Normal texture
-
-                if bl_tex_slot.use_map_normal:
-                    index = get_texture_index_by_texture(export_settings,
-                            glTF, bl_tex_slot.texture)
-                    if index >= 0:
-                        normalIdx = appendNode(graph, {
-                            'name': 'NormalMap',
-                            'type': 'NORMAL_MAP',
-                            'uvLayer': '',
-                            'inputs': [
-                                1,
-                                [1,1,1,1],
-                            ],
-                            'outputs': [[1,1,1]],
-                        }, 1, [(0,3)])
-
-                        texNodes.append(appendTextureNode(graph, 'NormalTex', index, normalIdx, [(1,1)]))
-
-        geometry = {
-            'name': 'Geometry',
-            'type': 'GEOMETRY',
-            'uvLayer': '',
-            'colorLayer': '',
-            'inputs': [],
-            'outputs': [[0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0], [0,0,0,0], 0, 0]
-        }
-
-        # connect geometry node
-        for idx in texNodes:
-            appendNode(graph, geometry, idx, [(4, 0)])
-
-    else: # blender 2.80
-
-        appendNode(graph, {
-            'name': 'Output',
-            'type': 'OUTPUT_MATERIAL',
-            'inputs': [
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-                [0, 0, 0]
-            ],
-            'outputs': [],
-            'is_active_output': True
-        })
-
-        # backwards compatibility with old blender 2.80 beta builds
-        diff_color = extract_vec(bl_mat.diffuse_color)
-        if len(diff_color) == 3:
-            diff_color += [1]
-
-        appendNode(graph, {
-            'name': 'Principled',
-            'type': 'BSDF_PRINCIPLED',
-            'inputs': [
-                diff_color,
-                0.0,
-                [1.0, 1.0, 1.0],
-                [0.0, 0.0, 0.0, 1.0],
-                bl_mat.metallic,
-                bl_mat.specular_intensity,
-                0.0,
-                bl_mat.roughness,
-                0.0,
-                0.0,
-                0.0,
-                0.5,
-                0.0,
-                0.03,
-                1.45,
-                0.0,
-                0.0,
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0]
-            ],
-            'outputs': [[0, 0, 0, 0]]
-        }, 0)
+    appendNode(graph, {
+        'name': 'Principled',
+        'type': 'BSDF_PRINCIPLED_BL',
+        'inputs': [
+            extract_vec(bl_mat.diffuse_color),
+            0.0,
+            [1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+            bl_mat.metallic,
+            bl_mat.specular_intensity,
+            0.0,
+            bl_mat.roughness,
+            0.0,
+            0.0,
+            0.0,
+            0.5,
+            0.0,
+            0.03,
+            1.45,
+            0.0,
+            0.0,
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0]
+        ],
+        'outputs': [[0, 0, 0, 0]]
+    }, 0)
 
     return graph
 
@@ -1773,34 +1524,6 @@ def appendNode(nodeGraph, node, toNode=-1, connections=[(0, 0)]):
             })
 
     return nodeIndex
-
-def appendMixRGBNode(nodeGraph, name, blendType, factor, toNode, connection=(0, 0)):
-
-    mixedColor = nodeGraph['nodes'][toNode]['inputs'][connection[1]]
-
-    # float connection
-    if isinstance(mixedColor, (int, float)):
-        mixedColor = [mixedColor, mixedColor, mixedColor, 1]
-
-    return appendNode(nodeGraph, {
-        'name' : name,
-        'type' : 'MIX_RGB',
-        'blendType': blendType,
-        'useClamp': False,  # ?
-        'inputs' : [factor, mixedColor, [0,0,0,0]],
-        'outputs': [[0,0,0,0]]
-    }, toNode, [connection])
-
-
-def appendTextureNode(nodeGraph, name, index, toNode=-1, connections=[(0, 0)]):
-
-    return appendNode(nodeGraph, {
-        'name' : name,
-        'type' : 'TEXTURE',
-        'texture': index,
-        'inputs' : [[0,0,0]],
-        'outputs': [0, [0,0,0,0], [0,0,0]]
-    }, toNode, connections)
 
 
 def getView3DSpaceProp(prop):
@@ -1828,7 +1551,7 @@ def extract_constraints(glTF, bl_obj):
             continue
 
         cons = { 'name': bl_cons.name, 'mute': bl_cons.mute }
-        target = (get_node_index(glTF, bl_cons.target.name)
+        target = (gltf.getNodeIndex(glTF, bl_cons.target.name)
                 if getattr(bl_cons, 'target', None) is not None else -1)
 
         if bl_cons.type == 'COPY_LOCATION':
@@ -1901,20 +1624,12 @@ def extract_constraints(glTF, bl_obj):
 
         elif bl_cons.type == 'CHILD_OF':
             if target >= 0:
-                if bpy.app.version < (2, 80, 0):
-                    constraints.append(dict(cons, **{
-                        'type': 'childOf',
-                        'target': target,
-                        'offsetMatrix': extract_mat(convert_swizzle_matrix(
-                                bl_cons.inverse_matrix * bl_obj.matrix_basis))
-                    }))
-                else:
-                    constraints.append(dict(cons, **{
-                        'type': 'childOf',
-                        'target': target,
-                        'offsetMatrix': extract_mat(convert_swizzle_matrix(
-                                bl_cons.inverse_matrix @ bl_obj.matrix_basis))
-                    }))
+                constraints.append(dict(cons, **{
+                    'type': 'childOf',
+                    'target': target,
+                    'offsetMatrix': extract_mat(convert_swizzle_matrix(
+                            bl_cons.inverse_matrix @ bl_obj.matrix_basis))
+                }))
 
         elif bl_cons.type == 'FLOOR':
             if target >= 0:
@@ -2090,14 +1805,7 @@ def extractColorSpace(bl_tex):
     if (isinstance(bl_tex, (bpy.types.ShaderNodeTexImage,
             bpy.types.ShaderNodeTexEnvironment))):
 
-        # COMPAT: < (2,80,64)
-        if hasattr(bl_tex, 'color_space'):
-            if bl_tex.color_space == 'COLOR':
-                colorSpace = 'srgb'
-            else:
-                colorSpace = 'non-color'
-        else:
-            colorSpace = get_tex_image(bl_tex).colorspace_settings.name.lower()
+        colorSpace = get_tex_image(bl_tex).colorspace_settings.name.lower()
     else:
         # possible c/s values:
         # 'Filmic Log', 'Linear', 'Linear ACES', 'Non-Color', 'Raw', 'sRGB', 'VD16', 'XYZ'

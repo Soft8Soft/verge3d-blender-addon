@@ -22,7 +22,7 @@ import bpy
 import math
 import mathutils
 
-from .gltf2_debug import *
+from pluginUtils.log import printLog
 from .gltf2_extract import *
 
 #
@@ -33,17 +33,17 @@ from .gltf2_extract import *
 # Functions
 #
 
-def animate_get_interpolation(export_settings, blender_fcurve_list):
+def animate_get_interpolation(exportSettings, blender_fcurve_list):
     """
     Retrieves the glTF interpolation, depending on a fcurve list.
     Blender allows mixing and more variations of interpolations.
     In such a case, a conversion is needed.
     """
 
-    if export_settings['gltf_force_sampling']:
+    if exportSettings['force_sampling']:
         return 'CONVERSION_NEEDED'
 
-    #
+
 
     prev_times = None
     for blender_fcurve in blender_fcurve_list:
@@ -62,14 +62,14 @@ def animate_get_interpolation(export_settings, blender_fcurve_list):
         if blender_fcurve is None:
             continue
 
-        #
+
 
         currentKeyframeCount = len(blender_fcurve.keyframe_points)
 
         if currentKeyframeCount > 0 and blender_fcurve.keyframe_points[0].co[0] < 0:
             return 'CONVERSION_NEEDED'
 
-        #
+
 
         for blender_keyframe in blender_fcurve.keyframe_points:
             if interpolation is None:
@@ -137,7 +137,7 @@ def animate_convert_keys(key_list):
     return times
 
 
-def animate_gather_keys(export_settings, fcurve_list, interpolation):
+def animate_gather_keys(exportSettings, fcurve_list, interpolation):
     """
     Merges and sorts several key frames to one set.
     If an interpolation conversion is needed, the sample key frames are created as well.
@@ -162,7 +162,7 @@ def animate_gather_keys(export_settings, fcurve_list, interpolation):
             else:
                 end = max(end, blender_fcurve.range()[1])
 
-            #
+
 
             add_epsilon_keyframe = False
             for blender_keyframe in blender_fcurve.keyframe_points:
@@ -185,7 +185,7 @@ def animate_gather_keys(export_settings, fcurve_list, interpolation):
 
         key = start
         while key <= end:
-            if not export_settings['gltf_frame_range'] or (export_settings['gltf_frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
+            if not exportSettings['frame_range'] or (exportSettings['frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
                 keys.append(key)
             key += 1.0
 
@@ -198,7 +198,7 @@ def animate_gather_keys(export_settings, fcurve_list, interpolation):
 
             for blender_keyframe in blender_fcurve.keyframe_points:
                 key = blender_keyframe.co[0]
-                if not export_settings['gltf_frame_range'] or (export_settings['gltf_frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
+                if not exportSettings['frame_range'] or (exportSettings['frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
                     if key not in keys:
                         keys.append(key)
 
@@ -207,14 +207,14 @@ def animate_gather_keys(export_settings, fcurve_list, interpolation):
     return keys
 
 
-def animate_location(export_settings, location, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_location(exportSettings, location, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for location transformations.
     """
-    if not export_settings['gltf_joint_cache'].get(node_name):
-        export_settings['gltf_joint_cache'][node_name] = {}
+    if not exportSettings['joint_cache'].get(node_name):
+        exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(export_settings, location, interpolation)
+    keys = animate_gather_keys(exportSettings, location, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -229,19 +229,16 @@ def animate_location(export_settings, location, interpolation, node_type, node_n
         out_tangent = [0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if export_settings['gltf_joint_cache'][node_name].get(keys[keyframe_index]):
-                translation, tmp_rotation, tmp_scale = export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
+                translation, tmp_rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
 
-                if bpy.app.version < (2,80,0):
-                    matrix = matrix_correction * matrix_basis
-                else:
-                    matrix = matrix_correction @ matrix_basis
+                matrix = matrix_correction @ matrix_basis
 
                 translation, tmp_rotation, tmp_scale = decompose_transform_swizzle(matrix)
 
-                export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]] = [translation, tmp_rotation, tmp_scale]
+                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [translation, tmp_rotation, tmp_scale]
         else:
             channel_index = 0
             for blender_fcurve in location:
@@ -275,14 +272,14 @@ def animate_location(export_settings, location, interpolation, node_type, node_n
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_rotation_axis_angle(exportSettings, rotation_axis_angle, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for axis angle transformations.
     """
-    if not export_settings['gltf_joint_cache'].get(node_name):
-        export_settings['gltf_joint_cache'][node_name] = {}
+    if not exportSettings['joint_cache'].get(node_name):
+        exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(export_settings, rotation_axis_angle, interpolation)
+    keys = animate_gather_keys(exportSettings, rotation_axis_angle, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -295,19 +292,16 @@ def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolat
         rotation = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if export_settings['gltf_joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
 
-                if bpy.app.version < (2,80,0):
-                    matrix = matrix_correction * matrix_basis
-                else:
-                    matrix = matrix_correction @ matrix_basis
+                matrix = matrix_correction @ matrix_basis
 
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
 
-                export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for blender_fcurve in rotation_axis_angle:
@@ -324,10 +318,7 @@ def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolat
             rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
-                if bpy.app.version < (2,80,0):
-                    rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
-                else:
-                    rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
 
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -339,14 +330,14 @@ def animate_rotation_axis_angle(export_settings, rotation_axis_angle, interpolat
     return result
 
 
-def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_rotation_euler(exportSettings, rotation_euler, rotation_mode, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for euler angle transformations.
     """
-    if not export_settings['gltf_joint_cache'].get(node_name):
-        export_settings['gltf_joint_cache'][node_name] = {}
+    if not exportSettings['joint_cache'].get(node_name):
+        exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(export_settings, rotation_euler, interpolation)
+    keys = animate_gather_keys(exportSettings, rotation_euler, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -359,19 +350,16 @@ def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, inter
         rotation = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if export_settings['gltf_joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
 
-                if bpy.app.version < (2,80,0):
-                    matrix = matrix_correction * matrix_basis
-                else:
-                    matrix = matrix_correction @ matrix_basis
+                matrix = matrix_correction @ matrix_basis
 
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
 
-                export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for blender_fcurve in rotation_euler:
@@ -388,10 +376,7 @@ def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, inter
             rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
-                if bpy.app.version < (2,80,0):
-                    rotation = rotation * mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
-                else:
-                    rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+                rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
 
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -403,14 +388,14 @@ def animate_rotation_euler(export_settings, rotation_euler, rotation_mode, inter
     return result
 
 
-def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_rotation_quaternion(exportSettings, rotation_quaternion, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for quaternion transformations.
     """
-    if not export_settings['gltf_joint_cache'].get(node_name):
-        export_settings['gltf_joint_cache'][node_name] = {}
+    if not exportSettings['joint_cache'].get(node_name):
+        exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(export_settings, rotation_quaternion, interpolation)
+    keys = animate_gather_keys(exportSettings, rotation_quaternion, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -425,19 +410,16 @@ def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolat
         out_tangent = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if export_settings['gltf_joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
 
-                if bpy.app.version < (2,80,0):
-                    matrix = matrix_correction * matrix_basis
-                else:
-                    matrix = matrix_correction @ matrix_basis
+                matrix = matrix_correction @ matrix_basis
 
                 tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
 
-                export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for blender_fcurve in rotation_quaternion:
@@ -469,14 +451,9 @@ def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolat
             if node_type == 'NODE_X_90':
                 quat_x90 = mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
 
-                if bpy.app.version < (2,80,0):
-                    rotation = rotation * quat_x90
-                    in_tangent = in_tangent * quat_x90
-                    out_tangent = out_tangent * quat_x90
-                else:
-                    rotation = rotation @ quat_x90
-                    in_tangent = in_tangent @ quat_x90
-                    out_tangent = out_tangent @ quat_x90
+                rotation = rotation @ quat_x90
+                in_tangent = in_tangent @ quat_x90
+                out_tangent = out_tangent @ quat_x90
 
 
         # Bring to glTF Quaternion notation.
@@ -493,14 +470,14 @@ def animate_rotation_quaternion(export_settings, rotation_quaternion, interpolat
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_scale(export_settings, scale, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_scale(exportSettings, scale, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for scale transformations.
     """
-    if not export_settings['gltf_joint_cache'].get(node_name):
-        export_settings['gltf_joint_cache'][node_name] = {}
+    if not exportSettings['joint_cache'].get(node_name):
+        exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(export_settings, scale, interpolation)
+    keys = animate_gather_keys(exportSettings, scale, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -515,19 +492,16 @@ def animate_scale(export_settings, scale, interpolation, node_type, node_name, m
         out_tangent = [0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if export_settings['gltf_joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, tmp_rotation, scale_data = export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
+                tmp_location, tmp_rotation, scale_data = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
             else:
                 bpy.context.scene.frame_set(keys[keyframe_index])
 
-                if bpy.app.version < (2,80,0):
-                    matrix = matrix_correction * matrix_basis
-                else:
-                    matrix = matrix_correction @ matrix_basis
+                matrix = matrix_correction @ matrix_basis
 
                 tmp_location, tmp_rotation, scale_data = decompose_transform_swizzle(matrix)
 
-                export_settings['gltf_joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, tmp_rotation, scale_data]
+                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, tmp_rotation, scale_data]
         else:
             channel_index = 0
             for blender_fcurve in scale:
@@ -560,11 +534,11 @@ def animate_scale(export_settings, scale, interpolation, node_type, node_name, m
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_value(export_settings, value_parameter, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animate_value(exportSettings, value_parameter, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for scalar anaimations.
     """
-    keys = animate_gather_keys(export_settings, value_parameter, interpolation)
+    keys = animate_gather_keys(exportSettings, value_parameter, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -601,12 +575,12 @@ def animate_value(export_settings, value_parameter, interpolation, node_type, no
 
     return result, result_in_tangent, result_out_tangent
 
-def animate_default_value(export_settings, default_value, interpolation):
+def animate_default_value(exportSettings, default_value, interpolation):
     """
     Calculate/gather the key value pairs for node material animation.
     """
 
-    keys = animate_gather_keys(export_settings, default_value, interpolation)
+    keys = animate_gather_keys(exportSettings, default_value, interpolation)
 
     times = animate_convert_keys(keys)
 
@@ -645,12 +619,12 @@ def animate_default_value(export_settings, default_value, interpolation):
 
     return result, result_in_tangent, result_out_tangent
 
-def animate_energy(export_settings, energy, interpolation):
+def animate_energy(exportSettings, energy, interpolation):
     """
     Calculate/gather the key value pairs for node material animation.
     """
 
-    keys = animate_gather_keys(export_settings, energy, interpolation)
+    keys = animate_gather_keys(exportSettings, energy, interpolation)
 
     times = animate_convert_keys(keys)
 

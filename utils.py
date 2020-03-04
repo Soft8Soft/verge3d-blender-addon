@@ -25,7 +25,6 @@ BOUND_BOX_MAX = 1e10
 
 selectedObject = None
 selectedObjectsSave = []
-# 2.79
 prevActiveObject = None
 
 def clamp(val, minval, maxval):
@@ -57,10 +56,6 @@ def get_world_first_valid_texture_slot(world):
             return blender_texture_slot
 
     return None
-
-def isCyclesRender(context):
-    # NOTE: temporary, need to rename/refactor in Blender 2.80
-    return (context.scene.render.engine == 'CYCLES' or bpy.app.version >= (2,80,0))
 
 def getWorldCyclesEnvTexture(world):
 
@@ -100,28 +95,10 @@ def getWorldCyclesBkgColor(world):
         return [0.041, 0.041, 0.041]
 
 def getLightCyclesStrength(bl_light):
-    if bpy.app.version < (2,80,0):
-        if bl_light.node_tree is not None and bl_light.use_nodes:
-            for bl_node in bl_light.node_tree.nodes:
-                if bl_node.type == 'EMISSION':
-                    return bl_node.inputs['Strength'].default_value
-
-        # point and spot light have 100 as default strength
-        if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
-            return 100
-        else:
-            return 1
-    else:
-        return bl_light.energy
+    return bl_light.energy
 
 
 def getLightCyclesColor(bl_light):
-    if bl_light.node_tree is not None and bl_light.use_nodes and bpy.app.version < (2,80,0):
-        for bl_node in bl_light.node_tree.nodes:
-            if bl_node.type == 'EMISSION':
-                col = bl_node.inputs['Color'].default_value
-                return [col[0], col[1], col[2]]
-
     col = bl_light.color
     return [col[0], col[1], col[2]]
 
@@ -131,43 +108,35 @@ def setSelectedObject(bl_obj):
     """
     global prevActiveObject
 
-    if bpy.app.version < (2,80,0):
-        prevActiveObject = bpy.context.object
-        bpy.context.scene.objects.active = bl_obj
-    else:
-        global selectedObject, selectedObjectsSave
+    global selectedObject, selectedObjectsSave
 
-        selectedObject = bl_obj
-        selectedObjectsSave = bpy.context.selected_objects.copy()
+    selectedObject = bl_obj
+    selectedObjectsSave = bpy.context.selected_objects.copy()
 
-        # NOTE: seems like we need both selection and setting active object
-        for o in selectedObjectsSave:
-            o.select_set(False)
+    # NOTE: seems like we need both selection and setting active object
+    for o in selectedObjectsSave:
+        o.select_set(False)
 
-        prevActiveObject = bpy.context.view_layer.objects.active
-        bpy.context.view_layer.objects.active = bl_obj
+    prevActiveObject = bpy.context.view_layer.objects.active
+    bpy.context.view_layer.objects.active = bl_obj
 
-        bl_obj.select_set(True)
+    bl_obj.select_set(True)
 
 def restoreSelectedObjects():
     global prevActiveObject
 
-    if bpy.app.version < (2,80,0):
-        bpy.context.scene.objects.active = prevActiveObject
-        prevActiveObject = None
-    else:
-        global selectedObject, selectedObjectsSave
+    global selectedObject, selectedObjectsSave
 
-        selectedObject.select_set(False)
+    selectedObject.select_set(False)
 
-        for o in selectedObjectsSave:
-            o.select_set(True)
+    for o in selectedObjectsSave:
+        o.select_set(True)
 
-        bpy.context.view_layer.objects.active = prevActiveObject
-        prevActiveObject = None
+    bpy.context.view_layer.objects.active = prevActiveObject
+    prevActiveObject = None
 
-        selectedObject = None
-        selectedObjectsSave = []
+    selectedObject = None
+    selectedObjectsSave = []
 
 def get_scene_by_object(obj):
 
@@ -177,31 +146,6 @@ def get_scene_by_object(obj):
             return scene
 
     return None
-
-def is_on_exported_layer(obj):
-
-    if bpy.app.version >= (2,80,0):
-        return True
-
-    scene = get_scene_by_object(obj)
-    if scene is None:
-        scene = bpy.context.scene
-
-    for i in range(len(obj.layers)):
-        if obj.layers[i] and scene.v3d.export_layers[i]:
-            return True
-
-    return False
-
-def is_dupli_obj_visible_in_group(dgroup, dobj):
-    """
-    Blender version prior to 2.80 only
-    """
-    for a, b in zip(dobj.layers, dgroup.layers):
-        if a and b:
-            return True
-
-    return False
 
 def get_tex_image(bl_tex):
 
@@ -216,9 +160,6 @@ def get_texture_name(bl_texture):
     if (isinstance(bl_texture, (bpy.types.ShaderNodeTexImage,
             bpy.types.ShaderNodeTexEnvironment))):
         tex_name = bl_texture.image.name
-    elif (isinstance(bl_texture, (bpy.types.ShaderNodeTexture,
-            bpy.types.MaterialTextureSlot, bpy.types.WorldTextureSlot))):
-        tex_name = bl_texture.texture.name
     else:
         tex_name = bl_texture.name
 
@@ -254,10 +195,7 @@ def mat4_svd_decompose_to_mats(mat4):
 
         # NOTE: a potential reflection part in U and VH matrices isn't considered
         mat_trans = mathutils.Matrix.Translation(mat4.to_translation())
-        if bpy.app.version < (2,80,0):
-            mat_left = mat_trans * (mat_u * mat_s).to_4x4()
-        else:
-            mat_left = mat_trans @ (mat_u @ mat_s).to_4x4()
+        mat_left = mat_trans @ (mat_u @ mat_s).to_4x4()
 
         return (mat_left, mat_vh.to_4x4())
 
@@ -276,14 +214,10 @@ def find_armature(obj):
     return obj.find_armature()
 
 def material_has_blend_backside(bl_mat):
-    # >= (2,80,0) API
-    return (material_is_blend(bl_mat) and (
-        # NOTE: compatibility for some pre-beta Blender build
-        (hasattr(bl_mat, 'show_transparent_backside') and bl_mat.show_transparent_backside) or
-        (hasattr(bl_mat, 'show_transparent_back') and bl_mat.show_transparent_back)))
+    return (material_is_blend(bl_mat) and
+        (hasattr(bl_mat, 'show_transparent_back') and bl_mat.show_transparent_back))
 
 def material_is_blend(bl_mat):
-    # >= (2,80,0) API
     return bl_mat.blend_method in ['BLEND', 'MULTIPLY', 'ADD']
 
 def update_orbit_camera_view(cam_obj, scene):
@@ -306,10 +240,7 @@ def update_orbit_camera_view(cam_obj, scene):
     # need to update the camera state (i.e. world matrix) immediately in case of
     # several consecutive UI updates
 
-    if bpy.app.version < (2,80,0):
-        scene.update()
-    else:
-        bpy.context.view_layer.update()
+    bpy.context.view_layer.update()
 
 def get_lookat_aligned_up_matrix(eye, target):
 
@@ -380,8 +311,6 @@ def obj_del_not_exported_modifiers(obj):
 def obj_add_tri_modifier(obj):
     mod = obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
     mod.quad_method = 'FIXED'
-
-    # NOTE: >= 2.80.46
     mod.keep_custom_normals = True
 
 def obj_apply_modifiers(obj):
@@ -592,3 +521,66 @@ def modifier_needs_export(mod):
     """
 
     return mod.show_render and mod.type != 'ARMATURE'
+
+def get_socket_defval_compat(socket):
+    """
+    Get the default value of input/output sockets in some compatible form.
+    Vector types such as bpy_prop_aray, Vector, Euler, etc... are converted to lists,
+    primitive types are converted to int/float.
+    """
+
+    if socket.type == 'VALUE' or socket.type == 'INT':
+        return socket.default_value
+    elif socket.type == 'BOOLEAN':
+        return int(socket.default_value)
+    elif socket.type == 'VECTOR' or socket.type == 'RGBA':
+        return [i for i in socket.default_value]
+    elif socket.type == 'SHADER':
+        # shader sockets have no default value
+        return [0, 0, 0, 0]
+    elif socket.type == 'STRING' or socket.type == 'CUSTOM':
+        # not supported
+        return 0
+    else:
+        return 0
+
+def create_custom_property(blender_element):
+    """
+    Filters and creates a custom property, which is stored in the glTF extra field.
+    """
+    if not blender_element:
+        return None
+
+    props = {}
+
+    # Custom properties, which are in most cases present and should not be exported.
+    black_list = ['cycles', 'cycles_visibility', 'cycles_curves', '_RNA_UI', 'v3d']
+
+    count = 0
+    for custom_property in blender_element.keys():
+        if custom_property in black_list:
+            continue
+
+        value = blender_element[custom_property]
+
+        add_value = False
+
+        if isinstance(value, str):
+            add_value = True
+
+        if isinstance(value, (int, float)):
+            add_value = True
+
+        if hasattr(value, "to_list"):
+            value = value.to_list()
+            add_value = True
+
+        if add_value:
+            props[custom_property] = value
+            count += 1
+
+    if count == 0:
+        return None
+
+    return props
+

@@ -23,7 +23,9 @@ import json
 import struct
 import os
 
-from .gltf2_debug import *
+from pluginUtils.log import *
+from pluginUtils.manager import AppManagerConn
+
 from .gltf2_filter import *
 from .gltf2_generate import *
 
@@ -35,47 +37,47 @@ from .gltf2_generate import *
 # Functions
 #
 
-def prepare(export_settings):
+def prepare(exportSettings):
     """
     Stores current state of Blender and prepares for export, depending on the current export settings.
     """
     if bpy.context.active_object is not None and bpy.context.active_object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
-    filter_apply(export_settings)
+    filter_apply(exportSettings)
 
     if bpy.app.version >= (2,81,0):
-        prepare_shadow_casters(export_settings)
+        prepare_shadow_casters(exportSettings)
 
-    export_settings['gltf_original_frame'] = bpy.context.scene.frame_current
+    exportSettings['original_frame'] = bpy.context.scene.frame_current
 
-    export_settings['gltf_use_no_color'] = []
+    exportSettings['use_no_color'] = []
 
-    export_settings['gltf_joint_cache'] = {}
+    exportSettings['joint_cache'] = {}
 
-    if export_settings['gltf_animations']:
+    if exportSettings['animations']:
         bpy.context.scene.frame_set(0)
 
-def prepare_shadow_casters(export_settings):
+def prepare_shadow_casters(exportSettings):
 
     shadow_casters = []
-    if export_settings['gltf_use_shadows']:
-        shadow_casters = [obj for obj in export_settings['filtered_objects_with_dg']
+    if exportSettings['use_shadows']:
+        shadow_casters = [obj for obj in exportSettings['filtered_objects_with_dg']
                 if obj_casts_shadows(obj)]
 
-    export_settings['shadow_casters_bound_box_world'] \
+    exportSettings['shadow_casters_bound_box_world'] \
             = objects_get_bound_box_world(shadow_casters)
 
-def finish(export_settings):
+def finish(exportSettings):
     """
     Brings back Blender into its original state before export and cleans up temporary objects.
     """
-    if export_settings['temporary_meshes'] is not None:
-        for temporary_mesh in export_settings['temporary_meshes']:
+    if exportSettings['temporary_meshes'] is not None:
+        for temporary_mesh in exportSettings['temporary_meshes']:
             bpy.data.meshes.remove(temporary_mesh)
 
-    if export_settings['temporary_materials'] is not None:
-        for temporary_mat in export_settings['temporary_materials']:
+    if exportSettings['temporary_materials'] is not None:
+        for temporary_mat in exportSettings['temporary_materials']:
             bpy.data.materials.remove(temporary_mat)
 
     # HACK: fix user count for materials, which can be 0 in case of copying objects
@@ -86,37 +88,19 @@ def finish(export_settings):
             for i in range(len(mats)):
                 mats[i] = mats[i]
 
-    bpy.context.scene.frame_set(export_settings['gltf_original_frame'])
+    bpy.context.scene.frame_set(exportSettings['original_frame'])
 
 def compressLZMA(path, settings):
 
-    if settings['gltf_sneak_peek']:
+    if settings['sneak_peek']:
         return
 
-    if not settings['gltf_lzma_enabled']:
+    if not settings['lzma_enabled']:
         return
 
-    # improves console readability
-    path = os.path.normpath(path)
+    AppManagerConn.compressLZMA(path)
 
-    printLog('INFO', 'Compressing file: ' + path)
-
-    import http.client
-
-    with open(path, 'rb') as fin:
-        conn = http.client.HTTPConnection(settings['gltf_app_manager_host'])
-        headers = {'Content-type': 'application/octet-stream'}
-        conn.request('POST', '/storage/lzma/', body=fin, headers=headers)
-        response = conn.getresponse()
-
-        if response.status != 200:
-            printLog('ERROR', 'LZMA compression error: ' + response.reason)
-
-        with open(path + '.xz', 'wb') as fout:
-            fout.write(response.read())
-
-
-def save(operator, context, export_settings):
+def save(operator, context, exportSettings):
     """
     Starts the glTF 2.0 export and saves to content either to a .gltf or .glb file.
     """
@@ -125,55 +109,55 @@ def save(operator, context, export_settings):
     bpy.context.window_manager.progress_begin(0, 100)
     bpy.context.window_manager.progress_update(0)
 
-    #
 
-    prepare(export_settings)
 
-    #
+    prepare(exportSettings)
+
+
 
     glTF = {}
 
-    generateGLTF(operator, context, export_settings, glTF)
+    generateGLTF(operator, context, exportSettings, glTF)
 
     cleanupDataKeys(glTF)
 
     indent = None
     separators = separators=(',', ':')
 
-    jsonStrip = export_settings['gltf_strip'] and not export_settings['gltf_sneak_peek']
+    jsonStrip = exportSettings['strip'] and not exportSettings['sneak_peek']
 
-    if export_settings['gltf_format'] == 'ASCII' and not jsonStrip:
+    if exportSettings['format'] == 'ASCII' and not jsonStrip:
         indent = 4
         separators = separators=(', ', ' : ')
 
     glTF_encoded = json.dumps(glTF, indent=indent, separators=separators,
             sort_keys=True, ensure_ascii=False)
 
-    #
 
-    if export_settings['gltf_format'] == 'ASCII':
-        file = open(export_settings['gltf_filepath'], "w", encoding="utf8", newline="\n")
+
+    if exportSettings['format'] == 'ASCII':
+        file = open(exportSettings['filepath'], "w", encoding="utf8", newline="\n")
         file.write(glTF_encoded)
         file.write("\n")
         file.close()
 
-        binary = export_settings['gltf_binary']
-        if len(binary) > 0 and not export_settings['gltf_embed_buffers']:
-            file = open(export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename'], "wb")
+        binary = exportSettings['binary']
+        if len(binary) > 0 and not exportSettings['embed_buffers']:
+            file = open(exportSettings['filedirectory'] + exportSettings['binaryfilename'], "wb")
             file.write(binary)
             file.close()
 
-        compressLZMA(export_settings['gltf_filepath'], export_settings)
+        compressLZMA(exportSettings['filepath'], exportSettings)
 
-        bin_path = export_settings['gltf_filedirectory'] + export_settings['gltf_binaryfilename']
+        bin_path = exportSettings['filedirectory'] + exportSettings['binaryfilename']
         if os.path.isfile(bin_path):
-            compressLZMA(bin_path, export_settings)
+            compressLZMA(bin_path, exportSettings)
 
     else:
-        file = open(export_settings['gltf_filepath'], "wb")
+        file = open(exportSettings['filepath'], "wb")
 
         glTF_data = glTF_encoded.encode()
-        binary = export_settings['gltf_binary']
+        binary = exportSettings['binary']
 
         length_gtlf = len(glTF_data)
         spaces_gltf = (4 - (length_gtlf & 3)) & 3
@@ -209,17 +193,16 @@ def save(operator, context, export_settings):
 
         file.close()
 
-        compressLZMA(export_settings['gltf_filepath'], export_settings)
+        compressLZMA(exportSettings['filepath'], exportSettings)
 
-    #
 
-    finish(export_settings)
 
-    #
+    finish(exportSettings)
+
+
 
     printLog('INFO', 'Finished glTF 2.0 export')
     bpy.context.window_manager.progress_end()
-    print_newline()
 
     return {'FINISHED'}
 
