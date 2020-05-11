@@ -584,3 +584,14 @@ def create_custom_property(blender_element):
 
     return props
 
+def calc_light_threshold_distance(bl_light, threshold):
+    """Calculate the light attenuation distance from the given threshold.
+
+    The light power at this distance equals the threshold value.
+    """
+    return math.sqrt(max(1e-16,
+        max(bl_light.color.r, bl_light.color.g, bl_light.color.b)
+        * max(1, bl_light.specular_factor)
+        * abs(bl_light.energy / 100)
+        / max(threshold, 1e-16)
+    ))

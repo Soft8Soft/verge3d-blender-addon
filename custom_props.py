@@ -136,6 +136,27 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    ibl_environment_mode: bpy.props.EnumProperty(
+        name='IBL Environment Mode',
+        description = 'Preferred method of rendering the scene environment',
+        default = 'PMREM',
+        items = [
+            ('PMREM', 'PMREM (slow)', (
+                'Use PMREM (Prefiltered Mipmaped Radiance Environment map). '
+                'Slower, higher quality'
+            )),
+            ('PROBE_CUBEMAP', 'Light Probe + Cubemap (medium)', (
+                'Use a light probe for the diffuse and a cubemap for the '
+                'specular component. Medium performance, medium quality'
+            )),
+            ('PROBE', 'Light Probe (fast)', (
+                'Use a light probe for the diffuse component, no specular. '
+                'Faster, worse quality'
+            )),
+        ],
+        options = NO_ANIM_OPTS
+    )
+
     bake_armature_actions: bpy.props.BoolProperty(
         name = 'Bake Armature Actions',
         description = '',

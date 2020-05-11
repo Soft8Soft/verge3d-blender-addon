@@ -136,14 +136,14 @@ def save(operator, context, exportSettings):
 
 
     if exportSettings['format'] == 'ASCII':
-        file = open(exportSettings['filepath'], "w", encoding="utf8", newline="\n")
+        file = open(exportSettings['filepath'], 'w', encoding='utf8', newline='\n')
         file.write(glTF_encoded)
-        file.write("\n")
+        file.write('\n')
         file.close()
 
         binary = exportSettings['binary']
         if len(binary) > 0 and not exportSettings['embed_buffers']:
-            file = open(exportSettings['filedirectory'] + exportSettings['binaryfilename'], "wb")
+            file = open(exportSettings['filedirectory'] + exportSettings['binaryfilename'], 'wb')
             file.write(binary)
             file.close()
 
@@ -154,7 +154,7 @@ def save(operator, context, exportSettings):
             compressLZMA(bin_path, exportSettings)
 
     else:
-        file = open(exportSettings['filepath'], "wb")
+        file = open(exportSettings['filepath'], 'wb')
 
         glTF_data = glTF_encoded.encode()
         binary = exportSettings['binary']
@@ -173,11 +173,11 @@ def save(operator, context, exportSettings):
 
         # Header (Version 2)
         file.write('glTF'.encode())
-        file.write(struct.pack("I", 2))
-        file.write(struct.pack("I", length))
+        file.write(struct.pack('I', 2))
+        file.write(struct.pack('I', length))
 
         # Chunk 0 (JSON)
-        file.write(struct.pack("I", length_gtlf))
+        file.write(struct.pack('I', length_gtlf))
         file.write('JSON'.encode())
         file.write(glTF_data)
         for i in range(0, spaces_gltf):
@@ -185,7 +185,7 @@ def save(operator, context, exportSettings):
 
         # Chunk 1 (BIN)
         if length_bin > 0:
-            file.write(struct.pack("I", length_bin))
+            file.write(struct.pack('I', length_bin))
             file.write('BIN\0'.encode())
             file.write(binary)
             for i in range(0, zeros_bin):

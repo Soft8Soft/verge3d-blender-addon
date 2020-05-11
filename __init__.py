@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (3, 0, 0),
+    "version": (3, 1, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -92,6 +92,7 @@ class ExportGLTF2_Base():
         exportSettings['copyright'] = v3d_export.copyright
         exportSettings['use_shadows'] = v3d_export.use_shadows
         exportSettings['shadow_map_side'] = v3d_export.shadow_map_side
+        exportSettings['ibl_environment_mode'] = v3d_export.ibl_environment_mode
         exportSettings['bake_modifiers'] = v3d_export.bake_modifiers
         exportSettings['bake_armature_actions'] = v3d_export.bake_armature_actions
         exportSettings['bake_text'] = v3d_export.bake_text

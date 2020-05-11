@@ -22,7 +22,7 @@ import subprocess
 import webbrowser
 
 from pluginUtils.log import printLog
-from pluginUtils.path import getAppManagerHost, getManualURL, getRoot
+from pluginUtils.path import getAppManagerHost, getManualURL, getRoot, findExportedAssetPath
 
 from . import utils
 
@@ -69,8 +69,11 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         col.template_list("COLLECTION_UL_export", "", bpy.data,
                 "collections", context.scene.v3d_export, "collections_exported_idx", rows=4)
 
+        # animation box
+
         box = layout.box()
         box.label(text='Animation:')
+
         row = box.row()
         row.prop(v3d_export, 'export_animations')
         row = box.row()
@@ -98,54 +101,60 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'optimize_attrs')
 
+        row = layout.row()
+        row.prop(v3d_export, 'use_shadows')
+
+        split = layout.split()
+        split.active = v3d_export.use_shadows
+        col = split.column()
+        col.label(text='Shadow Map Side')
+        col = split.column()
+        col.prop(v3d_export, 'shadow_map_side', text='')
+
         split = layout.split()
         col = split.column()
-        col.label(text='Anti-Aliasing:')
+        col.label(text='Anti-Aliasing')
         col = split.column()
         col.prop(v3d_export, 'aa_method', text='')
 
         row = layout.row()
         row.prop(v3d_export, 'use_hdr')
 
-        row = layout.row()
-        row.prop(v3d_export, 'use_shadows')
+        split = layout.split()
+        col = split.column()
+        col.label(text='IBL Environment Mode')
+        col = split.column()
+        col.prop(v3d_export, 'ibl_environment_mode', text='')
 
-        row = layout.row()
-        row.active = v3d_export.use_shadows
-        row.prop(v3d_export, 'shadow_map_side')
-
-        # postprocessing
+        # outline box
 
         outline = context.scene.v3d.outline
-
-        row = layout.row()
-        row.label(text='Outline:')
-
-        row = layout.row()
-        row.prop(outline, 'enabled')
-
         outlineActive = outline.enabled
 
-        row = layout.row()
+        box = layout.box()
+        box.label(text='Outline:')
+
+        row = box.row()
+        row.prop(outline, 'enabled')
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'edge_strength')
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'edge_glow')
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'edge_thickness')
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'pulse_period')
-
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'visible_edge_color')
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'hidden_edge_color')
-        row = layout.row()
+        row = box.row()
         row.active = outlineActive
         row.prop(outline, 'render_hidden_edge')
 
@@ -637,9 +646,8 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
                         if ignore:
                             continue
 
-                    gltfpath = os.path.splitext(blendpath)[0] + '.gltf'
-
-                    if os.path.exists(gltfpath):
+                    gltfpath = findExportedAssetPath(blendpath)
+                    if gltfpath:
                         self.__class__.exported.append((blendpath, gltfpath))
                         self.__class__.exported.sort()
 

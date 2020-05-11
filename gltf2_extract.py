@@ -1235,13 +1235,6 @@ def extract_node_graph(node_tree, exportSettings, glTF):
         elif bl_node.type == 'CURVE_VEC':
             node['curveData'] = extract_curve_mapping(bl_node.mapping, (-1,1))
 
-        elif bl_node.type == 'GEOMETRY':
-            # reproducing ShaderNodeGeometry
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeGeometry.html
-
-            node['colorLayer'] = bl_node.color_layer
-            node['uvLayer'] = bl_node.uv_layer
-
         elif bl_node.type == 'GROUP':
             node['nodeGraph'] = get_node_graph_index(glTF,
                     bl_node.node_tree.name)
@@ -1292,7 +1285,7 @@ def extract_node_graph(node_tree, exportSettings, glTF):
             index = gltf.getTextureIndex(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
 
             if index == -1:
-                node['type'] = 'TEX_ENVIRONMENT_NONE'
+                node['type'] = 'TEX_ENVIRONMENT_NONE_BL'
             else:
                 node['texture'] = index
 
@@ -1302,7 +1295,7 @@ def extract_node_graph(node_tree, exportSettings, glTF):
             index = gltf.getTextureIndex(glTF, get_texture_name(bl_node)) if get_tex_image(bl_node) else -1
 
             if index == -1:
-                node['type'] = 'TEX_IMAGE_NONE'
+                node['type'] = 'TEX_IMAGE_NONE_BL'
             else:
                 node['texture'] = index
 
@@ -1342,6 +1335,10 @@ def extract_node_graph(node_tree, exportSettings, glTF):
         elif bl_node.type == 'TEX_WAVE':
             node['waveType'] = bl_node.wave_type
             node['waveProfile'] = bl_node.wave_profile
+            node['bandsDirection'] = ('DIAGONAL' if bpy.app.version < (2, 83, 0)
+                    else bl_node.bands_direction)
+            node['ringsDirection'] = ('SPHERICAL' if bpy.app.version < (2, 83, 0)
+                    else bl_node.rings_direction)
 
         elif bl_node.type == 'VALTORGB':
             node['curve'] = extract_color_ramp(bl_node.color_ramp)

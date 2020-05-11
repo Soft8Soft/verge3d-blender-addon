@@ -204,10 +204,16 @@ def get_texture_index_node(exportSettings, glTF, name, shaderNode):
     fromNode = shaderNode.inputs[name].links[0].from_node
 
     if isinstance(fromNode, bpy.types.ShaderNodeNormalMap):
-        fromNode = fromNode.inputs['Color'].links[0].from_node
+        if len(fromNode.inputs['Color'].links) > 0:
+            fromNode = fromNode.inputs['Color'].links[0].from_node
+        else:
+            return -1
 
     if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
-        fromNode = fromNode.inputs['Image'].links[0].from_node
+        if len(fromNode.inputs['Image'].links) > 0:
+            fromNode = fromNode.inputs['Image'].links[0].from_node
+        else:
+            return -1
 
     if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return -1
