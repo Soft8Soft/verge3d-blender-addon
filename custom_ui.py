@@ -101,15 +101,29 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'optimize_attrs')
 
-        row = layout.row()
+
+        # shadow box
+        box = layout.box()
+        box.label(text='Shadows:')
+
+        row = box.row()
         row.prop(v3d_export, 'use_shadows')
 
-        split = layout.split()
+        if bpy.app.version >= (2,81,0):
+            split = box.split()
+            split.active = v3d_export.use_shadows
+            col = split.column()
+            col.label(text='Shadow Map Filtering')
+            col = split.column()
+            col.prop(v3d_export, 'shadow_map_type', text='')
+
+        split = box.split()
         split.active = v3d_export.use_shadows
         col = split.column()
         col.label(text='Shadow Map Side')
         col = split.column()
         col.prop(v3d_export, 'shadow_map_side', text='')
+
 
         split = layout.split()
         col = split.column()
@@ -208,6 +222,22 @@ class V3D_PT_RenderLayerSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(scene.v3d, 'export_layers', text='')
+
+class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = 'world'
+    bl_label = 'Verge3D Settings'
+
+    poll_datablock = 'world'
+
+    def draw(self, context):
+        layout = self.layout
+
+        world = context.world
+
+        row = layout.row()
+        row.prop(world.v3d, 'dithering')
 
 
 class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
@@ -675,6 +705,7 @@ def register():
 
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderLayerSettings)
+    bpy.utils.register_class(V3D_PT_WorldSettings)
     bpy.utils.register_class(V3D_PT_ObjectSettings)
     bpy.utils.register_class(V3D_PT_CameraSettings)
     bpy.utils.register_class(V3D_PT_LightSettings)
@@ -700,6 +731,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_CurveSettings)
     bpy.utils.unregister_class(V3D_PT_CameraSettings)
     bpy.utils.unregister_class(V3D_PT_ObjectSettings)
+    bpy.utils.unregister_class(V3D_PT_WorldSettings)
     bpy.utils.unregister_class(V3D_PT_RenderLayerSettings)
     bpy.utils.unregister_class(V3D_PT_RenderSettings)
     bpy.utils.unregister_class(V3D_PT_MeshSettings)

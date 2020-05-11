@@ -3036,14 +3036,8 @@ def generateScenes(operator, context, exportSettings, glTF):
             v3dExt['physicallyCorrectLights'] = True
 
         if exportSettings['use_shadows']:
-
-            if bpy.app.version < (2,81,0):
-                shadow_type = 'ESM'
-            else:
-                shadow_type = 'PCFPOISSON'
-
             v3dExt['shadowMap'] = {
-                'type': shadow_type,
+                'type': 'ESM' if bpy.app.version < (2,81,0) else exportSettings['shadow_map_type'],
                 'renderReverseSided' : True if exportSettings['shadow_map_side'] == 'BACK' else False,
                 'renderSingleSided' : False if exportSettings['shadow_map_side'] == 'BOTH' else True
             }

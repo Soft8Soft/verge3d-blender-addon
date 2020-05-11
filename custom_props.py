@@ -113,13 +113,19 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     shadow_map_type: bpy.props.EnumProperty(
-        name='Map Type',
-        description = 'Shadow Map Type',
-        default = 'PCFSOFT',
+        name='Shadow Filtering',
+        description = 'Shadow Filtering Mode',
+        default = 'PCFPOISSON',
         items = [
-            ('PCFSOFT', 'Soft PCF', 'Use soft PCF shadow maps (best quality, slowest)'),
-            ('PCF', 'PCF', 'Use percentage-closer filtering shadow maps (average quality)'),
-            ('BASIC', 'Basic', 'Use unfiltered shadow maps (fastest)'),
+            ('BASIC', 'Basic', 'No filtering'),
+            ('PCF', 'PCF', 'Percentage Closer Filtering'),
+            ('PCFSOFT', 'PCF (Bilinear)', (
+                'Percentage Closer Filtering with Bilinear Interpolation. For '
+                'POINT and wide (>90°) SPOT lights it is no different than '
+                'simple PCF'
+            )),
+            ('PCFPOISSON', 'PCF (Poisson Disk)', 'Percentage Closer Filtering with Poisson Disk Sampling'),
+            ('ESM', 'ESM', 'Exponential Shadow Maps'),
         ],
         options = NO_ANIM_OPTS
     )
@@ -178,7 +184,14 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
 class V3DWorldSettings(bpy.types.PropertyGroup):
-    pass
+
+    dithering: bpy.props.BoolProperty(
+        name = 'Dithering',
+        description = 'Apply color dithering to eliminate banding artefacts',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
 
 class V3DOutlineSettings(bpy.types.PropertyGroup):
     """Outline settings are part of scene settings"""

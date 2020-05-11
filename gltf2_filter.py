@@ -319,6 +319,8 @@ def filter_apply(exportSettings):
                 name=curr_world.name))
         world_mat.use_nodes = True
 
+        world_mat.v3d.dithering = curr_world.v3d.dithering
+
         world_mat_wrapper = NodeMaterialWrapper(world_mat)
 
         if curr_world.use_nodes:
