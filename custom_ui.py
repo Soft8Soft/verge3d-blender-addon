@@ -124,6 +124,12 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         col = split.column()
         col.prop(v3d_export, 'shadow_map_side', text='')
 
+        split = box.split()
+        split.active = v3d_export.use_shadows and v3d_export.shadow_map_type == 'ESM'
+        col = split.column()
+        col.label(text='ESM Distance Scale')
+        col = split.column()
+        col.prop(v3d_export, 'esm_distance_scale', text='')
 
         split = layout.split()
         col = split.column()
@@ -402,7 +408,13 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
                 row.label(text='Shadow:')
 
                 row = layout.row()
+                row.active = (context.scene.v3d_export.shadow_map_type
+                        not in ['BASIC', 'BILINEAR'])
                 row.prop(shadow, 'radius', text='Blur Radius')
+
+                row = layout.row()
+                row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
+                row.prop(shadow, 'esm_exponent', text='ESM Bias')
 
             else:
                 row = layout.row()
@@ -698,8 +710,6 @@ def v3d_menu_help(self, context):
         self.layout.operator("wm.url_open", text="Verge3D User Manual", icon='URL').url = getManualURL()
 
 def register():
-    bpy.types.VIEW3D_HT_header.append(v3d_sneak_peek)
-    bpy.types.VIEW3D_HT_header.append(v3d_app_manager)
 
     bpy.types.TOPBAR_MT_help.append(v3d_menu_help)
 
@@ -716,13 +726,24 @@ def register():
     bpy.utils.register_class(V3D_PT_NodeSettings)
 
     bpy.utils.register_class(V3D_OT_OrbitCameraUpdateView)
-    bpy.utils.register_class(V3D_OT_AppManager)
-    bpy.utils.register_class(V3D_OT_SneakPeek)
     bpy.utils.register_class(V3D_OT_ReexportAll)
 
     bpy.utils.register_class(COLLECTION_UL_export)
 
+    if AppManagerConn.isAvailable(getRoot()):
+        bpy.utils.register_class(V3D_OT_AppManager)
+        bpy.utils.register_class(V3D_OT_SneakPeek)
+        bpy.types.VIEW3D_HT_header.append(v3d_sneak_peek)
+        bpy.types.VIEW3D_HT_header.append(v3d_app_manager)
+
+
 def unregister():
+
+    if AppManagerConn.isAvailable(getRoot()):
+        bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
+        bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)
+        bpy.utils.unregister_class(V3D_OT_SneakPeek)
+        bpy.utils.unregister_class(V3D_OT_AppManager)
 
     bpy.utils.unregister_class(V3D_PT_NodeSettings)
     bpy.utils.unregister_class(V3D_PT_TextureSettings)
@@ -737,11 +758,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_MeshSettings)
 
     bpy.utils.unregister_class(V3D_OT_ReexportAll)
-    bpy.utils.unregister_class(V3D_OT_SneakPeek)
-    bpy.utils.unregister_class(V3D_OT_AppManager)
     bpy.utils.unregister_class(V3D_OT_OrbitCameraUpdateView)
 
     bpy.utils.unregister_class(COLLECTION_UL_export)
 
-    bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
-    bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)

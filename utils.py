@@ -414,6 +414,10 @@ def obj_transfer_shape_keys(obj_from, obj_to, depsgraph):
     return same_vertex_count
 
 def obj_casts_shadows(obj):
+    # NOTE: currently unused
+
+    if obj.type not in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT']:
+        return False
 
     # no materials means a single default material (always casts)
     if len(obj.material_slots) == 0:
@@ -427,6 +431,7 @@ def obj_casts_shadows(obj):
     return False
 
 def objects_get_bound_box_world(objects):
+    # NOTE: currently unused
 
     bound_box = [
         mathutils.Vector(), mathutils.Vector(), mathutils.Vector(),
@@ -483,8 +488,12 @@ def mesh_materials_use_tangents(mesh):
     return False
 
 def mat_node_use_tangents(bl_node):
-    if (isinstance(bl_node, bpy.types.ShaderNodeNormalMap) or
-        isinstance(bl_node, bpy.types.ShaderNodeTangent)):
+
+    if isinstance(bl_node, bpy.types.ShaderNodeNormalMap):
+        return True
+
+    if (isinstance(bl_node, bpy.types.ShaderNodeTangent)
+            and bl_node.direction_type == 'UV_MAP'):
         return True
 
     if isinstance(bl_node, bpy.types.ShaderNodeNewGeometry):

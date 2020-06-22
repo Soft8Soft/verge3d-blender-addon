@@ -46,8 +46,8 @@ def prepare(exportSettings):
 
     filter_apply(exportSettings)
 
-    if bpy.app.version >= (2,81,0):
-        prepare_shadow_casters(exportSettings)
+    # if bpy.app.version >= (2,81,0):
+    #     prepare_shadow_casters(exportSettings)
 
     exportSettings['original_frame'] = bpy.context.scene.frame_current
 
@@ -59,6 +59,7 @@ def prepare(exportSettings):
         bpy.context.scene.frame_set(0)
 
 def prepare_shadow_casters(exportSettings):
+    # NOTE: currently unused
 
     shadow_casters = []
     if exportSettings['use_shadows']:

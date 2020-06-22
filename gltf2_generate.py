@@ -54,8 +54,6 @@ ALPHA_CUTOFF_EPS = 1e-4
 
 SUN_DEFAULT_NEAR = 0.1
 SUN_DEFAULT_FAR = 100
-SUN_MAX_FAR = 10000
-SHADOW_BB_Z_COEFF = 1.01
 MAX_SHADOW_CAM_FAR = 10000
 
 PMREM_SIZE_MIN = 256
@@ -1208,10 +1206,11 @@ def generateLights(operator, context, exportSettings, glTF):
                 'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
                 'cameraNear': cameraNear,
                 'cameraFar': cameraFar,
-                'radius': getBlurPixelRadius(context, bl_light),
+                'radius': (bl_light.shadow_buffer_soft if bl_light.type == 'SUN'
+                        else getBlurPixelRadius(context, bl_light)),
                 # NOTE: negate bias since the negative is more appropriate in most cases
                 # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.shadow_buffer_bias,
+                'bias': -bl_light.shadow_buffer_bias * 0.0018,
                 'expBias': bl_light.shadow_buffer_exp
             }
 
@@ -1225,36 +1224,10 @@ def generateLights(operator, context, exportSettings, glTF):
             eeveeCtx = context.scene.eevee
 
             if bl_light.type == 'SUN':
-
+                # NOTE: the following values are not relevant because the engine
+                # calculates near/far dynamically for directional shadows
                 cameraNear = SUN_DEFAULT_NEAR
                 cameraFar = SUN_DEFAULT_FAR
-
-                for bl_obj in exportSettings['filtered_objects_with_dg']:
-
-                    if bl_obj.type != 'LIGHT':
-                        continue
-
-                    if bl_obj.data == bl_light:
-
-                        light_view_mat = bl_obj.matrix_world.normalized().inverted()
-                        bb_min = mathutils.Vector.Fill(3, BOUND_BOX_MAX)
-                        bb_max = mathutils.Vector.Fill(3, -BOUND_BOX_MAX)
-
-                        for corner in exportSettings['shadow_casters_bound_box_world']:
-                            corner_view = light_view_mat @ corner
-                            bb_min.x = min(bb_min.x, corner_view.x)
-                            bb_min.y = min(bb_min.y, corner_view.y)
-                            bb_min.z = min(bb_min.z, corner_view.z)
-                            bb_max.x = max(bb_max.x, corner_view.x)
-                            bb_max.y = max(bb_max.y, corner_view.y)
-                            bb_max.z = max(bb_max.z, corner_view.z)
-
-                        # increase far value with SHADOW_BB_Z_COEFF to prevent
-                        # potential Z-fighting issues
-                        cameraFar = clamp(max(bb_min.length, bb_max.length),
-                                SUN_DEFAULT_NEAR, SUN_MAX_FAR) * SHADOW_BB_Z_COEFF
-
-                        break
 
             else:
                 cameraNear = max(bl_light.shadow_buffer_clip_start,
@@ -1268,15 +1241,6 @@ def generateLights(operator, context, exportSettings, glTF):
                 'mapSize': int(eeveeCtx.shadow_cascade_size
                         if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
 
-                # NOTE: not used in 2.81 PCFPOISSON shadows
-                # - for POINT/SPOT - determined by near, far and fov settings
-                # - for SUN - PCFPOISSON uses automatic calculation of the
-                #   frustum based on 'maxDistance'
-                'cameraOrthoLeft': -1,
-                'cameraOrthoRight': 1,
-                'cameraOrthoBottom': -1,
-                'cameraOrthoTop': 1,
-
                 'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
                 'cameraNear': cameraNear,
                 'cameraFar': cameraFar,
@@ -1285,7 +1249,8 @@ def generateLights(operator, context, exportSettings, glTF):
                 # but keeping it positive in the UI is more user-friendly
                 'bias': -bl_light.shadow_buffer_bias * 0.0018,
                 # empirical value that gives good results
-                'slopeScaledBias': 2.5
+                'slopeScaledBias': 2.5,
+                'expBias': bl_light.v3d.shadow.esm_exponent,
             }
 
             if bl_light.type == 'SUN':
@@ -3039,7 +3004,8 @@ def generateScenes(operator, context, exportSettings, glTF):
             v3dExt['shadowMap'] = {
                 'type': 'ESM' if bpy.app.version < (2,81,0) else exportSettings['shadow_map_type'],
                 'renderReverseSided' : True if exportSettings['shadow_map_side'] == 'BACK' else False,
-                'renderSingleSided' : False if exportSettings['shadow_map_side'] == 'BOTH' else True
+                'renderSingleSided' : False if exportSettings['shadow_map_side'] == 'BOTH' else True,
+                'esmDistanceScale': exportSettings['esm_distance_scale']
             }
 
         v3dExt['iblEnvironmentMode'] = exportSettings['ibl_environment_mode']

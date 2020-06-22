@@ -18,7 +18,6 @@
 # Imports
 #
 
-import bmesh
 import bpy
 import copy
 import mathutils
@@ -27,6 +26,7 @@ import math
 import os
 import tempfile
 
+import pluginUtils
 from pluginUtils.log import *
 import pluginUtils.gltf as gltf
 
@@ -519,8 +519,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
 
     # Convert polygon to primitive indices and eliminate invalid ones. Assign to material.
 
-    bm_tri = bmesh.new()
-
     for blender_polygon in blender_mesh.polygons:
 
         if blender_polygon.material_index < 0 or blender_polygon.material_index >= len(blender_mesh.materials):
@@ -624,7 +622,12 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                 for color_index in range(0, color_max):
                     color_name = 'COLOR_' + str(color_index)
                     color = vertex_colors[color_name].data[loop_index].color
-                    colors.append([color[0], color[1], color[2], 1.0])
+
+                    # vertex colors are defined in sRGB space but only needed to
+                    # be linear when rendered
+                    colors.append([pluginUtils.srgbToLinear(color[0]),
+                            pluginUtils.srgbToLinear(color[1]),
+                            pluginUtils.srgbToLinear(color[2]), color[3]])
 
 
             if need_skin_attributes:
@@ -776,8 +779,7 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                         color = colors[color_index]
 
                         color_id = 'COLOR_' + str(color_index)
-                        for i in range(0, 3):
-                            # Alpha is always 1.0 - see above.
+                        for i in range(0, 4):
                             if attributes[color_id][current_new_index * 4 + i] != color[i]:
                                 found = False
                                 break
@@ -902,8 +904,6 @@ def extract_primitives(glTF, blender_mesh, blender_vertex_groups,
                             attributes[target_tangent_id] = []
 
                         attributes[target_tangent_id].extend(target_tangents[morph_index])
-
-    bm_tri.free()
 
 
     # Add primitive plus split them if needed.
@@ -1277,6 +1277,11 @@ def extract_node_graph(node_tree, exportSettings, glTF):
             # rename for uniformity with GEOMETRY node
             node['uvLayer'] = bl_node.uv_map
 
+        elif bl_node.type == 'TANGENT':
+            node['directionType'] = bl_node.direction_type
+            node['axis'] = bl_node.axis
+            node['uvLayer'] = bl_node.uv_map
+
         elif bl_node.type == 'TEX_COORD':
             # NOTE: will be replaced by the corresponding index from glTF['nodes'] later
             node['object'] = bl_node.object
@@ -1346,6 +1351,10 @@ def extract_node_graph(node_tree, exportSettings, glTF):
         elif bl_node.type == 'VECT_MATH':
             node['operation'] = bl_node.operation
 
+        elif bl_node.type == 'VECTOR_ROTATE':
+            node['rotationType'] = bl_node.rotation_type
+            node['invert'] = bl_node.invert
+
         elif bl_node.type == 'VECT_TRANSFORM':
             # reproducing ShaderNodeVectorTransform
             # https://docs.blender.org/api/current/bpy.types.ShaderNodeVectorTransform.html
@@ -1353,6 +1362,9 @@ def extract_node_graph(node_tree, exportSettings, glTF):
             node['vectorType'] = bl_node.vector_type
             node['convertFrom'] = bl_node.convert_from
             node['convertTo'] = bl_node.convert_to
+
+        elif bl_node.type == 'VERTEX_COLOR':
+            node['colorLayer'] = bl_node.layer_name
 
         node['inputs'] = []
         for bl_input in bl_node.inputs:

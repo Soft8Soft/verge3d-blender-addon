@@ -118,6 +118,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         default = 'PCFPOISSON',
         items = [
             ('BASIC', 'Basic', 'No filtering'),
+            ('BILINEAR', 'Bilinear', 'Bilinear Filtering'),
             ('PCF', 'PCF', 'Percentage Closer Filtering'),
             ('PCFSOFT', 'PCF (Bilinear)', (
                 'Percentage Closer Filtering with Bilinear Interpolation. For '
@@ -139,6 +140,19 @@ class V3DExportSettings(bpy.types.PropertyGroup):
             ('BACK', 'Back Side', 'Render back side (prevents some self-shadow artefacts)'),
             ('FRONT', 'Front Side', 'Render front side (more intuitive, requires proper bias assignment)'),
         ],
+        options = NO_ANIM_OPTS
+    )
+
+    esm_distance_scale: bpy.props.FloatProperty(
+        name = 'ESM Distance Scale',
+        description = ('Scale factor for adjusting soft shadows to scenes of '
+                'various scales. It\'s generally useful to decrease this value '
+                'for larger scenes, especially if shadows still look sharp no '
+                'matter how big the blur radius is set.'),
+        default = 1,
+        min = 0,
+        soft_max = 10,
+        max = 100,
         options = NO_ANIM_OPTS
     )
 
@@ -499,9 +513,20 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
 
     radius: bpy.props.FloatProperty(
         name = 'Radius',
-        description = 'Shadow map blur radius',
+        description = ('Shadow map blur radius. Doesn\'t apply to "Basic" and '
+                '"Bilinear" shadow maps'),
         default = 1,
         min = 0,
+        options = NO_ANIM_OPTS
+    )
+
+    esm_exponent: bpy.props.FloatProperty(
+        name = 'Exponent',
+        description = ('Exponential Shadow Map bias. Helps reducing light '
+                'leaking artifacts. Applies only to ESM shadow maps'),
+        default = 2.5,
+        min = 1,
+        max = 10000,
         options = NO_ANIM_OPTS
     )
 

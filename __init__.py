@@ -24,7 +24,7 @@ from bpy.app.handlers import persistent
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
-ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(join(ROOT_DIR, 'python'))
 
 if 'bpy' in locals():
@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (3, 1, 1),
+    "version": (3, 2, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -93,6 +93,7 @@ class ExportGLTF2_Base():
         exportSettings['use_shadows'] = v3d_export.use_shadows
         exportSettings['shadow_map_type'] = v3d_export.shadow_map_type
         exportSettings['shadow_map_side'] = v3d_export.shadow_map_side
+        exportSettings['esm_distance_scale'] = v3d_export.esm_distance_scale
         exportSettings['ibl_environment_mode'] = v3d_export.ibl_environment_mode
         exportSettings['bake_modifiers'] = v3d_export.bake_modifiers
         exportSettings['bake_armature_actions'] = v3d_export.bake_armature_actions
@@ -184,7 +185,10 @@ def register():
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_gltf)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_glb)
 
-    AppManagerConn.start(getRoot(), 'BLENDER', True)
+    if AppManagerConn.isAvailable(getRoot()):
+        AppManagerConn.start(getRoot(), 'BLENDER', True)
+    else:
+        printLog('WARNING', 'Verge3D App Manager is not available!')
 
 def unregister():
     from . import custom_props, custom_ui
