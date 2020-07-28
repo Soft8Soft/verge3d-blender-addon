@@ -1232,6 +1232,8 @@ def generateLights(operator, context, exportSettings, glTF):
             else:
                 cameraNear = max(bl_light.shadow_buffer_clip_start,
                         SPOT_SHADOW_MIN_NEAR) # usability improvement
+
+                # should bl_light.cutoff_distance affect this?
                 cameraFar = calc_light_threshold_distance(bl_light,
                         eeveeCtx.light_threshold)
                 cameraFar = min(cameraFar, MAX_SHADOW_CAM_FAR)
@@ -1262,7 +1264,10 @@ def generateLights(operator, context, exportSettings, glTF):
         if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
 
             # simplified model
-            dist = calc_light_threshold_distance(bl_light, eeveeCtx.light_threshold)
+            if bl_light.use_custom_distance:
+                dist = bl_light.cutoff_distance
+            else:
+                dist = calc_light_threshold_distance(bl_light, eeveeCtx.light_threshold)
             light['distance'] = dist
             light['decay'] = 2
 
@@ -2616,7 +2621,7 @@ def generateCurves(operator, context, exportSettings, glTF):
                 curve['alignY'] = 'center'
 
             # optional
-            if len(bl_curve.materials):
+            if len(bl_curve.materials) and bl_curve.materials[0] is not None:
                 material = gltf.getMaterialIndex(glTF, bl_curve.materials[0].name)
 
                 if material >= 0:
@@ -2998,7 +3003,7 @@ def generateScenes(operator, context, exportSettings, glTF):
             if world_mat >= 0:
                 v3dExt['worldMaterial'] = world_mat
 
-            v3dExt['physicallyCorrectLights'] = True
+        v3dExt['physicallyCorrectLights'] = True
 
         if exportSettings['use_shadows']:
             v3dExt['shadowMap'] = {
