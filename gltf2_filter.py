@@ -14,10 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#
-# Imports
-#
-
 from string import Template
 
 import bpy
@@ -27,18 +23,12 @@ from .gltf2_extract import *
 from .node_material_wrapper import NodeMaterialWrapper
 from .utils import *
 
-#
-# Globals
-#
 
 TO_MESH_SOURCE_CUSTOM_PROP = "v3d_to_mesh_source_object"
 WORLD_NODE_MAT_NAME = Template('Verge3D_Environment_${name}')
 
-#
-# Functions
-#
 
-def flatten_collection_unique(collection, dest_set):
+def flattenCollectionUnique(collection, dest_set):
 
     for bl_obj in collection.all_objects:
 
@@ -48,10 +38,10 @@ def flatten_collection_unique(collection, dest_set):
         if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
             # prevent possible infinite recursion for collections
             if is_unique:
-                flatten_collection_unique(bl_obj.instance_collection, dest_set)
+                flattenCollectionUnique(bl_obj.instance_collection, dest_set)
 
 
-def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
+def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
     """
     Prepare the data of the given MESH object before export by making such
     operations as:
@@ -65,31 +55,31 @@ def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
 
 
     # APPLY MODIFIERS
-    need_apply_mods = bake_modifiers is True and obj_has_exported_modifiers(obj_original)
+    need_apply_mods = bake_modifiers is True and objHasExportedModifiers(obj_original)
 
     obj_mods_applied = obj_original
     if need_apply_mods:
         obj_mods_applied = obj_original.copy()
         obj_del_not_exported_modifiers(obj_mods_applied)
-        obj_apply_modifiers(obj_mods_applied)
+        objApplyModifiers(obj_mods_applied)
 
         generated_objs.append(obj_mods_applied)
         generated_meshes.append(obj_mods_applied.data)
 
 
     # TRIANGULATE
-    need_tangents = mesh_need_tangents_for_export(obj_mods_applied.data, optimize_tangents)
+    need_tangents = meshNeedTangentsForExport(obj_mods_applied.data, optimize_tangents)
     if not need_tangents:
         printLog('DEBUG',
                 'Tangent attribute will not be exported for mesh "%s"'
                 % obj_original.data.name)
-    need_triangulation = need_tangents and mesh_has_ngons(obj_mods_applied.data)
+    need_triangulation = need_tangents and meshHasNgons(obj_mods_applied.data)
 
     obj_triangulated = obj_mods_applied
     if need_triangulation:
         obj_triangulated = obj_mods_applied.copy()
         obj_del_not_exported_modifiers(obj_triangulated)
-        obj_add_tri_modifier(obj_triangulated)
+        objAddTriModifier(obj_triangulated)
 
         # Triangulation modifier doesn't affect vertices, therefore this operation
         # can preserve shape keys. To do this we need to remove shape keys to not
@@ -102,7 +92,7 @@ def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
         obj_triangulated.data = tmp_data
         obj_triangulated.shape_key_clear()
 
-        obj_apply_modifiers(obj_triangulated)
+        objApplyModifiers(obj_triangulated)
 
         generated_objs.append(obj_triangulated)
         generated_meshes.append(tmp_data)
@@ -124,7 +114,7 @@ def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
         obj_sk_transfered = obj_triangulated.copy()
         dg = bpy.context.evaluated_depsgraph_get()
 
-        success = obj_transfer_shape_keys(obj_original, obj_sk_transfered, dg)
+        success = objTransferShapeKeys(obj_original, obj_sk_transfered, dg)
         if not success:
             printLog('WARNING', 'Could not generate shape keys because they '
                     + 'change vertex count. Object "' + obj_original.name + '".')
@@ -144,7 +134,7 @@ def mesh_obj_get_export_data(obj_original, bake_modifiers, optimize_tangents):
     return resulting_mesh
 
 
-def filter_apply(exportSettings):
+def filterApply(exportSettings):
     """
     Gathers and filters the objects and assets to export.
     Also filters out invalid, deleted and not exportable elements.
@@ -154,7 +144,7 @@ def filter_apply(exportSettings):
     filtered_objects_with_dg = set()
     for bl_scene in bpy.data.scenes:
         filtered_objects_shallow.update(bl_scene.objects)
-        flatten_collection_unique(bl_scene.collection, filtered_objects_with_dg)
+        flattenCollectionUnique(bl_scene.collection, filtered_objects_with_dg)
 
     def collExpFilter(obj):
         return all(coll.v3d.enable_export for coll in getObjectAllCollections(obj))
@@ -171,46 +161,46 @@ def filter_apply(exportSettings):
     filtered_vertex_groups = {}
     temporary_meshes = []
 
-    for blender_mesh in bpy.data.meshes:
+    for bl_mesh in bpy.data.meshes:
 
-        if blender_mesh.users == 0:
+        if bl_mesh.users == 0:
             continue
 
-        current_blender_mesh = blender_mesh
+        current_bl_mesh = bl_mesh
 
-        current_blender_object = None
+        current_bl_object = None
 
         skip = True
 
-        for blender_object in filtered_objects_with_dg:
+        for bl_obj in filtered_objects_with_dg:
 
-            current_blender_object = blender_object
+            current_bl_object = bl_obj
 
-            if current_blender_object.type != 'MESH':
+            if current_bl_object.type != 'MESH':
                 continue
 
-            if current_blender_object.data == current_blender_mesh:
+            if current_bl_object.data == current_bl_mesh:
 
                 skip = False
 
-                mesh_for_export = mesh_obj_get_export_data(
-                        current_blender_object,
+                mesh_for_export = meshObjGetExportData(
+                        current_bl_object,
                         exportSettings['bake_modifiers'],
                         exportSettings['optimize_attrs'])
 
-                if mesh_for_export != current_blender_mesh:
+                if mesh_for_export != current_bl_mesh:
                     # a new mesh was generated
-                    mesh_for_export[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
+                    mesh_for_export[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_object
                     temporary_meshes.append(mesh_for_export)
-                    current_blender_mesh = mesh_for_export
+                    current_bl_mesh = mesh_for_export
 
                 break
 
         if skip:
             continue
 
-        filtered_meshes.append(current_blender_mesh)
-        filtered_vertex_groups[getPtr(blender_mesh)] = current_blender_object.vertex_groups
+        filtered_meshes.append(current_bl_mesh)
+        filtered_vertex_groups[getPtr(bl_mesh)] = current_bl_object.vertex_groups
 
     # CURVES (as well as surfaces and texts)
     filtered_curves = []
@@ -226,24 +216,24 @@ def filter_apply(exportSettings):
 
         # convert to mesh
         else:
-            current_blender_curve = bl_curve
-            current_blender_mesh = None
-            current_blender_object = None
+            current_bl_curve = bl_curve
+            current_bl_mesh = None
+            current_bl_object = None
 
             skip = True
 
-            for blender_object in filtered_objects_with_dg:
+            for bl_obj in filtered_objects_with_dg:
 
-                current_blender_object = blender_object
+                current_bl_object = bl_obj
 
-                if current_blender_object.type not in ['CURVE', 'SURFACE', 'FONT']:
+                if current_bl_object.type not in ['CURVE', 'SURFACE', 'FONT']:
                     continue
 
-                if current_blender_object.data == current_blender_curve:
+                if current_bl_object.data == current_bl_curve:
 
                     skip = False
 
-                    copy_obj = current_blender_object.copy()
+                    copy_obj = current_bl_object.copy()
 
                     if not exportSettings['bake_modifiers']:
                         copy_obj.modifiers.clear()
@@ -255,14 +245,14 @@ def filter_apply(exportSettings):
                     bpy.context.view_layer.update()
 
                     copy_obj_eval = copy_obj.evaluated_get(dg)
-                    current_blender_mesh = bpy.data.meshes.new_from_object(copy_obj_eval)
+                    current_bl_mesh = bpy.data.meshes.new_from_object(copy_obj_eval)
 
                     dg.scene.collection.objects.unlink(copy_obj)
 
-                    if current_blender_mesh is not None:
-                        current_blender_mesh.name = bl_curve.name
-                        current_blender_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_blender_object
-                        temporary_meshes.append(current_blender_mesh)
+                    if current_bl_mesh is not None:
+                        current_bl_mesh.name = bl_curve.name
+                        current_bl_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_object
+                        temporary_meshes.append(current_bl_mesh)
                     else:
                         skip = True
 
@@ -273,8 +263,49 @@ def filter_apply(exportSettings):
             if skip:
                 continue
 
-            filtered_meshes.append(current_blender_mesh)
-            filtered_vertex_groups[getPtr(bl_curve)] = current_blender_object.vertex_groups
+            filtered_meshes.append(current_bl_mesh)
+            filtered_vertex_groups[getPtr(bl_curve)] = current_bl_object.vertex_groups
+
+
+    # metaballs
+
+    for bl_meta in bpy.data.metaballs:
+
+        if bl_meta.users == 0:
+            continue
+
+        current_bl_meta = bl_meta
+        current_bl_mesh = None
+        current_bl_obj = None
+
+        skip = True
+
+        for bl_obj in filtered_objects_with_dg:
+
+            current_bl_obj = bl_obj
+
+            if current_bl_obj.type == 'META' and current_bl_obj.data == current_bl_meta:
+
+                skip = False
+
+                dg = bpy.context.evaluated_depsgraph_get()
+                obj_eval = current_bl_obj.evaluated_get(dg)
+                current_bl_mesh = bpy.data.meshes.new_from_object(obj_eval)
+
+                if current_bl_mesh is not None:
+                    current_bl_mesh.name = bl_meta.name
+                    current_bl_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_obj
+                    temporary_meshes.append(current_bl_mesh)
+                else:
+                    skip = True
+
+                break
+
+        if skip:
+            continue
+
+        filtered_meshes.append(current_bl_mesh)
+        filtered_vertex_groups[getPtr(bl_meta)] = current_bl_obj.vertex_groups
 
 
     exportSettings['filtered_curves'] = filtered_curves
@@ -287,29 +318,29 @@ def filter_apply(exportSettings):
     filtered_materials = []
     temporary_materials = []
 
-    for blender_material in get_used_materials():
+    for bl_mat in getUsedMaterials():
 
-        if blender_material.users == 0:
+        if bl_mat.users == 0:
             continue
 
-        for blender_mesh in filtered_meshes:
-            for mat in blender_mesh.materials:
-                if mat == blender_material and mat not in filtered_materials:
+        for bl_mesh in filtered_meshes:
+            for mat in bl_mesh.materials:
+                if mat == bl_mat and mat not in filtered_materials:
                     filtered_materials.append(mat)
 
-        for blender_object in filtered_objects_with_dg:
-            if blender_object.material_slots:
-                for blender_material_slot in blender_object.material_slots:
-                    if blender_material_slot.link == 'DATA':
+        for bl_obj in filtered_objects_with_dg:
+            if bl_obj.material_slots:
+                for bl_material_slot in bl_obj.material_slots:
+                    if bl_material_slot.link == 'DATA':
                         continue
 
-                    mat = blender_material_slot.material
-                    if mat == blender_material and mat not in filtered_materials:
+                    mat = bl_material_slot.material
+                    if mat == bl_mat and mat not in filtered_materials:
                         filtered_materials.append(mat)
 
         for bl_curve in filtered_curves:
             for mat in bl_curve.materials:
-                if mat == blender_material and mat not in filtered_materials:
+                if mat == bl_mat and mat not in filtered_materials:
                     filtered_materials.append(mat)
 
     curr_world = bpy.context.scene.world
@@ -354,36 +385,36 @@ def filter_apply(exportSettings):
             continue
 
         # only groups used by 'CYCLES' materials
-        for bl_material in filtered_materials:
-            mat_type = get_material_type(bl_material)
+        for bl_mat in filtered_materials:
+            mat_type = getMaterialType(bl_mat)
             if mat_type == 'CYCLES':
                 if (group not in filtered_node_groups and
-                        group in extract_material_node_trees(bl_material.node_tree)):
+                        group in extractMaterialNodeTrees(bl_mat.node_tree)):
                     filtered_node_groups.append(group)
 
     exportSettings['filtered_node_groups'] = filtered_node_groups
 
     filtered_textures = []
 
-    for blender_material in filtered_materials:
+    for bl_mat in filtered_materials:
         # PBR, CYCLES materials
-        if blender_material.node_tree and blender_material.use_nodes:
-            for bl_node in blender_material.node_tree.nodes:
+        if bl_mat.node_tree and bl_mat.use_nodes:
+            for bl_node in bl_mat.node_tree.nodes:
                 if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and
-                        get_tex_image(bl_node) is not None and
-                        get_tex_image(bl_node).users != 0 and
-                        get_tex_image(bl_node).size[0] > 0 and
-                        get_tex_image(bl_node).size[1] > 0 and
+                        getTexImage(bl_node) is not None and
+                        getTexImage(bl_node).users != 0 and
+                        getTexImage(bl_node).size[0] > 0 and
+                        getTexImage(bl_node).size[1] > 0 and
                         bl_node not in filtered_textures):
                     filtered_textures.append(bl_node)
 
     for node_group in filtered_node_groups:
         for bl_node in node_group.nodes:
             if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and
-                    get_tex_image(bl_node) is not None and
-                    get_tex_image(bl_node).users != 0 and
-                    get_tex_image(bl_node).size[0] > 0 and
-                    get_tex_image(bl_node).size[1] > 0 and
+                    getTexImage(bl_node) is not None and
+                    getTexImage(bl_node).users != 0 and
+                    getTexImage(bl_node).size[0] > 0 and
+                    getTexImage(bl_node).size[1] > 0 and
                     bl_node not in filtered_textures):
                 filtered_textures.append(bl_node)
 
@@ -391,11 +422,11 @@ def filter_apply(exportSettings):
 
     filtered_images = []
 
-    for blender_texture in filtered_textures:
+    for bl_texture in filtered_textures:
 
-        img = (get_tex_image(blender_texture) if isinstance(blender_texture,
+        img = (getTexImage(bl_texture) if isinstance(bl_texture,
                 (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment))
-                else get_tex_image(blender_texture.texture))
+                else getTexImage(bl_texture.texture))
 
         if (img is not None and img not in filtered_images and img.users != 0
                 and img.size[0] > 0 and img.size[1] > 0):
@@ -406,45 +437,45 @@ def filter_apply(exportSettings):
 
     filtered_cameras = []
 
-    for blender_camera in bpy.data.cameras:
+    for bl_camera in bpy.data.cameras:
 
-        if blender_camera.users == 0:
+        if bl_camera.users == 0:
             continue
 
-        filtered_cameras.append(blender_camera)
+        filtered_cameras.append(bl_camera)
 
     exportSettings['filtered_cameras'] = filtered_cameras
 
 
     filtered_lights = []
 
-    for blender_light in bpy.data.lights:
+    for bl_light in bpy.data.lights:
 
-        if blender_light.users == 0:
+        if bl_light.users == 0:
             continue
 
-        if blender_light.type == 'AREA':
+        if bl_light.type == 'AREA':
             continue
 
-        filtered_lights.append(blender_light)
+        filtered_lights.append(bl_light)
 
     exportSettings['filtered_lights'] = filtered_lights
 
     joint_indices = {}
 
     if exportSettings['skins']:
-        for blender_object in filtered_objects_with_dg:
+        for bl_obj in filtered_objects_with_dg:
 
-            if blender_object.type != 'MESH':
+            if bl_obj.type != 'MESH':
                 continue
 
-            armature_object = find_armature(blender_object)
+            armature_object = findArmature(bl_obj)
             if armature_object is None or len(armature_object.pose.bones) == 0:
                 continue
 
-            grp = joint_indices[blender_object.data.name] = {}
+            grp = joint_indices[bl_obj.data.name] = {}
 
-            for blender_bone in armature_object.pose.bones:
-                grp[blender_bone.name] = len(grp)
+            for bl_bone in armature_object.pose.bones:
+                grp[bl_bone.name] = len(grp)
 
     exportSettings['joint_indices'] = joint_indices

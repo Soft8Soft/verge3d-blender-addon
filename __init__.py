@@ -24,7 +24,7 @@ from bpy.app.handlers import persistent
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.append(join(ROOT_DIR, 'python'))
 
 if 'bpy' in locals():
@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (3, 3, 0),
+    "version": (3, 5, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -69,7 +69,7 @@ from bpy.props import (CollectionProperty,
 
 from bpy_extras.io_utils import (ExportHelper)
 
-class ExportGLTF2_Base():
+class V3D_OT_export():
 
     export_sneak_peek: BoolProperty(
         name='Sneak Peek Mode',
@@ -145,9 +145,9 @@ class ExportGLTF2_Base():
     def draw(self, context):
         pass
 
-class V3D_OT_ExportGLTF(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
+class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
     '''Export scene to glTF 2.0 format'''
-    bl_idname = 'export_scene.v3d_gltf'
+    bl_idname = 'v3d.export_gltf'
     bl_label = 'Export Verge3D glTF'
 
     filename_ext = '.gltf'
@@ -155,10 +155,9 @@ class V3D_OT_ExportGLTF(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
 
     export_format = 'ASCII'
 
-
-class V3D_OT_ExportGLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
+class V3D_OT_export_glb(bpy.types.Operator, ExportHelper, V3D_OT_export):
     '''Export scene to glTF 2.0 binary format'''
-    bl_idname = 'export_scene.v3d_glb'
+    bl_idname = 'v3d.export_glb'
     bl_label = 'Export Verge3D glTF Binary'
 
     filename_ext = '.glb'
@@ -166,24 +165,23 @@ class V3D_OT_ExportGLB(bpy.types.Operator, ExportHelper, ExportGLTF2_Base):
 
     export_format = 'BINARY'
 
-def menu_func_export_v3d_gltf(self, context):
-    self.layout.operator(V3D_OT_ExportGLTF.bl_idname, text='Verge3D glTF (.gltf)')
+def menuExportGLTF(self, context):
+    self.layout.operator(V3D_OT_export_gltf.bl_idname, text='Verge3D glTF (.gltf)')
 
-def menu_func_export_v3d_glb(self, context):
-    self.layout.operator(V3D_OT_ExportGLB.bl_idname, text='Verge3D glTF Binary (.glb)')
-
+def menuExportGLB(self, context):
+    self.layout.operator(V3D_OT_export_glb.bl_idname, text='Verge3D glTF Binary (.glb)')
 
 def register():
     from . import custom_props, custom_ui
 
-    bpy.utils.register_class(V3D_OT_ExportGLTF)
-    bpy.utils.register_class(V3D_OT_ExportGLB)
+    bpy.utils.register_class(V3D_OT_export_gltf)
+    bpy.utils.register_class(V3D_OT_export_glb)
 
     custom_props.register()
     custom_ui.register()
 
-    bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_gltf)
-    bpy.types.TOPBAR_MT_file_export.append(menu_func_export_v3d_glb)
+    bpy.types.TOPBAR_MT_file_export.append(menuExportGLTF)
+    bpy.types.TOPBAR_MT_file_export.append(menuExportGLB)
 
     if AppManagerConn.isAvailable(getRoot()):
         AppManagerConn.start(getRoot(), 'BLENDER', True)
@@ -193,11 +191,11 @@ def register():
 def unregister():
     from . import custom_props, custom_ui
 
-    bpy.utils.unregister_class(V3D_OT_ExportGLTF)
-    bpy.utils.unregister_class(V3D_OT_ExportGLB)
+    bpy.utils.unregister_class(V3D_OT_export_gltf)
+    bpy.utils.unregister_class(V3D_OT_export_glb)
 
     custom_props.unregister()
     custom_ui.unregister()
 
-    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_gltf)
-    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export_v3d_glb)
+    bpy.types.TOPBAR_MT_file_export.remove(menuExportGLTF)
+    bpy.types.TOPBAR_MT_file_export.remove(menuExportGLB)

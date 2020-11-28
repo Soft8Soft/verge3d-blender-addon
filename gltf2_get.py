@@ -14,10 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#
-# Imports
-#
-
 import bpy
 import os
 
@@ -26,29 +22,21 @@ import pluginUtils.gltf as gltf
 
 from .utils import *
 
-#
-# Globals
-#
 
-#
-# Functions
-#
-
-
-def get_used_materials():
+def getUsedMaterials():
     """
     Gathers and returns all unfiltered, valid Blender materials.
     """
 
     materials = []
 
-    for blender_material in bpy.data.materials:
-        materials.append(blender_material)
+    for bl_mat in bpy.data.materials:
+        materials.append(bl_mat)
 
     return materials
 
 
-def get_material_requires_texcoords(glTF, index):
+def getMaterialRequiresTexCoords(glTF, index):
     """
     Query function, if a material "needs" texture cooridnates. This is the case, if a texture is present and used.
     """
@@ -84,7 +72,7 @@ def get_material_requires_texcoords(glTF, index):
 
     # Common Material
 
-    v3dExt = get_asset_extension(material, 'S8S_v3d_material_data')
+    v3dExt = gltf.getAssetExtension(material, 'S8S_v3d_material_data')
     if v3dExt:
 
         if v3dExt.get('diffuseTexture') is not None:
@@ -99,15 +87,15 @@ def get_material_requires_texcoords(glTF, index):
     return False
 
 
-def get_material_requires_normals(glTF, index):
+def getMaterialRequiresNormals(glTF, index):
     """
     Query function, if a material "needs" normals. This is the case, if a texture is present and used.
     At point of writing, same function as for texture coordinates.
     """
-    return get_material_requires_texcoords(glTF, index)
+    return getMaterialRequiresTexCoords(glTF, index)
 
 
-def get_image_index(exportSettings, uri):
+def getImageIndex(exportSettings, uri):
     """
     Return the image index in the glTF array.
     """
@@ -121,7 +109,7 @@ def get_image_index(exportSettings, uri):
     return -1
 
 
-def get_texture_index_by_image(exportSettings, glTF, bl_image):
+def getTextureIndexByImage(exportSettings, glTF, bl_image):
     """
     Return the texture index in the glTF array by a given blender image.
     """
@@ -129,7 +117,7 @@ def get_texture_index_by_image(exportSettings, glTF, bl_image):
     if bl_image.filepath is None:
         return -1
 
-    uri = get_image_exported_uri(exportSettings, bl_image)
+    uri = getImageExportedURI(exportSettings, bl_image)
 
     if exportSettings['uri_data'] is None:
         return -1
@@ -153,10 +141,10 @@ def get_texture_index_by_image(exportSettings, glTF, bl_image):
 
     return -1
 
-def get_texture_index_by_texture(exportSettings, glTF, bl_texture):
+def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
     """
     Return the texture index in the glTF array by a given texture. Safer than
-    "get_texture_index_by_image" and "getTextureIndex" in case of different
+    "getTextureIndexByImage" and "getTextureIndex" in case of different
     textures with the same image or linked textures with the same name but with
     different images.
     """
@@ -165,13 +153,13 @@ def get_texture_index_by_texture(exportSettings, glTF, bl_texture):
             or bl_texture is None):
         return -1
 
-    bl_image = get_tex_image(bl_texture)
+    bl_image = getTexImage(bl_texture)
     if bl_image is None or bl_image.filepath is None:
         return -1
 
-    uri = get_image_exported_uri(exportSettings, bl_image)
+    uri = getImageExportedURI(exportSettings, bl_image)
     image_uri = exportSettings['uri_data']['uri']
-    tex_name = get_texture_name(bl_texture)
+    tex_name = getTextureName(bl_texture)
 
     index = 0
     for texture in glTF['textures']:
@@ -184,7 +172,7 @@ def get_texture_index_by_texture(exportSettings, glTF, bl_texture):
 
     return -1
 
-def get_texture_index_node(exportSettings, glTF, name, shaderNode):
+def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
     """
     Return the texture index in the glTF array.
     """
@@ -192,7 +180,9 @@ def get_texture_index_node(exportSettings, glTF, name, shaderNode):
     if shaderNode is None:
         return -1
 
-    if not isinstance(shaderNode, (bpy.types.ShaderNodeGroup, bpy.types.ShaderNodeBsdfPrincipled)):
+    if not isinstance(shaderNode, (bpy.types.ShaderNodeBsdfPrincipled,
+                                   bpy.types.ShaderNodeMixShader,
+                                   bpy.types.ShaderNodeGroup)):
         return -1
 
     if shaderNode.inputs.get(name) is None:
@@ -215,16 +205,25 @@ def get_texture_index_node(exportSettings, glTF, name, shaderNode):
         else:
             return -1
 
+    # color factor
+    if isinstance(fromNode, bpy.types.ShaderNodeMixRGB) and fromNode.blend_type == 'MULTIPLY':
+        if len(fromNode.inputs['Color1'].links) > 0:
+            fromNode = fromNode.inputs['Color1'].links[0].from_node
+        elif len(fromNode.inputs['Color2'].links) > 0:
+            fromNode = fromNode.inputs['Color2'].links[0].from_node
+        else:
+            return -1
+
     if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return -1
 
-    if get_tex_image(fromNode) is None or get_tex_image(fromNode).size[0] == 0 or get_tex_image(fromNode).size[1] == 0:
+    if getTexImage(fromNode) is None or getTexImage(fromNode).size[0] == 0 or getTexImage(fromNode).size[1] == 0:
         return -1
 
-    return get_texture_index_by_texture(exportSettings, glTF, fromNode)
+    return getTextureIndexByTexture(exportSettings, glTF, fromNode)
 
 
-def get_texcoord_index(glTF, name, shaderNode):
+def getTexcoordIndex(glTF, name, shaderNode):
     """
     Return the texture coordinate index, if assigend and used.
     """
@@ -232,7 +231,9 @@ def get_texcoord_index(glTF, name, shaderNode):
     if shaderNode is None:
         return 0
 
-    if not isinstance(shaderNode, (bpy.types.ShaderNodeGroup, bpy.types.ShaderNodeBsdfPrincipled)):
+    if not isinstance(shaderNode, (bpy.types.ShaderNodeBsdfPrincipled,
+                                   bpy.types.ShaderNodeMixShader,
+                                   bpy.types.ShaderNodeGroup)):
         return 0
 
     if shaderNode.inputs.get(name) is None:
@@ -249,6 +250,12 @@ def get_texcoord_index(glTF, name, shaderNode):
     if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
         fromNode = fromNode.inputs['Image'].links[0].from_node
 
+    if isinstance(fromNode, bpy.types.ShaderNodeMixRGB) and fromNode.blend_type == 'MULTIPLY':
+        if len(fromNode.inputs['Color1'].links) > 0:
+            fromNode = fromNode.inputs['Color1'].links[0].from_node
+        elif len(fromNode.inputs['Color2'].links) > 0:
+            fromNode = fromNode.inputs['Color2'].links[0].from_node
+
     if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return 0
 
@@ -264,32 +271,32 @@ def get_texcoord_index(glTF, name, shaderNode):
         return 0
 
     # try to gather map index.
-    for blender_mesh in bpy.data.meshes:
-        texCoordIndex = blender_mesh.uv_layers.find(inputNode.uv_map)
+    for bl_mesh in bpy.data.meshes:
+        texCoordIndex = bl_mesh.uv_layers.find(inputNode.uv_map)
         if texCoordIndex >= 0:
             return texCoordIndex
 
     return 0
 
-def get_material_type(bl_material):
+def getMaterialType(bl_mat):
     """
     get blender material type: PBR, CYCLES, BASIC
     """
 
-    if not bl_material.use_nodes or bl_material.node_tree == None:
+    if not bl_mat.use_nodes or bl_mat.node_tree == None:
         return 'BASIC'
 
-    for bl_node in bl_material.node_tree.nodes:
+    for bl_node in bl_mat.node_tree.nodes:
         if (isinstance(bl_node, bpy.types.ShaderNodeGroup) and
                 bl_node.node_tree.name.startswith('Verge3D PBR')):
             return 'PBR'
 
-    if bl_material.v3d.gltf_compat:
+    if bl_mat.v3d.gltf_compat:
         return 'PBR'
 
     return 'CYCLES'
 
-def get_skin_index(glTF, name, index_offset):
+def getSkinIndex(glTF, name, index_offset):
     """
     Return the skin index in the glTF array.
     """
@@ -309,7 +316,7 @@ def get_skin_index(glTF, name, index_offset):
     return -1
 
 
-def get_camera_index(glTF, name):
+def getCameraIndex(glTF, name):
     """
     Return the camera index in the glTF array.
     """
@@ -326,12 +333,12 @@ def get_camera_index(glTF, name):
 
     return -1
 
-def get_curve_index(glTF, name):
+def getCurveIndex(glTF, name):
     """
     Return the curve index in the glTF array.
     """
 
-    v3dExt = get_asset_extension(glTF, 'S8S_v3d_data')
+    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_data')
 
     if v3dExt == None:
         return -1
@@ -350,12 +357,12 @@ def get_curve_index(glTF, name):
 
     return -1
 
-def get_node_graph_index(glTF, name):
+def getNodeGraphIndex(glTF, name):
     """
     Return the node graph index in the glTF array.
     """
 
-    v3dExt = get_asset_extension(glTF, 'S8S_v3d_data')
+    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_data')
 
     if v3dExt == None:
         return -1
@@ -373,7 +380,7 @@ def get_node_graph_index(glTF, name):
     return -1
 
 
-def get_image_exported_uri(exportSettings, bl_image):
+def getImageExportedURI(exportSettings, bl_image):
     """
     Return exported URI for a blender image.
     """
@@ -403,11 +410,11 @@ def get_image_exported_uri(exportSettings, bl_image):
             break
 
         i += 1
-        unique_uri = uri_name + '_' + integer_to_bl_suffix(i) + uri_ext
+        unique_uri = uri_name + '_' + integerToBlSuffix(i) + uri_ext
 
     return unique_uri
 
-def get_image_exported_mime_type(bl_image):
+def getImageExportedMimeType(bl_image):
 
     if bl_image.file_format == 'JPEG':
         return 'image/jpeg'
@@ -418,7 +425,7 @@ def get_image_exported_mime_type(bl_image):
     else:
         return 'image/png'
 
-def get_name_in_brackets(data_path):
+def getNameInBrackets(data_path):
     """
     Return Blender node on a given Blender data path.
     """
@@ -438,16 +445,16 @@ def get_name_in_brackets(data_path):
 
     return node_name[:(index)]
 
-def get_anim_param_dim(fcurves, node_name):
+def getAnimParamDim(fcurves, node_name):
     dim = 0
 
     for fcurve in fcurves:
-        if get_name_in_brackets(fcurve.data_path) == node_name:
+        if getNameInBrackets(fcurve.data_path) == node_name:
             dim = max(dim, fcurve.array_index+1)
 
     return dim
 
-def get_anim_param(data_path):
+def getAnimParam(data_path):
     """
     return animated param in data path:
     nodes['name'].outputs[0].default_value -> default_value
@@ -461,7 +468,7 @@ def get_anim_param(data_path):
     return data_path[(index + 1):]
 
 
-def get_scalar(default_value, init_value = 0.0):
+def getScalar(default_value, init_value = 0.0):
     """
     Return scalar with a given default/fallback value.
     """
@@ -476,7 +483,7 @@ def get_scalar(default_value, init_value = 0.0):
     return return_value
 
 
-def get_vec2(default_value, init_value = [0.0, 0.0]):
+def getVec2(default_value, init_value = [0.0, 0.0]):
     """
     Return vec2 with a given default/fallback value.
     """
@@ -497,7 +504,7 @@ def get_vec2(default_value, init_value = [0.0, 0.0]):
     return return_value
 
 
-def get_vec3(default_value, init_value = [0.0, 0.0, 0.0]):
+def getVec3(default_value, init_value = [0.0, 0.0, 0.0]):
     """
     Return vec3 with a given default/fallback value.
     """
@@ -518,7 +525,7 @@ def get_vec3(default_value, init_value = [0.0, 0.0, 0.0]):
     return return_value
 
 
-def get_vec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
+def getVec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
     """
     Return vec4 with a given default/fallback value.
     """
@@ -539,7 +546,7 @@ def get_vec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
     return return_value
 
 
-def get_index(list, name):
+def getIndex(list, name):
     """
     Return index of a glTF element by a given name.
     """
@@ -559,7 +566,7 @@ def get_index(list, name):
 
     return -1
 
-def get_by_name(list, name):
+def getByName(list, name):
     """
     Return element by a given name.
     """
@@ -577,31 +584,20 @@ def get_by_name(list, name):
     return None
 
 
-def get_asset_extension(glTF, extension):
-    """
-    Get top-level asset extension
-    """
-
-    if glTF.get('extensions') == None:
-        return None
-
-    return glTF['extensions'].get(extension)
-
-
-def get_or_create_default_material_index(glTF):
+def getOrCreateDefaultMatIndex(glTF):
     def_idx = gltf.getMaterialIndex(glTF, DEFAULT_MAT_NAME)
 
     if def_idx == -1:
         if 'materials' not in glTF:
             glTF['materials'] = []
 
-        glTF['materials'].append(create_default_material_cycles())
+        glTF['materials'].append(createDefaultMaterialCycles())
 
         def_idx = len(glTF['materials']) - 1
 
     return def_idx
 
-def create_default_material_cycles():
+def createDefaultMaterialCycles():
     return {
         "emissiveFactor" : [
             0.0,

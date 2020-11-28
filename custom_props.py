@@ -94,6 +94,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
             ('MSAA8', 'MSAA 8x', 'Prefer 8x MSAA on supported hardware'),
             ('MSAA16', 'MSAA 16x', 'Prefer 16x MSAA on supported hardware'),
             ('FXAA', 'FXAA', 'Prefer FXAA'),
+            ('NONE', 'None', 'Disable anti-aliasing'),
         ],
         options = NO_ANIM_OPTS
     )
@@ -355,8 +356,8 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-def orbit_target_update(self, context):
-    utils.update_orbit_camera_view(context.object, context.scene)
+def orbitTargetUpdate(self, context):
+    utils.updateOrbitCameraView(context.object, context.scene)
 
 class V3DCameraSettings(bpy.types.PropertyGroup):
 
@@ -396,15 +397,34 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
 
     orbit_min_distance: bpy.props.FloatProperty(
         name = 'Min Dist',
-        description = 'Orbit camera minimum distance',
+        description = 'Orbit camera minimum distance (perspective camera)',
         default = 0,
         options = NO_ANIM_OPTS
     )
 
     orbit_max_distance: bpy.props.FloatProperty(
         name = 'Max Dist',
-        description = 'Orbit camera maximum distance',
+        description = 'Orbit camera maximum distance (perspective camera)',
         default = 100,
+        options = NO_ANIM_OPTS
+    )
+
+    orbit_min_zoom: bpy.props.FloatProperty(
+        name = 'Min Zoom',
+        description = 'Orbit camera minimum zoom (orthographic camera)',
+        default = 0.01,
+        min = 0,
+        precision = 3,
+        step = 1,
+        options = NO_ANIM_OPTS
+    )
+
+    orbit_max_zoom: bpy.props.FloatProperty(
+        name = 'Max Zoom',
+        description = 'Orbit camera maximum zoom (orthographic camera)',
+        default = 100,
+        min = 0,
+        precision = 1,
         options = NO_ANIM_OPTS
     )
 
@@ -449,7 +469,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         name = 'Target Object',
         description = "Object which center is used as the camera's target point",
         options = NO_ANIM_OPTS,
-        update = orbit_target_update
+        update = orbitTargetUpdate
     )
 
     orbit_target: bpy.props.FloatVectorProperty(
@@ -460,7 +480,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         subtype = 'XYZ',
         size = 3,
         options = NO_ANIM_OPTS,
-        update = orbit_target_update
+        update = orbitTargetUpdate
     )
 
     fps_collision_material: bpy.props.PointerProperty(

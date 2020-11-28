@@ -351,11 +351,18 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
             column.label(text='From Object:')
             column.prop(v3d, 'orbit_target_object', text='')
 
+            column.operator('v3d.orbit_camera_target_from_cursor', text='From Cursor')
+
             box.operator('v3d.orbit_camera_update_view', text='Update View')
 
             row = layout.row()
-            row.prop(v3d, 'orbit_min_distance')
-            row.prop(v3d, 'orbit_max_distance')
+
+            if camera.type == 'ORTHO':
+                row.prop(v3d, 'orbit_min_zoom')
+                row.prop(v3d, 'orbit_max_zoom')
+            else:
+                row.prop(v3d, 'orbit_min_distance')
+                row.prop(v3d, 'orbit_max_distance')
 
             row = layout.row()
             row.label(text='Vertical Rotation Limits:')
@@ -493,7 +500,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         layout.use_property_split = True
 
-        blend_back = utils.material_has_blend_backside(material)
+        blend_back = utils.matHasBlendBackside(material)
 
         if blend_back:
             row = layout.row()
@@ -585,17 +592,29 @@ def execBrowser(url):
     except BaseException:
         print("Failed to open URL: " + url)
 
-class V3D_OT_OrbitCameraUpdateView(bpy.types.Operator):
+class V3D_OT_orbit_camera_target_from_cursor(bpy.types.Operator):
+    bl_idname = 'v3d.orbit_camera_target_from_cursor'
+    bl_label = 'From Cursor'
+    bl_description = 'Update target coordinates from cursor position'
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        context.object.data.v3d.orbit_target_object = None
+        context.object.data.v3d.orbit_target = bpy.context.scene.cursor.location
+        utils.updateOrbitCameraView(context.object, context.scene)
+        return {'FINISHED'}
+
+class V3D_OT_orbit_camera_update_view(bpy.types.Operator):
     bl_idname = "v3d.orbit_camera_update_view"
     bl_label = "Update View"
     bl_description = "Update view for the orbit camera"
     bl_options = {"INTERNAL"}
 
     def execute(self, context):
-        utils.update_orbit_camera_view(context.object, context.scene)
+        utils.updateOrbitCameraView(context.object, context.scene)
         return {"FINISHED"}
 
-class V3D_OT_AppManager(bpy.types.Operator):
+class V3D_OT_app_manager(bpy.types.Operator):
     bl_idname = "v3d.app_manager"
     bl_label = "Open App Manager"
     bl_description = "Open Verge3D App Manager"
@@ -606,7 +625,7 @@ class V3D_OT_AppManager(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class V3D_OT_SneakPeek(bpy.types.Operator):
+class V3D_OT_sneak_peek(bpy.types.Operator):
     bl_idname = "v3d.sneak_peek"
     bl_label = "Sneak Peek"
     bl_description = "Export to temporary location and preview the scene in Verge3D"
@@ -619,8 +638,8 @@ class V3D_OT_SneakPeek(bpy.types.Operator):
             shutil.rmtree(prev_dir)
         os.mkdir(prev_dir)
 
-        bpy.ops.export_scene.v3d_gltf(
-                filepath=join(prev_dir, "sneak_peek.gltf"), export_sneak_peek = True)
+        bpy.ops.v3d.export_gltf(filepath=join(prev_dir, 'sneak_peek.gltf'),
+                                export_sneak_peek = True)
 
         execBrowser(getAppManagerHost() +
                 'player/player.html?load=preview/sneak_peek.gltf')
@@ -629,12 +648,11 @@ class V3D_OT_SneakPeek(bpy.types.Operator):
 
 @persistent
 def loadHandler(dummy):
+    printLog('INFO', 'Reexporting ' + V3D_OT_reexport_all.currBlend)
+    bpy.ops.v3d.export_gltf(filepath=V3D_OT_reexport_all.currGLTF)
+    V3D_OT_reexport_all.reexportNext()
 
-    printLog('INFO', 'Reexporting ' + V3D_OT_ReexportAll.currBlend)
-    bpy.ops.export_scene.v3d_gltf(filepath=V3D_OT_ReexportAll.currGLTF)
-    V3D_OT_ReexportAll.reexportNext()
-
-class V3D_OT_ReexportAll(bpy.types.Operator):
+class V3D_OT_reexport_all(bpy.types.Operator):
     bl_idname = "v3d.reexport_all"
     bl_label = "Reexport all Verge3D assets"
     bl_description = "Reexport all glTF files inside Verge3D SDK"
@@ -697,21 +715,20 @@ class V3D_OT_ReexportAll(bpy.types.Operator):
 
         return {"FINISHED"}
 
-def v3d_sneak_peek(self, context):
+def btnSneakPeek(self, context):
     self.layout.operator('v3d.sneak_peek', text='Sneak Peek')
 
-def v3d_app_manager(self, context):
+def btnAppManager(self, context):
     self.layout.operator('v3d.app_manager', text='App Manager')
 
-def v3d_menu_help(self, context):
-
+def menuUserManual(self, context):
     if context.scene.render.engine in V3DPanel.COMPAT_ENGINES:
         self.layout.separator()
         self.layout.operator("wm.url_open", text="Verge3D User Manual", icon='URL').url = getManualURL()
 
 def register():
 
-    bpy.types.TOPBAR_MT_help.append(v3d_menu_help)
+    bpy.types.TOPBAR_MT_help.append(menuUserManual)
 
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderLayerSettings)
@@ -725,25 +742,26 @@ def register():
     bpy.utils.register_class(V3D_PT_MeshSettings)
     bpy.utils.register_class(V3D_PT_NodeSettings)
 
-    bpy.utils.register_class(V3D_OT_OrbitCameraUpdateView)
-    bpy.utils.register_class(V3D_OT_ReexportAll)
+    bpy.utils.register_class(V3D_OT_orbit_camera_target_from_cursor)
+    bpy.utils.register_class(V3D_OT_orbit_camera_update_view)
+    bpy.utils.register_class(V3D_OT_reexport_all)
 
     bpy.utils.register_class(COLLECTION_UL_export)
 
     if AppManagerConn.isAvailable(getRoot()):
-        bpy.utils.register_class(V3D_OT_AppManager)
-        bpy.utils.register_class(V3D_OT_SneakPeek)
-        bpy.types.VIEW3D_HT_header.append(v3d_sneak_peek)
-        bpy.types.VIEW3D_HT_header.append(v3d_app_manager)
+        bpy.utils.register_class(V3D_OT_app_manager)
+        bpy.utils.register_class(V3D_OT_sneak_peek)
+        bpy.types.VIEW3D_HT_header.append(btnSneakPeek)
+        bpy.types.VIEW3D_HT_header.append(btnAppManager)
 
 
 def unregister():
 
     if AppManagerConn.isAvailable(getRoot()):
-        bpy.types.VIEW3D_HT_header.remove(v3d_app_manager)
-        bpy.types.VIEW3D_HT_header.remove(v3d_sneak_peek)
-        bpy.utils.unregister_class(V3D_OT_SneakPeek)
-        bpy.utils.unregister_class(V3D_OT_AppManager)
+        bpy.types.VIEW3D_HT_header.remove(btnAppManager)
+        bpy.types.VIEW3D_HT_header.remove(btnSneakPeek)
+        bpy.utils.unregister_class(V3D_OT_sneak_peek)
+        bpy.utils.unregister_class(V3D_OT_app_manager)
 
     bpy.utils.unregister_class(V3D_PT_NodeSettings)
     bpy.utils.unregister_class(V3D_PT_TextureSettings)
@@ -757,8 +775,9 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_RenderSettings)
     bpy.utils.unregister_class(V3D_PT_MeshSettings)
 
-    bpy.utils.unregister_class(V3D_OT_ReexportAll)
-    bpy.utils.unregister_class(V3D_OT_OrbitCameraUpdateView)
+    bpy.utils.unregister_class(V3D_OT_reexport_all)
+    bpy.utils.unregister_class(V3D_OT_orbit_camera_target_from_cursor)
+    bpy.utils.unregister_class(V3D_OT_orbit_camera_update_view)
 
     bpy.utils.unregister_class(COLLECTION_UL_export)
 

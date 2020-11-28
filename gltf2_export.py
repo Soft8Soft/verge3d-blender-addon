@@ -14,10 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#
-# Imports
-#
-
 import bpy
 import json
 import struct
@@ -29,13 +25,6 @@ from pluginUtils.manager import AppManagerConn
 from .gltf2_filter import *
 from .gltf2_generate import *
 
-#
-# Globals
-#
-
-#
-# Functions
-#
 
 def prepare(exportSettings):
     """
@@ -44,10 +33,10 @@ def prepare(exportSettings):
     if bpy.context.active_object is not None and bpy.context.active_object.mode != 'OBJECT':
         bpy.ops.object.mode_set(mode='OBJECT')
 
-    filter_apply(exportSettings)
+    filterApply(exportSettings)
 
     # if bpy.app.version >= (2,81,0):
-    #     prepare_shadow_casters(exportSettings)
+    #     prepareShadowCasters(exportSettings)
 
     exportSettings['original_frame'] = bpy.context.scene.frame_current
 
@@ -58,16 +47,16 @@ def prepare(exportSettings):
     if exportSettings['animations']:
         bpy.context.scene.frame_set(0)
 
-def prepare_shadow_casters(exportSettings):
+def prepareShadowCasters(exportSettings):
     # NOTE: currently unused
 
     shadow_casters = []
     if exportSettings['use_shadows']:
         shadow_casters = [obj for obj in exportSettings['filtered_objects_with_dg']
-                if obj_casts_shadows(obj)]
+                if objCastsShadows(obj)]
 
     exportSettings['shadow_casters_bound_box_world'] \
-            = objects_get_bound_box_world(shadow_casters)
+            = objsGetBoundBoxWorld(shadow_casters)
 
 def finish(exportSettings):
     """

@@ -19,6 +19,8 @@ import bpy
 import numpy as np
 import mathutils
 
+import pyosl.glslgen
+
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
 BOUND_BOX_MAX = 1e10
@@ -30,7 +32,7 @@ prevActiveObject = None
 def clamp(val, minval, maxval):
     return max(minval, min(maxval, val))
 
-def integer_to_bl_suffix(val):
+def integerToBlSuffix(val):
 
     suf = str(val)
 
@@ -39,21 +41,21 @@ def integer_to_bl_suffix(val):
 
     return suf
 
-def get_world_first_valid_texture_slot(world):
+def getWorldFirstValidTextureSlot(world):
 
-    for blender_texture_slot in world.texture_slots:
-        if (blender_texture_slot is not None and
-                blender_texture_slot.texture and
-                blender_texture_slot.texture.users != 0 and
-                (blender_texture_slot.texture.type == 'ENVIRONMENT_MAP'
-                or blender_texture_slot.texture.type == 'IMAGE'
-                and blender_texture_slot.texture_coords == 'EQUIRECT') and
-                get_tex_image(blender_texture_slot.texture) is not None and
-                get_tex_image(blender_texture_slot.texture).users != 0 and
-                get_tex_image(blender_texture_slot.texture).size[0] > 0 and
-                get_tex_image(blender_texture_slot.texture).size[1] > 0):
+    for bl_texture_slot in world.texture_slots:
+        if (bl_texture_slot is not None and
+                bl_texture_slot.texture and
+                bl_texture_slot.texture.users != 0 and
+                (bl_texture_slot.texture.type == 'ENVIRONMENT_MAP'
+                or bl_texture_slot.texture.type == 'IMAGE'
+                and bl_texture_slot.texture_coords == 'EQUIRECT') and
+                getTexImage(bl_texture_slot.texture) is not None and
+                getTexImage(bl_texture_slot.texture).users != 0 and
+                getTexImage(bl_texture_slot.texture).size[0] > 0 and
+                getTexImage(bl_texture_slot.texture).size[1] > 0):
 
-            return blender_texture_slot
+            return bl_texture_slot
 
     return None
 
@@ -62,10 +64,10 @@ def getWorldCyclesEnvTexture(world):
     if world.node_tree is not None and world.use_nodes:
         for bl_node in world.node_tree.nodes:
             if (bl_node.type == 'TEX_ENVIRONMENT' and
-                    get_tex_image(bl_node) is not None and
-                    get_tex_image(bl_node).users != 0 and
-                    get_tex_image(bl_node).size[0] > 0 and
-                    get_tex_image(bl_node).size[1] > 0):
+                    getTexImage(bl_node) is not None and
+                    getTexImage(bl_node).users != 0 and
+                    getTexImage(bl_node).size[0] > 0 and
+                    getTexImage(bl_node).size[1] > 0):
 
                 return bl_node
 
@@ -138,7 +140,7 @@ def restoreSelectedObjects():
     selectedObject = None
     selectedObjectsSave = []
 
-def get_scene_by_object(obj):
+def getSceneByObject(obj):
 
     for scene in bpy.data.scenes:
         index = scene.objects.find(obj.name)
@@ -147,7 +149,7 @@ def get_scene_by_object(obj):
 
     return None
 
-def get_tex_image(bl_tex):
+def getTexImage(bl_tex):
 
     """
     Get texture image from a texture, avoiding AttributeError for textures
@@ -156,7 +158,7 @@ def get_tex_image(bl_tex):
 
     return getattr(bl_tex, 'image', None)
 
-def get_texture_name(bl_texture):
+def getTextureName(bl_texture):
     if (isinstance(bl_texture, (bpy.types.ShaderNodeTexImage,
             bpy.types.ShaderNodeTexEnvironment))):
         tex_name = bl_texture.image.name
@@ -165,10 +167,10 @@ def get_texture_name(bl_texture):
 
     return tex_name
 
-def mat4_is_identity(mat4):
+def mat4IsIdentity(mat4):
     return mat4 == mathutils.Matrix.Identity(4)
 
-def mat4_is_trs_decomposable(mat4):
+def mat4IsTRSDecomposable(mat4):
     # don't use mathutils.Matrix.is_orthogonal_axis_vectors property, because it
     # doesn't normalize vectors before checking
 
@@ -181,7 +183,7 @@ def mat4_is_trs_decomposable(mat4):
             and abs(v0.dot(v2)) < ORTHO_EPS
             and abs(v1.dot(v2)) < ORTHO_EPS)
 
-def mat4_svd_decompose_to_mats(mat4):
+def mat4SvdDecomposeToMatrs(mat4):
     """
     Decompose the given matrix into a couple of TRS-decomposable matrices or
     Returns None in case of an error.
@@ -203,7 +205,7 @@ def mat4_svd_decompose_to_mats(mat4):
         # numpy failed to decompose the matrix
         return None
 
-def find_armature(obj):
+def findArmature(obj):
 
     for mod in obj.modifiers:
         if mod.type == 'ARMATURE' and mod.object is not None:
@@ -213,14 +215,14 @@ def find_armature(obj):
     # armature modifiers
     return obj.find_armature()
 
-def material_has_blend_backside(bl_mat):
-    return (material_is_blend(bl_mat) and
+def matHasBlendBackside(bl_mat):
+    return (matIsBlend(bl_mat) and
         (hasattr(bl_mat, 'show_transparent_back') and bl_mat.show_transparent_back))
 
-def material_is_blend(bl_mat):
+def matIsBlend(bl_mat):
     return bl_mat.blend_method in ['BLEND', 'MULTIPLY', 'ADD']
 
-def update_orbit_camera_view(cam_obj, scene):
+def updateOrbitCameraView(cam_obj, scene):
 
     target_obj = cam_obj.data.v3d.orbit_target_object
 
@@ -228,7 +230,7 @@ def update_orbit_camera_view(cam_obj, scene):
     target = (cam_obj.data.v3d.orbit_target if target_obj is None
             else target_obj.matrix_world.to_translation())
 
-    quat = get_lookat_aligned_up_matrix(eye, target).to_quaternion()
+    quat = getLookAtAlignedUpMatrix(eye, target).to_quaternion()
     quat.rotate(cam_obj.matrix_world.inverted())
     quat.rotate(cam_obj.matrix_basis)
 
@@ -242,7 +244,7 @@ def update_orbit_camera_view(cam_obj, scene):
 
     bpy.context.view_layer.update()
 
-def get_lookat_aligned_up_matrix(eye, target):
+def getLookAtAlignedUpMatrix(eye, target):
 
     """
     This method uses camera axes for building the matrix.
@@ -266,7 +268,7 @@ def get_lookat_aligned_up_matrix(eye, target):
         axis_z,
     ]).transposed()
 
-def obj_data_uses_line_rendering(bl_obj_data):
+def objDataUsesLineRendering(bl_obj_data):
     line_settings = getattr(getattr(bl_obj_data, 'v3d', None), 'line_rendering_settings', None)
     return bool(line_settings and line_settings.enable)
 
@@ -292,12 +294,12 @@ def getBlurPixelRadius(context, blLight):
             return blurGrade
 
 
-def obj_has_exported_modifiers(obj):
+def objHasExportedModifiers(obj):
     """
     Check if an object has any modifiers that should be applied before export.
     """
 
-    return any([modifier_needs_export(mod) for mod in obj.modifiers])
+    return any([modifierNeedsExport(mod) for mod in obj.modifiers])
 
 def obj_del_not_exported_modifiers(obj):
     """
@@ -305,15 +307,15 @@ def obj_del_not_exported_modifiers(obj):
     """
 
     for mod in obj.modifiers:
-        if not modifier_needs_export(mod):
+        if not modifierNeedsExport(mod):
             obj.modifiers.remove(mod)
 
-def obj_add_tri_modifier(obj):
+def objAddTriModifier(obj):
     mod = obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
     mod.quad_method = 'FIXED'
     mod.keep_custom_normals = True
 
-def obj_apply_modifiers(obj):
+def objApplyModifiers(obj):
     """
     Creates a new mesh from applying modifiers to the mesh of the given object.
     Assignes the newly created mesh to the given object. The old mesh's user
@@ -353,7 +355,7 @@ def obj_apply_modifiers(obj):
     if need_showing:
         obj.hide_viewport = True
 
-def obj_transfer_shape_keys(obj_from, obj_to, depsgraph):
+def objTransferShapeKeys(obj_from, obj_to, depsgraph):
     """
     Transfer shape keys from one object to another if it's possible:
         - obj_from should be in the current view layer to be evaluated by depsgraph
@@ -413,7 +415,7 @@ def obj_transfer_shape_keys(obj_from, obj_to, depsgraph):
 
     return same_vertex_count
 
-def obj_casts_shadows(obj):
+def objCastsShadows(obj):
     # NOTE: currently unused
 
     if obj.type not in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT']:
@@ -430,7 +432,7 @@ def obj_casts_shadows(obj):
 
     return False
 
-def objects_get_bound_box_world(objects):
+def objsGetBoundBoxWorld(objects):
     # NOTE: currently unused
 
     bound_box = [
@@ -459,25 +461,25 @@ def objects_get_bound_box_world(objects):
 
     return bound_box
 
-def mesh_need_tangents_for_export(mesh, optimize_tangents):
+def meshNeedTangentsForExport(mesh, optimize_tangents):
     """
     Check if it's needed to export tangents for the given mesh.
     """
 
-    return (mesh_has_uv_layers(mesh) and (mesh_materials_use_tangents(mesh)
+    return (meshHasUvLayers(mesh) and (meshMaterialsUseTangents(mesh)
             or not optimize_tangents))
 
-def mesh_has_uv_layers(mesh):
+def meshHasUvLayers(mesh):
     return bool(mesh.uv_layers.active and len(mesh.uv_layers) > 0)
 
-def mesh_materials_use_tangents(mesh):
+def meshMaterialsUseTangents(mesh):
 
     for mat in mesh.materials:
         if mat and mat.use_nodes and mat.node_tree != None:
-            node_trees = extract_material_node_trees(mat.node_tree)
+            node_trees = extractMaterialNodeTrees(mat.node_tree)
             for node_tree in node_trees:
                 for bl_node in node_tree.nodes:
-                    if mat_node_use_tangents(bl_node):
+                    if matNodeUseTangents(bl_node):
                         return True
 
         # HACK: in most cases this one indicates that object linking is used
@@ -487,7 +489,7 @@ def mesh_materials_use_tangents(mesh):
 
     return False
 
-def mat_node_use_tangents(bl_node):
+def matNodeUseTangents(bl_node):
 
     if isinstance(bl_node, bpy.types.ShaderNodeNormalMap):
         return True
@@ -503,26 +505,26 @@ def mat_node_use_tangents(bl_node):
 
     return False
 
-def extract_material_node_trees(node_tree):
-    """NOTE: located here since it's needed for mesh_materials_use_tangents()"""
+def extractMaterialNodeTrees(node_tree):
+    """NOTE: located here since it's needed for meshMaterialsUseTangents()"""
 
     out = [node_tree]
 
     for bl_node in node_tree.nodes:
         if isinstance(bl_node, bpy.types.ShaderNodeGroup):
-            out += extract_material_node_trees(bl_node.node_tree)
+            out += extractMaterialNodeTrees(bl_node.node_tree)
 
     return out
 
 
-def mesh_has_ngons(mesh):
+def meshHasNgons(mesh):
     for poly in mesh.polygons:
         if poly.loop_total > 4:
             return True
 
     return False
 
-def modifier_needs_export(mod):
+def modifierNeedsExport(mod):
     """
     Modifiers that are applied before export shouldn't be:
         - hidden during render (a way to disable export of a modifier)
@@ -531,7 +533,7 @@ def modifier_needs_export(mod):
 
     return mod.show_render and mod.type != 'ARMATURE'
 
-def get_socket_defval_compat(socket):
+def getSocketDefvalCompat(socket, RGBAToRGB=False, isOSL=False):
     """
     Get the default value of input/output sockets in some compatible form.
     Vector types such as bpy_prop_aray, Vector, Euler, etc... are converted to lists,
@@ -542,22 +544,30 @@ def get_socket_defval_compat(socket):
         return socket.default_value
     elif socket.type == 'BOOLEAN':
         return int(socket.default_value)
-    elif socket.type == 'VECTOR' or socket.type == 'RGBA':
+    elif socket.type == 'VECTOR':
         return [i for i in socket.default_value]
+    elif socket.type == 'RGBA':
+        val = [i for i in socket.default_value]
+        if RGBAToRGB:
+            val = val[0:3]
+        return val
     elif socket.type == 'SHADER':
         # shader sockets have no default value
         return [0, 0, 0, 0]
-    elif socket.type == 'STRING' or socket.type == 'CUSTOM':
+    elif socket.type == 'STRING' and isOSL:
+        # for now used for OSL only
+        return pyosl.glslgen.string_to_osl_const(socket.default_value)
+    elif socket.type == 'CUSTOM':
         # not supported
         return 0
     else:
         return 0
 
-def create_custom_property(blender_element):
+def createCustomProperty(bl_element):
     """
     Filters and creates a custom property, which is stored in the glTF extra field.
     """
-    if not blender_element:
+    if not bl_element:
         return None
 
     props = {}
@@ -566,11 +576,11 @@ def create_custom_property(blender_element):
     black_list = ['cycles', 'cycles_visibility', 'cycles_curves', '_RNA_UI', 'v3d']
 
     count = 0
-    for custom_property in blender_element.keys():
+    for custom_property in bl_element.keys():
         if custom_property in black_list:
             continue
 
-        value = blender_element[custom_property]
+        value = bl_element[custom_property]
 
         add_value = False
 
@@ -593,7 +603,7 @@ def create_custom_property(blender_element):
 
     return props
 
-def calc_light_threshold_distance(bl_light, threshold):
+def calcLightThresholdDist(bl_light, threshold):
     """Calculate the light attenuation distance from the given threshold.
 
     The light power at this distance equals the threshold value.

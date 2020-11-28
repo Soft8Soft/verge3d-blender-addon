@@ -14,9 +14,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#
-# Imports
-#
 
 import bpy
 import math
@@ -25,15 +22,8 @@ import mathutils
 from pluginUtils.log import printLog
 from .gltf2_extract import *
 
-#
-# Globals
-#
 
-#
-# Functions
-#
-
-def animate_get_interpolation(exportSettings, blender_fcurve_list):
+def animateGetInterpolation(exportSettings, bl_fcurve_list):
     """
     Retrieves the glTF interpolation, depending on a fcurve list.
     Blender allows mixing and more variations of interpolations.
@@ -46,11 +36,11 @@ def animate_get_interpolation(exportSettings, blender_fcurve_list):
 
 
     prev_times = None
-    for blender_fcurve in blender_fcurve_list:
-        if blender_fcurve is None:
+    for bl_fcurve in bl_fcurve_list:
+        if bl_fcurve is None:
             continue
 
-        curr_times = [p.co[0] for p in blender_fcurve.keyframe_points]
+        curr_times = [p.co[0] for p in bl_fcurve.keyframe_points]
         if prev_times is not None and curr_times != prev_times:
             return 'CONVERSION_NEEDED'
         prev_times = curr_times
@@ -58,41 +48,41 @@ def animate_get_interpolation(exportSettings, blender_fcurve_list):
 
     interpolation = None
 
-    for blender_fcurve in blender_fcurve_list:
-        if blender_fcurve is None:
+    for bl_fcurve in bl_fcurve_list:
+        if bl_fcurve is None:
             continue
 
 
 
-        currentKeyframeCount = len(blender_fcurve.keyframe_points)
+        currentKeyframeCount = len(bl_fcurve.keyframe_points)
 
-        if currentKeyframeCount > 0 and blender_fcurve.keyframe_points[0].co[0] < 0:
+        if currentKeyframeCount > 0 and bl_fcurve.keyframe_points[0].co[0] < 0:
             return 'CONVERSION_NEEDED'
 
 
 
-        for blender_keyframe in blender_fcurve.keyframe_points:
+        for bl_keyframe in bl_fcurve.keyframe_points:
             if interpolation is None:
-                if blender_keyframe.interpolation == 'BEZIER':
+                if bl_keyframe.interpolation == 'BEZIER':
                     interpolation = 'CUBICSPLINE'
-                elif blender_keyframe.interpolation == 'LINEAR':
+                elif bl_keyframe.interpolation == 'LINEAR':
                     interpolation = 'LINEAR'
-                elif blender_keyframe.interpolation == 'CONSTANT':
+                elif bl_keyframe.interpolation == 'CONSTANT':
                     interpolation = 'STEP'
                 else:
                     interpolation = 'CONVERSION_NEEDED'
                     return interpolation
             else:
-                if blender_keyframe.interpolation == 'BEZIER' and interpolation != 'CUBICSPLINE':
+                if bl_keyframe.interpolation == 'BEZIER' and interpolation != 'CUBICSPLINE':
                     interpolation = 'CONVERSION_NEEDED'
                     return interpolation
-                elif blender_keyframe.interpolation == 'LINEAR' and interpolation != 'LINEAR':
+                elif bl_keyframe.interpolation == 'LINEAR' and interpolation != 'LINEAR':
                     interpolation = 'CONVERSION_NEEDED'
                     return interpolation
-                elif blender_keyframe.interpolation == 'CONSTANT' and interpolation != 'STEP':
+                elif bl_keyframe.interpolation == 'CONSTANT' and interpolation != 'STEP':
                     interpolation = 'CONVERSION_NEEDED'
                     return interpolation
-                elif blender_keyframe.interpolation != 'BEZIER' and blender_keyframe.interpolation != 'LINEAR' and blender_keyframe.interpolation != 'CONSTANT':
+                elif bl_keyframe.interpolation != 'BEZIER' and bl_keyframe.interpolation != 'LINEAR' and bl_keyframe.interpolation != 'CONSTANT':
                     interpolation = 'CONVERSION_NEEDED'
                     return interpolation
 
@@ -107,7 +97,7 @@ def animate_get_interpolation(exportSettings, blender_fcurve_list):
     return interpolation
 
 
-def animate_convert_rotation_axis_angle(axis_angle):
+def animateConvertRotationAxisAngle(axis_angle):
     """
     Converts an axis angle to a quaternion rotation.
     """
@@ -116,7 +106,7 @@ def animate_convert_rotation_axis_angle(axis_angle):
     return [q.x, q.y, q.z, q.w]
 
 
-def animate_convert_rotation_euler(euler, rotation_mode):
+def animateConvertRotationEuler(euler, rotation_mode):
     """
     Converts an euler angle to a quaternion rotation.
     """
@@ -125,7 +115,7 @@ def animate_convert_rotation_euler(euler, rotation_mode):
     return [rotation.x, rotation.y, rotation.z, rotation.w]
 
 
-def animate_convert_keys(key_list):
+def animateConvertKeys(key_list):
     """
     Converts Blender key frames to glTF time keys depending on the applied frames per second.
     """
@@ -137,7 +127,7 @@ def animate_convert_keys(key_list):
     return times
 
 
-def animate_gather_keys(exportSettings, fcurve_list, interpolation):
+def animateGatherKeys(exportSettings, fcurve_list, interpolation):
     """
     Merges and sorts several key frames to one set.
     If an interpolation conversion is needed, the sample key frames are created as well.
@@ -148,33 +138,33 @@ def animate_gather_keys(exportSettings, fcurve_list, interpolation):
         start = None
         end = None
 
-        for blender_fcurve in fcurve_list:
-            if blender_fcurve is None:
+        for bl_fcurve in fcurve_list:
+            if bl_fcurve is None:
                 continue
 
             if start == None:
-                start = blender_fcurve.range()[0]
+                start = bl_fcurve.range()[0]
             else:
-                start = min(start, blender_fcurve.range()[0])
+                start = min(start, bl_fcurve.range()[0])
 
             if end == None:
-                end = blender_fcurve.range()[1]
+                end = bl_fcurve.range()[1]
             else:
-                end = max(end, blender_fcurve.range()[1])
+                end = max(end, bl_fcurve.range()[1])
 
 
 
             add_epsilon_keyframe = False
-            for blender_keyframe in blender_fcurve.keyframe_points:
+            for bl_keyframe in bl_fcurve.keyframe_points:
                 if add_epsilon_keyframe:
-                    key = blender_keyframe.co[0] - 0.001
+                    key = bl_keyframe.co[0] - 0.001
 
                     if key not in keys:
                         keys.append(key)
 
                     add_epsilon_keyframe = False
 
-                if blender_keyframe.interpolation == 'CONSTANT':
+                if bl_keyframe.interpolation == 'CONSTANT':
                     add_epsilon_keyframe = True
 
             if add_epsilon_keyframe:
@@ -192,12 +182,12 @@ def animate_gather_keys(exportSettings, fcurve_list, interpolation):
         keys.sort()
 
     else:
-        for blender_fcurve in fcurve_list:
-            if blender_fcurve is None:
+        for bl_fcurve in fcurve_list:
+            if bl_fcurve is None:
                 continue
 
-            for blender_keyframe in blender_fcurve.keyframe_points:
-                key = blender_keyframe.co[0]
+            for bl_keyframe in bl_fcurve.keyframe_points:
+                key = bl_keyframe.co[0]
                 if not exportSettings['frame_range'] or (exportSettings['frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
                     if key not in keys:
                         keys.append(key)
@@ -207,16 +197,16 @@ def animate_gather_keys(exportSettings, fcurve_list, interpolation):
     return keys
 
 
-def animate_location(exportSettings, location, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateLocation(exportSettings, location, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for location transformations.
     """
     if not exportSettings['joint_cache'].get(node_name):
         exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(exportSettings, location, interpolation)
+    keys = animateGatherKeys(exportSettings, location, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -236,32 +226,32 @@ def animate_location(exportSettings, location, interpolation, node_type, node_na
 
                 matrix = matrix_correction @ matrix_basis
 
-                translation, tmp_rotation, tmp_scale = decompose_transform_swizzle(matrix)
+                translation, tmp_rotation, tmp_scale = decomposeTransformSwizzle(matrix)
 
                 exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [translation, tmp_rotation, tmp_scale]
         else:
             channel_index = 0
-            for blender_fcurve in location:
+            for bl_fcurve in location:
 
-                if blender_fcurve is not None:
+                if bl_fcurve is not None:
 
                     if interpolation == 'CUBICSPLINE':
-                        blender_key_frame = blender_fcurve.keyframe_points[keyframe_index]
+                        bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                        translation[channel_index] = blender_key_frame.co[1]
+                        translation[channel_index] = bl_key_frame.co[1]
 
-                        in_tangent[channel_index] = 3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1])
-                        out_tangent[channel_index] = 3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1])
+                        in_tangent[channel_index] = 3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1])
+                        out_tangent[channel_index] = 3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1])
                     else:
-                        value = blender_fcurve.evaluate(keys[keyframe_index])
+                        value = bl_fcurve.evaluate(keys[keyframe_index])
 
                         translation[channel_index] = value
 
                 channel_index += 1
 
-            translation = convert_swizzle_location(translation)
-            in_tangent = convert_swizzle_location(in_tangent)
-            out_tangent = convert_swizzle_location(out_tangent)
+            translation = convertSwizzleLocation(translation)
+            in_tangent = convertSwizzleLocation(in_tangent)
+            out_tangent = convertSwizzleLocation(out_tangent)
 
         result[time] = translation
         result_in_tangent[time] = in_tangent
@@ -272,16 +262,16 @@ def animate_location(exportSettings, location, interpolation, node_type, node_na
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_rotation_axis_angle(exportSettings, rotation_axis_angle, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for axis angle transformations.
     """
     if not exportSettings['joint_cache'].get(node_name):
         exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(exportSettings, rotation_axis_angle, interpolation)
+    keys = animateGatherKeys(exportSettings, rotation_axis_angle, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
 
@@ -299,23 +289,23 @@ def animate_rotation_axis_angle(exportSettings, rotation_axis_angle, interpolati
 
                 matrix = matrix_correction @ matrix_basis
 
-                tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
 
                 exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
-            for blender_fcurve in rotation_axis_angle:
-                if blender_fcurve is not None:
-                    value = blender_fcurve.evaluate(keys[keyframe_index])
+            for bl_fcurve in rotation_axis_angle:
+                if bl_fcurve is not None:
+                    value = bl_fcurve.evaluate(keys[keyframe_index])
 
                     axis_angle_rotation[channel_index] = value
 
                 channel_index += 1
 
-            rotation = animate_convert_rotation_axis_angle(axis_angle_rotation)
+            rotation = animateConvertRotationAxisAngle(axis_angle_rotation)
 
             # Bring back to internal Quaternion notation.
-            rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
+            rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
                 rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
@@ -330,16 +320,16 @@ def animate_rotation_axis_angle(exportSettings, rotation_axis_angle, interpolati
     return result
 
 
-def animate_rotation_euler(exportSettings, rotation_euler, rotation_mode, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for euler angle transformations.
     """
     if not exportSettings['joint_cache'].get(node_name):
         exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(exportSettings, rotation_euler, interpolation)
+    keys = animateGatherKeys(exportSettings, rotation_euler, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
 
@@ -357,23 +347,23 @@ def animate_rotation_euler(exportSettings, rotation_euler, rotation_mode, interp
 
                 matrix = matrix_correction @ matrix_basis
 
-                tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
 
                 exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
-            for blender_fcurve in rotation_euler:
-                if blender_fcurve is not None:
-                    value = blender_fcurve.evaluate(keys[keyframe_index])
+            for bl_fcurve in rotation_euler:
+                if bl_fcurve is not None:
+                    value = bl_fcurve.evaluate(keys[keyframe_index])
 
                     euler_rotation[channel_index] = value
 
                 channel_index += 1
 
-            rotation = animate_convert_rotation_euler(euler_rotation, rotation_mode)
+            rotation = animateConvertRotationEuler(euler_rotation, rotation_mode)
 
             # Bring back to internal Quaternion notation.
-            rotation = convert_swizzle_rotation([rotation[3], rotation[0], rotation[1], rotation[2]])
+            rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
             if node_type == 'NODE_X_90':
                 rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
@@ -388,16 +378,16 @@ def animate_rotation_euler(exportSettings, rotation_euler, rotation_mode, interp
     return result
 
 
-def animate_rotation_quaternion(exportSettings, rotation_quaternion, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for quaternion transformations.
     """
     if not exportSettings['joint_cache'].get(node_name):
         exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(exportSettings, rotation_quaternion, interpolation)
+    keys = animateGatherKeys(exportSettings, rotation_quaternion, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -417,23 +407,23 @@ def animate_rotation_quaternion(exportSettings, rotation_quaternion, interpolati
 
                 matrix = matrix_correction @ matrix_basis
 
-                tmp_location, rotation, tmp_scale = decompose_transform_swizzle(matrix)
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
 
                 exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
-            for blender_fcurve in rotation_quaternion:
+            for bl_fcurve in rotation_quaternion:
 
-                if blender_fcurve is not None:
+                if bl_fcurve is not None:
                     if interpolation == 'CUBICSPLINE':
-                        blender_key_frame = blender_fcurve.keyframe_points[keyframe_index]
+                        bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                        rotation[channel_index] = blender_key_frame.co[1]
+                        rotation[channel_index] = bl_key_frame.co[1]
 
-                        in_tangent[channel_index] = 3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1])
-                        out_tangent[channel_index] = 3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1])
+                        in_tangent[channel_index] = 3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1])
+                        out_tangent[channel_index] = 3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1])
                     else:
-                        value = blender_fcurve.evaluate(keys[keyframe_index])
+                        value = bl_fcurve.evaluate(keys[keyframe_index])
 
                         rotation[channel_index] = value
 
@@ -443,10 +433,10 @@ def animate_rotation_quaternion(exportSettings, rotation_quaternion, interpolati
             q = mathutils.Quaternion((rotation[0],rotation[1], rotation[2], rotation[3])).normalized()
             rotation = [q[0], q[1], q[2], q[3]]
 
-            rotation = convert_swizzle_rotation(rotation)
+            rotation = convertSwizzleRotation(rotation)
 
-            in_tangent = convert_swizzle_rotation(in_tangent)
-            out_tangent = convert_swizzle_rotation(out_tangent)
+            in_tangent = convertSwizzleRotation(in_tangent)
+            out_tangent = convertSwizzleRotation(out_tangent)
 
             if node_type == 'NODE_X_90':
                 quat_x90 = mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
@@ -470,16 +460,16 @@ def animate_rotation_quaternion(exportSettings, rotation_quaternion, interpolati
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_scale(exportSettings, scale, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateScale(exportSettings, scale, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for scale transformations.
     """
     if not exportSettings['joint_cache'].get(node_name):
         exportSettings['joint_cache'][node_name] = {}
 
-    keys = animate_gather_keys(exportSettings, scale, interpolation)
+    keys = animateGatherKeys(exportSettings, scale, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -499,31 +489,31 @@ def animate_scale(exportSettings, scale, interpolation, node_type, node_name, ma
 
                 matrix = matrix_correction @ matrix_basis
 
-                tmp_location, tmp_rotation, scale_data = decompose_transform_swizzle(matrix)
+                tmp_location, tmp_rotation, scale_data = decomposeTransformSwizzle(matrix)
 
                 exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, tmp_rotation, scale_data]
         else:
             channel_index = 0
-            for blender_fcurve in scale:
+            for bl_fcurve in scale:
 
-                if blender_fcurve is not None:
+                if bl_fcurve is not None:
                     if interpolation == 'CUBICSPLINE':
-                        blender_key_frame = blender_fcurve.keyframe_points[keyframe_index]
+                        bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                        scale_data[channel_index] = blender_key_frame.co[1]
+                        scale_data[channel_index] = bl_key_frame.co[1]
 
-                        in_tangent[channel_index] = 3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1])
-                        out_tangent[channel_index] = 3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1])
+                        in_tangent[channel_index] = 3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1])
+                        out_tangent[channel_index] = 3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1])
                     else:
-                        value = blender_fcurve.evaluate(keys[keyframe_index])
+                        value = bl_fcurve.evaluate(keys[keyframe_index])
 
                         scale_data[channel_index] = value
 
                 channel_index += 1
 
-            scale_data = convert_swizzle_scale(scale_data)
-            in_tangent = convert_swizzle_scale(in_tangent)
-            out_tangent = convert_swizzle_scale(out_tangent)
+            scale_data = convertSwizzleScale(scale_data)
+            in_tangent = convertSwizzleScale(in_tangent)
+            out_tangent = convertSwizzleScale(out_tangent)
 
         result[time] = scale_data
         result_in_tangent[time] = in_tangent
@@ -534,13 +524,13 @@ def animate_scale(exportSettings, scale, interpolation, node_type, node_name, ma
     return result, result_in_tangent, result_out_tangent
 
 
-def animate_value(exportSettings, value_parameter, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateValue(exportSettings, value_parameter, interpolation, node_type, node_name, matrix_correction, matrix_basis):
     """
     Calculates/gathers the key value pairs for scalar anaimations.
     """
-    keys = animate_gather_keys(exportSettings, value_parameter, interpolation)
+    keys = animateGatherKeys(exportSettings, value_parameter, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -552,18 +542,18 @@ def animate_value(exportSettings, value_parameter, interpolation, node_type, nod
         in_tangent = []
         out_tangent = []
 
-        for blender_fcurve in value_parameter:
+        for bl_fcurve in value_parameter:
 
-            if blender_fcurve is not None:
+            if bl_fcurve is not None:
                 if interpolation == 'CUBICSPLINE':
-                    blender_key_frame = blender_fcurve.keyframe_points[keyframe_index]
+                    bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                    value_data.append(blender_key_frame.co[1])
+                    value_data.append(bl_key_frame.co[1])
 
-                    in_tangent.append(3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1]))
-                    out_tangent.append(3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1]))
+                    in_tangent.append(3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1]))
+                    out_tangent.append(3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1]))
                 else:
-                    value = blender_fcurve.evaluate(keys[keyframe_index])
+                    value = bl_fcurve.evaluate(keys[keyframe_index])
 
                     value_data.append(value)
 
@@ -575,14 +565,14 @@ def animate_value(exportSettings, value_parameter, interpolation, node_type, nod
 
     return result, result_in_tangent, result_out_tangent
 
-def animate_default_value(exportSettings, default_value, interpolation):
+def animateDefaultValue(exportSettings, default_value, interpolation):
     """
     Calculate/gather the key value pairs for node material animation.
     """
 
-    keys = animate_gather_keys(exportSettings, default_value, interpolation)
+    keys = animateGatherKeys(exportSettings, default_value, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -599,11 +589,11 @@ def animate_default_value(exportSettings, default_value, interpolation):
 
             if bl_fcurve is not None:
                 if interpolation == 'CUBICSPLINE':
-                    blender_key_frame = bl_fcurve.keyframe_points[keyframe_index]
+                    bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                    def_value_data[channel_index] = blender_key_frame.co[1]
-                    in_tangent[channel_index] = 3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1])
-                    out_tangent[channel_index] = 3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1])
+                    def_value_data[channel_index] = bl_key_frame.co[1]
+                    in_tangent[channel_index] = 3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1])
+                    out_tangent[channel_index] = 3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1])
                 else:
                     value = bl_fcurve.evaluate(keys[keyframe_index])
 
@@ -619,14 +609,14 @@ def animate_default_value(exportSettings, default_value, interpolation):
 
     return result, result_in_tangent, result_out_tangent
 
-def animate_energy(exportSettings, energy, interpolation):
+def animateEnergy(exportSettings, energy, interpolation):
     """
     Calculate/gather the key value pairs for node material animation.
     """
 
-    keys = animate_gather_keys(exportSettings, energy, interpolation)
+    keys = animateGatherKeys(exportSettings, energy, interpolation)
 
-    times = animate_convert_keys(keys)
+    times = animateConvertKeys(keys)
 
     result = {}
     result_in_tangent = {}
@@ -643,11 +633,11 @@ def animate_energy(exportSettings, energy, interpolation):
 
             if bl_fcurve is not None:
                 if interpolation == 'CUBICSPLINE':
-                    blender_key_frame = bl_fcurve.keyframe_points[keyframe_index]
+                    bl_key_frame = bl_fcurve.keyframe_points[keyframe_index]
 
-                    energy_data[channel_index] = blender_key_frame.co[1]
-                    in_tangent[channel_index] = 3.0 * (blender_key_frame.co[1] - blender_key_frame.handle_left[1])
-                    out_tangent[channel_index] = 3.0 * (blender_key_frame.handle_right[1] - blender_key_frame.co[1])
+                    energy_data[channel_index] = bl_key_frame.co[1]
+                    in_tangent[channel_index] = 3.0 * (bl_key_frame.co[1] - bl_key_frame.handle_left[1])
+                    out_tangent[channel_index] = 3.0 * (bl_key_frame.handle_right[1] - bl_key_frame.co[1])
                 else:
                     value = bl_fcurve.evaluate(keys[keyframe_index])
 
