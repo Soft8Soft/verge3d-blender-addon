@@ -100,6 +100,17 @@ def appendExtension(gltf, name, entity=None, extensionData={}, isRequired=False)
 
     return extension
 
+def getAssetExtension(asset, extension):
+    """
+    Get global/local asset extension
+    """
+
+    if asset.get('extensions') == None:
+        return None
+
+    return asset['extensions'].get(extension)
+
+
 def createSampler(gltf, magFilter, wrapS, wrapT):
     """
     Creates and appends a texture sampler with the given parameters
@@ -132,10 +143,13 @@ def createSampler(gltf, magFilter, wrapS, wrapT):
                 currentSampler['wrapT'] == wrapT):
             return index
 
+        index += 1
+
     minFilter = WEBGL_FILTERS['LINEAR_MIPMAP_LINEAR']
 
     if magFilter == WEBGL_FILTERS['NEAREST']:
-        minFilter = WEBGL_FILTERS['NEAREST_MIPMAP_NEAREST']
+        # looks better while preserving "pixel art" graphics
+        minFilter = WEBGL_FILTERS['NEAREST_MIPMAP_LINEAR']
 
     sampler = {
         'magFilter' : magFilter,
@@ -260,6 +274,28 @@ def getLightIndex(gltf, idname):
 
     return -1
 
+def getCurveIndex(gltf, idname):
+    """
+    Return the curve index in the gltf array.
+    """
+
+    v3dExt = appendExtension(gltf, 'S8S_v3d_data', gltf)
+
+    if v3dExt.get('curves') == None:
+        return -1
+
+    curves = v3dExt['curves']
+
+    index = 0
+    for curve in curves:
+        key = 'id' if curve.get('id') != None else 'name'
+        if curve.get(key) == idname:
+            return index
+
+        index += 1
+
+    return -1
+
 def getTextureIndex(gltf, idname):
 
     if gltf.get('textures') is None:
@@ -289,6 +325,26 @@ def getImageIndex(gltf, idname):
         index += 1
 
     return -1
+
+def getFontIndex(gltf, idname):
+
+    v3dExt = appendExtension(gltf, 'S8S_v3d_data', gltf)
+
+    if v3dExt.get('fonts') == None:
+        return -1
+
+    fonts = v3dExt['fonts']
+
+    index = 0
+    for font in fonts:
+        key = 'id' if font.get('id') != None else 'name'
+        if font.get(key) == idname:
+            return index
+
+        index += 1
+
+    return -1
+
 
 def generateBufferView(gltf, binary, data_buffer, target, alignment):
 
@@ -457,6 +513,46 @@ def createAnimSampler(gltf, binary, keys, values, dim, interpolation='LINEAR'):
 
     return sampler
 
+def mergeAnimations(gltf, animations):
+    '''
+    Find animations with the same name and merge them into one
+    '''
+
+    newAnimations = []
+    animMergeInfo = {}
+
+    for anim in animations:
+
+        name = anim['name']
+        channels = anim['channels']
+        samplers = anim['samplers']
+
+        if not name in animMergeInfo:
+            animMergeInfo[name] = [[], [], None]
+
+        for channel in channels:
+            sampler = samplers[channel['sampler']]
+
+            # fix sampler index in new array
+            channel['sampler'] = len(animMergeInfo[name][1])
+
+            animMergeInfo[name][0].append(channel)
+            animMergeInfo[name][1].append(sampler)
+            animMergeInfo[name][2] = getAssetExtension(anim, 'S8S_v3d_animation_data')
+
+    for name, mergeInfoElem in animMergeInfo.items():
+        anim = {
+            'name': name,
+            'channels' : mergeInfoElem[0],
+            'samplers' : mergeInfoElem[1]
+        }
+
+        if mergeInfoElem[2]:
+            appendExtension(gltf, 'S8S_v3d_animation_data', anim, mergeInfoElem[2])
+
+        newAnimations.append(anim)
+
+    return newAnimations
 
 def isCompatibleImagePath(path):
     mime = mimetypes.guess_type(path)[0]

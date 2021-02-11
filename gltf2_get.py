@@ -36,65 +36,6 @@ def getUsedMaterials():
     return materials
 
 
-def getMaterialRequiresTexCoords(glTF, index):
-    """
-    Query function, if a material "needs" texture cooridnates. This is the case, if a texture is present and used.
-    """
-
-    if glTF.get('materials') is None:
-        return False
-
-    materials = glTF['materials']
-
-    if index < 0 or index >= len(materials):
-        return False
-
-    material = materials[index]
-
-    # General
-
-    if material.get('emissiveTexture') is not None:
-        return True
-
-    if material.get('normalTexture') is not None:
-        return True
-
-    if material.get('occlusionTexture') is not None:
-        return True
-
-    # Metallic roughness
-
-    if material.get('baseColorTexture') is not None:
-        return True
-
-    if material.get('metallicRoughnessTexture') is not None:
-        return True
-
-    # Common Material
-
-    v3dExt = gltf.getAssetExtension(material, 'S8S_v3d_material_data')
-    if v3dExt:
-
-        if v3dExt.get('diffuseTexture') is not None:
-            return True
-
-        if v3dExt.get('alphaTexture') is not None:
-            return True
-
-        if v3dExt.get('specularTexture') is not None:
-            return True
-
-    return False
-
-
-def getMaterialRequiresNormals(glTF, index):
-    """
-    Query function, if a material "needs" normals. This is the case, if a texture is present and used.
-    At point of writing, same function as for texture coordinates.
-    """
-    return getMaterialRequiresTexCoords(glTF, index)
-
-
 def getImageIndex(exportSettings, uri):
     """
     Return the image index in the glTF array.
@@ -109,44 +50,11 @@ def getImageIndex(exportSettings, uri):
     return -1
 
 
-def getTextureIndexByImage(exportSettings, glTF, bl_image):
-    """
-    Return the texture index in the glTF array by a given blender image.
-    """
-
-    if bl_image.filepath is None:
-        return -1
-
-    uri = getImageExportedURI(exportSettings, bl_image)
-
-    if exportSettings['uri_data'] is None:
-        return -1
-
-
-    if glTF.get('textures') is None:
-        return -1
-
-    image_uri = exportSettings['uri_data']['uri']
-
-    index = 0
-
-    for texture in glTF['textures']:
-
-        if 'source' in texture:
-            current_image_uri = image_uri[texture['source']]
-            if current_image_uri == uri:
-                return index
-
-        index += 1
-
-    return -1
-
 def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
     """
     Return the texture index in the glTF array by a given texture. Safer than
-    "getTextureIndexByImage" and "getTextureIndex" in case of different
-    textures with the same image or linked textures with the same name but with
-    different images.
+    "getTextureIndex" in case of different textures with the same image or linked textures with
+    the same name but with different images.
     """
 
     if (exportSettings['uri_data'] is None or glTF.get('textures') is None
@@ -648,4 +556,38 @@ def createDefaultMaterialCycles():
         },
         "name" : DEFAULT_MAT_NAME
     }
+
+def getFontPath(bl_font):
+
+    path = bl_font.filepath
+    abspath = bpy.path.abspath(bl_font.filepath)
+
+    # handle missing font as well
+    if path == '<builtin>' or not os.path.isfile(abspath):
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'bfont.woff')
+    else:
+        return abspath
+
+def getFontExportedURI(bl_font):
+
+    path = bl_font.filepath
+    abspath = bpy.path.abspath(bl_font.filepath)
+
+    # handle missing font as well
+    if path == '<builtin>' or not os.path.isfile(abspath):
+        return 'bfont.woff'
+    else:
+        return bpy.path.basename(path)
+
+
+def getFontExportedMimeType(bl_font):
+
+    path = bl_font.filepath
+    abspath = bpy.path.abspath(bl_font.filepath)
+
+    # handle missing font as well
+    if path == '<builtin>' or not os.path.isfile(abspath):
+        return 'font/woff'
+    else:
+        return 'font/ttf'
 

@@ -267,6 +267,17 @@ def filterApply(exportSettings):
             filtered_vertex_groups[getPtr(bl_curve)] = current_bl_object.vertex_groups
 
 
+    # fonts
+
+    filtered_fonts = []
+
+    for bl_curve in filtered_curves:
+
+        font = bl_curve.font if isinstance(bl_curve, bpy.types.TextCurve) else None
+        if font is not None and font not in filtered_fonts and font.users != 0:
+            filtered_fonts.append(font)
+
+
     # metaballs
 
     for bl_meta in bpy.data.metaballs:
@@ -309,9 +320,11 @@ def filterApply(exportSettings):
 
 
     exportSettings['filtered_curves'] = filtered_curves
+    exportSettings['filtered_fonts'] = filtered_fonts
     exportSettings['filtered_meshes'] = filtered_meshes
     exportSettings['filtered_vertex_groups'] = filtered_vertex_groups
     exportSettings['temporary_meshes'] = temporary_meshes
+
 
     # MATERIALS
 
@@ -452,9 +465,6 @@ def filterApply(exportSettings):
     for bl_light in bpy.data.lights:
 
         if bl_light.users == 0:
-            continue
-
-        if bl_light.type == 'AREA':
             continue
 
         filtered_lights.append(bl_light)

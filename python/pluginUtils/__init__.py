@@ -14,3 +14,6 @@ def srgbToLinear(x):
         return x / 12.92
     else:
         return ((x + 0.055) / 1.055) ** 2.4
+
+def colorToLuminosity(color):
+    return color[0] * 0.21 + color[1] * 0.72 + color[2] * 0.07

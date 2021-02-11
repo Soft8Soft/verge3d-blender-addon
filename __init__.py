@@ -24,7 +24,7 @@ from bpy.app.handlers import persistent
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
-ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(join(ROOT_DIR, 'python'))
 
 if 'bpy' in locals():
@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (3, 5, 0),
+    "version": (3, 6, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "category": "Verge3D"
@@ -122,11 +122,6 @@ class V3D_OT_export():
         exportSettings['temporary_materials'] = None
 
         exportSettings['strip'] = True
-
-        # SOME LEGACY OPTIONS
-
-        exportSettings['embed_buffers'] = False
-        exportSettings['embed_images'] = False
 
         # valid values are: 'UNSIGNED_INT', 'UNSIGNED_SHORT', 'UNSIGNED_BYTE'
         exportSettings['indices'] = 'UNSIGNED_INT'

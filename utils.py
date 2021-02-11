@@ -23,7 +23,6 @@ import pyosl.glslgen
 
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
-BOUND_BOX_MAX = 1e10
 
 selectedObject = None
 selectedObjectsSave = []
@@ -41,64 +40,8 @@ def integerToBlSuffix(val):
 
     return suf
 
-def getWorldFirstValidTextureSlot(world):
-
-    for bl_texture_slot in world.texture_slots:
-        if (bl_texture_slot is not None and
-                bl_texture_slot.texture and
-                bl_texture_slot.texture.users != 0 and
-                (bl_texture_slot.texture.type == 'ENVIRONMENT_MAP'
-                or bl_texture_slot.texture.type == 'IMAGE'
-                and bl_texture_slot.texture_coords == 'EQUIRECT') and
-                getTexImage(bl_texture_slot.texture) is not None and
-                getTexImage(bl_texture_slot.texture).users != 0 and
-                getTexImage(bl_texture_slot.texture).size[0] > 0 and
-                getTexImage(bl_texture_slot.texture).size[1] > 0):
-
-            return bl_texture_slot
-
-    return None
-
-def getWorldCyclesEnvTexture(world):
-
-    if world.node_tree is not None and world.use_nodes:
-        for bl_node in world.node_tree.nodes:
-            if (bl_node.type == 'TEX_ENVIRONMENT' and
-                    getTexImage(bl_node) is not None and
-                    getTexImage(bl_node).users != 0 and
-                    getTexImage(bl_node).size[0] > 0 and
-                    getTexImage(bl_node).size[1] > 0):
-
-                return bl_node
-
-    return None
-
-def getWorldCyclesBkgStrength(world):
-
-    if world.node_tree is not None and world.use_nodes:
-        for bl_node in world.node_tree.nodes:
-            if bl_node.type == 'BACKGROUND':
-                return bl_node.inputs['Strength'].default_value
-
-        return 0
-    else:
-        return 1
-
-def getWorldCyclesBkgColor(world):
-
-    if world.node_tree is not None and world.use_nodes:
-        for bl_node in world.node_tree.nodes:
-            if bl_node.type == 'BACKGROUND':
-                return bl_node.inputs['Color'].default_value
-
-        return [0, 0, 0]
-    else:
-        # Blender default grey color
-        return [0.041, 0.041, 0.041]
-
 def getLightCyclesStrength(bl_light):
     return bl_light.energy
-
 
 def getLightCyclesColor(bl_light):
     col = bl_light.color
@@ -414,52 +357,6 @@ def objTransferShapeKeys(obj_from, obj_to, depsgraph):
         keys_from[i].value = key_values[i]
 
     return same_vertex_count
-
-def objCastsShadows(obj):
-    # NOTE: currently unused
-
-    if obj.type not in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT']:
-        return False
-
-    # no materials means a single default material (always casts)
-    if len(obj.material_slots) == 0:
-        return True
-
-    for mat_slot in obj.material_slots:
-        # default material (always casts) or a material with not NONE shadow method
-        if mat_slot.material is None or mat_slot.material.shadow_method != 'NONE':
-            return True
-
-    return False
-
-def objsGetBoundBoxWorld(objects):
-    # NOTE: currently unused
-
-    bound_box = [
-        mathutils.Vector(), mathutils.Vector(), mathutils.Vector(),
-        mathutils.Vector(), mathutils.Vector(), mathutils.Vector(),
-        mathutils.Vector(), mathutils.Vector()
-    ]
-
-    minVec = mathutils.Vector.Fill(3, BOUND_BOX_MAX)
-    maxVec = mathutils.Vector.Fill(3, -BOUND_BOX_MAX)
-
-    for obj in objects:
-        for corner in obj.bound_box:
-            corner_world = obj.matrix_world @ mathutils.Vector(corner)
-            minVec.x = min(minVec.x, corner_world.x)
-            minVec.y = min(minVec.y, corner_world.y)
-            minVec.z = min(minVec.z, corner_world.z)
-            maxVec.x = max(maxVec.x, corner_world.x)
-            maxVec.y = max(maxVec.y, corner_world.y)
-            maxVec.z = max(maxVec.z, corner_world.z)
-
-    for i in range(8):
-        bound_box[i].x = minVec.x if i >> 0 & 1 == 0 else maxVec.x
-        bound_box[i].y = minVec.y if i >> 1 & 1 == 0 else maxVec.y
-        bound_box[i].z = minVec.z if i >> 2 & 1 == 0 else maxVec.z
-
-    return bound_box
 
 def meshNeedTangentsForExport(mesh, optimize_tangents):
     """

@@ -1577,7 +1577,7 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
     })
 
     appendNode(graph, {
-        'name': 'Principled',
+        'name': 'Principled-Based',
         'type': 'BSDF_PRINCIPLED_BL',
         'inputs': [
             extractVec(bl_mat.diffuse_color),
@@ -1588,15 +1588,18 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
             bl_mat.specular_intensity,
             0.0,
             bl_mat.roughness,
+            0.0, # Anisotropic
             0.0,
+            0.0, # Sheen
             0.0,
-            0.0,
-            0.5,
-            0.0,
+            0.0, # Clearcoat
             0.03,
             1.45,
+            0.0, # Transmission
             0.0,
-            0.0,
+            [0.0, 0.0, 0.0, 1.0], # Emission
+            0,
+            1, # Alpha
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0]
@@ -1914,3 +1917,10 @@ def extractColorSpace(bl_tex):
 
 def getPtr(blEntity):
     return blEntity.as_pointer()
+
+def extractFontBindata(bl_font):
+    if bl_font.packed_file is not None:
+        return bl_font.packed_file.data
+    else:
+        with open(getFontPath(bl_font), 'rb') as f:
+            return f.read()

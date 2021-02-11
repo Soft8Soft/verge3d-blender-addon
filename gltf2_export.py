@@ -35,9 +35,6 @@ def prepare(exportSettings):
 
     filterApply(exportSettings)
 
-    # if bpy.app.version >= (2,81,0):
-    #     prepareShadowCasters(exportSettings)
-
     exportSettings['original_frame'] = bpy.context.scene.frame_current
 
     exportSettings['use_no_color'] = []
@@ -46,17 +43,6 @@ def prepare(exportSettings):
 
     if exportSettings['animations']:
         bpy.context.scene.frame_set(0)
-
-def prepareShadowCasters(exportSettings):
-    # NOTE: currently unused
-
-    shadow_casters = []
-    if exportSettings['use_shadows']:
-        shadow_casters = [obj for obj in exportSettings['filtered_objects_with_dg']
-                if objCastsShadows(obj)]
-
-    exportSettings['shadow_casters_bound_box_world'] \
-            = objsGetBoundBoxWorld(shadow_casters)
 
 def finish(exportSettings):
     """
@@ -132,7 +118,7 @@ def save(operator, context, exportSettings):
         file.close()
 
         binary = exportSettings['binary']
-        if len(binary) > 0 and not exportSettings['embed_buffers']:
+        if len(binary) > 0:
             file = open(exportSettings['filedirectory'] + exportSettings['binaryfilename'], 'wb')
             file.write(binary)
             file.close()
@@ -205,3 +191,6 @@ def cleanupDataKeys(glTF):
             for entity in val:
                 if 'id' in entity:
                     del entity['id']
+        elif key == 'extensions' and 'S8S_v3d_data' in val:
+            cleanupDataKeys(val['S8S_v3d_data'])
+

@@ -14,12 +14,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import base64
 import bpy
 import copy
 import json
 import math
-import pathlib
 import os.path
 import shutil
 
@@ -28,6 +26,7 @@ norm = os.path.normpath
 
 from pluginUtils.log import printLog
 import pluginUtils.gltf as gltf
+import pluginUtils.rawdata
 
 from .gltf2_animate import *
 from .gltf2_extract import *
@@ -37,7 +36,6 @@ from .utils import *
 
 
 # Blender default grey color
-DEFAULT_COLOR = [0.041, 0.041, 0.041]
 PRIMITIVE_MODE_LINES = 1
 PRIMITIVE_MODE_TRIANGLES = 4
 
@@ -58,7 +56,6 @@ MAX_SHADOW_CAM_FAR = 10000
 
 PMREM_SIZE_MIN = 256
 PMREM_SIZE_MAX = 1024
-
 
 def generateAsset(operator, context, exportSettings, glTF):
     """
@@ -1109,7 +1106,6 @@ def generateCameraFromView(aspectRatio):
 
     camera['name'] = '__DEFAULT__'
 
-    lens = getView3DSpaceProp('lens')
     near = getView3DSpaceProp('clip_start')
     far = getView3DSpaceProp('clip_end')
 
@@ -1173,6 +1169,8 @@ def generateLights(operator, context, exportSettings, glTF):
     for bl_light in filtered_lights:
 
         light = {}
+
+        light['name'] = bl_light.name
         light['profile'] = 'blender'
 
         if bl_light.type == 'SUN':
@@ -1181,10 +1179,15 @@ def generateLights(operator, context, exportSettings, glTF):
             light['type'] = 'point'
         elif bl_light.type == 'SPOT':
             light['type'] = 'spot'
+        elif bl_light.type == 'AREA':
+            light['type'] = 'area'
         else:
             continue
 
-        useShadows = exportSettings['use_shadows'] and bl_light.use_shadow
+        light['color'] = getLightCyclesColor(bl_light)
+        light['intensity'] = getLightCyclesStrength(bl_light)
+
+        useShadows = exportSettings['use_shadows'] and bl_light.use_shadow and bl_light.type != 'AREA'
 
         if bpy.app.version < (2,81,0):
             cameraNear = bl_light.shadow_buffer_clip_start
@@ -1265,9 +1268,8 @@ def generateLights(operator, context, exportSettings, glTF):
                 }
 
 
-        if bl_light.type == 'POINT' or bl_light.type == 'SPOT':
+        if bl_light.type == 'POINT' or bl_light.type == 'SPOT' or bl_light.type == 'AREA':
 
-            # simplified model
             if bl_light.use_custom_distance:
                 dist = bl_light.cutoff_distance
             else:
@@ -1275,43 +1277,31 @@ def generateLights(operator, context, exportSettings, glTF):
             light['distance'] = dist
             light['decay'] = 2
 
-            # unused "standard" model
-            light['constantAttenuation'] = 1.0
-            light['linearAttenuation'] = 0.0
-            light['quadraticAttenuation'] = 0.0
-
-            if bl_light.falloff_type == 'CONSTANT':
-                pass
-            elif bl_light.falloff_type == 'INVERSE_LINEAR':
-                light['linearAttenuation'] = 1.0 / dist
-            elif bl_light.falloff_type == 'INVERSE_SQUARE':
-                light['quadraticAttenuation'] = 1.0 / dist
-            elif bl_light.falloff_type == 'LINEAR_QUADRATIC_WEIGHTED':
-                light['linearAttenuation'] = bl_light.linear_attenuation * (1 / dist)
-                light['quadraticAttenuation'] = bl_light.quadratic_attenuation * (1 /
-                        (dist * dist))
-            elif bl_light.falloff_type == 'INVERSE_COEFFICIENTS':
-                light['constantAttenuation'] = bl_light.constant_coefficient
-                light['linearAttenuation'] = bl_light.linear_coefficient * (1.0 / dist)
-                light['quadraticAttenuation'] = bl_light.quadratic_coefficient * (1.0 /
-                        dist)
-            else:
-                pass
-
-
             if bl_light.type == 'SPOT':
-                # simplified model
                 light['angle'] = bl_light.spot_size / 2;
                 light['penumbra'] = bl_light.spot_blend;
 
-                # unused "standard" model
-                light['fallOffAngle'] = bl_light.spot_size
-                light['fallOffExponent'] = 128.0 * bl_light.spot_blend
+            elif bl_light.type == 'AREA':
 
-        light['color'] = getLightCyclesColor(bl_light)
-        light['intensity'] = getLightCyclesStrength(bl_light)
+                width = bl_light.size
 
-        light['name'] = bl_light.name
+                if bl_light.shape in ['SQUARE', 'DISK']:
+                    height = bl_light.size
+                else:
+                    height = bl_light.size_y
+
+                # do not allow small or zero size
+                width = max(width, 0.01)
+                height = max(height, 0.01)
+
+                light['intensity'] /= (width * height)
+
+                light['width'] = width
+                light['height'] = height
+
+                light['ltcMat1'] = pluginUtils.rawdata.ltcMat1
+                light['ltcMat2'] = pluginUtils.rawdata.ltcMat2
+
 
         lights.append(light)
 
@@ -2396,58 +2386,43 @@ def generateImages(operator, context, exportSettings, glTF):
 
     images = []
 
-
     for bl_image in filtered_images:
-
-        # Property: image
-
 
         image = {}
 
         uri = getImageExportedURI(exportSettings, bl_image)
 
         if exportSettings['format'] == 'ASCII':
+            # use external file
 
-            if exportSettings['embed_images']:
-                # embed image as Base64
+            old_path = bl_image.filepath_from_user()
+            new_path = norm(exportSettings['filedirectory'] + uri)
+
+            if (bl_image.is_dirty or bl_image.packed_file is not None
+                    or not os.path.isfile(old_path)):
+                # always extract data for dirty/packed/missing images,
+                # because they can differ from an external source's data
 
                 img_data = extractImageBindata(bl_image, context.scene)
 
-                image['uri'] = ('data:' + getImageExportedMimeType(bl_image)
-                        + ';base64,'
-                        + base64.b64encode(img_data).decode('ascii'))
+                with open(new_path, 'wb') as f:
+                    f.write(img_data)
 
-            else:
-                # use external file
+            elif old_path != new_path:
+                # copy an image to a new location
 
-                old_path = bl_image.filepath_from_user()
-                new_path = norm(exportSettings['filedirectory'] + uri)
+                if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG'
+                        and bl_image.file_format != 'BMP' and bl_image.file_format != 'HDR'):
+                    # need conversion to PNG
 
-                if (bl_image.is_dirty or bl_image.packed_file is not None
-                        or not os.path.isfile(old_path)):
-                    # always extract data for dirty/packed/missing images,
-                    # because they can differ from an external source's data
-
-                    img_data = extractImageBindata(bl_image, context.scene)
+                    img_data = extractImageBindataPNG(bl_image, context.scene)
 
                     with open(new_path, 'wb') as f:
                         f.write(img_data)
+                else:
+                    shutil.copyfile(old_path, new_path)
 
-                elif old_path != new_path:
-                    # copy an image to a new location
-
-                    if (bl_image.file_format != "JPEG" and bl_image.file_format != "PNG"
-                            and bl_image.file_format != "BMP" and bl_image.file_format != 'HDR'):
-                        # need conversion to PNG
-
-                        img_data = extractImageBindataPNG(bl_image, context.scene)
-
-                        with open(new_path, 'wb') as f:
-                            f.write(img_data)
-                    else:
-                        shutil.copyfile(old_path, new_path)
-
-                image['uri'] = uri
+            image['uri'] = uri
 
         else:
             # store image in glb
@@ -2514,23 +2489,8 @@ def generateTextures(operator, context, exportSettings, glTF):
                 v3dExt['anisotropy'] = anisotropy
 
         else:
-
-            if isinstance(bl_tex.texture, bpy.types.EnvironmentMapTexture):
-                magFilter = gltf.WEBGL_FILTERS['LINEAR']
-                wrap = gltf.WEBGL_WRAPPINGS['CLAMP_TO_EDGE']
-                v3dExt['isCubeTexture'] = True
-            else:
-                magFilter = gltf.WEBGL_FILTERS['LINEAR']
-                wrap = gltf.WEBGL_WRAPPINGS['REPEAT']
-
-                if bl_tex.texture.extension == 'CLIP':
-                    wrap = gltf.WEBGL_WRAPPINGS['CLAMP_TO_EDGE']
-
-            anisotropy = int(bl_tex.texture.v3d.anisotropy)
-            if anisotropy > 1:
-                v3dExt['anisotropy'] = anisotropy
-
-            uri = getImageExportedURI(exportSettings, getTexImage(bl_tex.texture))
+            printLog('ERROR', 'Unknown Blender texture type')
+            return
 
         texture['sampler'] = gltf.createSampler(glTF, magFilter, wrap, wrap)
 
@@ -2574,6 +2534,54 @@ def generateNodeGraphs(operator, context, exportSettings, glTF):
             graphs[index].update(graph)
 
 
+def generateFonts(operator, context, exportSettings, glTF):
+
+    filtered_fonts = exportSettings['filtered_fonts']
+
+    fonts = []
+
+    for bl_font in filtered_fonts:
+
+        font = {
+            'name': bl_font.name
+        }
+
+        uri = getFontExportedURI(bl_font)
+        font['id'] = uri
+
+        if exportSettings['format'] == 'ASCII':
+            # use external file
+
+            old_path = getFontPath(bl_font)
+            new_path = norm(exportSettings['filedirectory'] + uri)
+
+            if bl_font.packed_file is not None:
+                font_data = extractFontBindata(bl_font)
+
+                with open(new_path, 'wb') as f:
+                    f.write(font_data)
+
+            elif old_path != new_path:
+                # copy an font to a new location
+
+                shutil.copyfile(old_path, new_path)
+
+            font['uri'] = uri
+
+        else:
+            # store font in glb
+
+            font_data = extractFontBindata(bl_font)
+            bufferView = gltf.generateBufferView(glTF, exportSettings['binary'], font_data, '', 0)
+
+            font['mimeType'] = getFontExportedMimeType(bl_font)
+            font['bufferView'] = bufferView
+
+        fonts.append(font)
+
+    if len(fonts) > 0:
+        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'fonts': fonts})
+
 def generateCurves(operator, context, exportSettings, glTF):
     """
     Generates the top level curves entry.
@@ -2594,50 +2602,56 @@ def generateCurves(operator, context, exportSettings, glTF):
         curve['type'] = 'font'
 
         if curve['type'] == 'font':
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-
             curve['text'] = bl_curve.body
 
-            if bl_curve.font.filepath == '<builtin>':
-                font_path_json = join(base_dir, 'fonts', 'bfont.json')
-            else:
-                font_path = os.path.normpath(bpy.path.abspath(bl_curve.font.filepath))
-                font_path_json = os.path.splitext(font_path)[0] + '.json'
+            uri = getFontExportedURI(bl_curve.font)
+            font_index = gltf.getFontIndex(glTF, uri)
+            if font_index >= 0:
+                curve['font'] = font_index
 
-                if not os.path.isfile(font_path_json):
-                    printLog('ERROR', 'Unable to load .json font file ' + font_path_json)
-                    font_path_json = join(base_dir, 'fonts', 'bfont.json')
 
-            with open(font_path_json, 'r', encoding='utf-8') as f:
-                # inline
-                curve['font'] = json.load(f)
-
-            # NOTE: 0.72 for bfont only
-            curve['size'] = bl_curve.size * 0.72
+            # NOTE: default bfont.pfb font has slightly different metrics
+            curve['size'] = bl_curve.size * 1.13 if uri == 'bfont.woff' else bl_curve.size
             curve['height'] = bl_curve.extrude
             curve['curveSegments'] = max(bl_curve.resolution_u - 1, 1)
+
+            # NOTE: 0.88 = 1/1.13
+            curve['lineHeight'] = bl_curve.space_line * 0.88 if uri == 'bfont.woff' else bl_curve.space_line
+
+            curve['scaledEmSize'] = True
 
             curve['bevelThickness'] = bl_curve.bevel_depth
             curve['bevelSize'] = bl_curve.bevel_depth
             curve['bevelSegments'] = bl_curve.bevel_resolution + 1
 
-            align_x = bl_curve.align_x
+            alignX = bl_curve.align_x
 
-            if align_x == 'LEFT' or align_x == 'JUSTIFY' or align_x == 'FLUSH':
+            if alignX == 'LEFT':
                 curve['alignX'] = 'left'
-            elif align_x == 'CENTER':
+            elif alignX == 'CENTER':
                 curve['alignX'] = 'center'
-            elif align_x == 'RIGHT':
+            elif alignX == 'RIGHT':
                 curve['alignX'] = 'right'
+            else:
+                # JUSTIFY,FLUSH
+                printLog('WARNING', 'Unsupported font alignment: ' + alignX)
+                curve['alignX'] = 'left'
 
-            align_y = bl_curve.align_y
+            alignY = bl_curve.align_y
 
-            if align_y == 'TOP_BASELINE' or align_x == 'BOTTOM':
-                curve['alignY'] = 'bottom'
-            elif align_y == 'TOP':
+            if alignY == 'TOP_BASELINE':
+                curve['alignY'] = 'topBaseline'
+            elif alignY == 'TOP':
                 curve['alignY'] = 'top'
-            elif align_y == 'CENTER':
+            elif alignY == 'CENTER':
                 curve['alignY'] = 'center'
+            elif alignY == 'BOTTOM':
+                curve['alignY'] = 'bottom'
+            elif alignY == 'BOTTOM_BASELINE':
+                curve['alignY'] = 'bottomBaseline'
+            else:
+                printLog('WARNING', 'Unsupported font alignment: ' + alignY)
+                curve['alignY'] = 'topBaseline'
 
             # optional
             if len(bl_curve.materials) and bl_curve.materials[0] is not None:
@@ -3153,6 +3167,9 @@ def generateGLTF(operator,
     generateMaterials(operator, context, exportSettings, glTF)
     bpy.context.window_manager.progress_update(30)
 
+    generateFonts(operator, context, exportSettings, glTF)
+    bpy.context.window_manager.progress_update(32)
+
     generateCurves(operator, context, exportSettings, glTF)
     bpy.context.window_manager.progress_update(35)
 
@@ -3199,10 +3216,6 @@ def generateGLTF(operator,
 
         if exportSettings['format'] == 'ASCII':
             uri = exportSettings['binaryfilename']
-
-            if exportSettings['embed_buffers']:
-                uri = 'data:application/octet-stream;base64,' + base64.b64encode(exportSettings['binary']).decode('ascii')
-
             buffer['uri'] = uri
 
         glTF['buffers'].append(buffer)

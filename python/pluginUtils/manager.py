@@ -5,14 +5,17 @@ from builtins import (ascii, bytes, chr, dict, filter, hex, input,
                       int, map, next, oct, open, pow, range, round,
                       str, super, zip)
 
-from future.backports.http import client
-
 import atexit, os, platform, subprocess, sys, threading
 
 from .log import printLog
 from .path import getAppManagerHost
 
 join = os.path.join
+
+if sys.version_info[0] < 3:
+    from httplib import HTTPConnection
+else:
+    from http.client import HTTPConnection
 
 class AppManagerConn():
     subProcs = []
@@ -29,7 +32,7 @@ class AppManagerConn():
 
     @classmethod
     def runServerProc(cls):
-        sys.path.append(join(cls.root, 'manager'))
+        sys.path.insert(0, join(cls.root, 'manager'))
 
         if cls.isThreaded:
             import server
@@ -83,7 +86,7 @@ class AppManagerConn():
         printLog('INFO', 'Compressing file: ' + path)
 
         with open(path, 'rb') as fin:
-            conn = client.HTTPConnection(getAppManagerHost(False))
+            conn = HTTPConnection(getAppManagerHost(False))
             headers = {'Content-type': 'application/octet-stream'}
             conn.request('POST', '/storage/lzma/', body=fin, headers=headers)
             response = conn.getresponse()
@@ -93,4 +96,3 @@ class AppManagerConn():
 
             with open(path + '.xz', 'wb') as fout:
                 fout.write(response.read())
-

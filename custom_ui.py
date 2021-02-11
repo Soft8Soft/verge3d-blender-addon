@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import webbrowser
 
+import pluginUtils
 from pluginUtils.log import printLog
 from pluginUtils.path import getAppManagerHost, getManualURL, getRoot, findExportedAssetPath
 
@@ -726,9 +727,16 @@ def menuUserManual(self, context):
         self.layout.separator()
         self.layout.operator("wm.url_open", text="Verge3D User Manual", icon='URL').url = getManualURL()
 
+def menuReexportAll(self, context):
+    self.layout.separator()
+    self.layout.operator('v3d.reexport_all', icon='TOOL_SETTINGS')
+
 def register():
 
     bpy.types.TOPBAR_MT_help.append(menuUserManual)
+
+    if pluginUtils.debug:
+        bpy.types.TOPBAR_MT_render.append(menuReexportAll)
 
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderLayerSettings)
@@ -780,4 +788,9 @@ def unregister():
     bpy.utils.unregister_class(V3D_OT_orbit_camera_update_view)
 
     bpy.utils.unregister_class(COLLECTION_UL_export)
+
+    bpy.types.TOPBAR_MT_help.remove(menuUserManual)
+
+    if pluginUtils.debug:
+        bpy.types.TOPBAR_MT_render.remove(menuReexportAll)
 
