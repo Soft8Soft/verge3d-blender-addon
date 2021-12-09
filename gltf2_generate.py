@@ -1089,6 +1089,7 @@ def generateCamera(bl_camera, glTF):
     elif bl_camera.v3d.controls == 'FIRST_PERSON':
         v3dExt['fpsGazeLevel'] = bl_camera.v3d.fps_gaze_level
         v3dExt['fpsStoryHeight'] = bl_camera.v3d.fps_story_height
+        v3dExt['enablePointerLock'] = bl_camera.v3d.enable_pointer_lock
 
     camera['extensions'] = { 'S8S_v3d_camera_data' : v3dExt }
 
@@ -1187,12 +1188,12 @@ def generateLights(operator, context, exportSettings, glTF):
         light['color'] = getLightCyclesColor(bl_light)
         light['intensity'] = getLightCyclesStrength(bl_light)
 
-        useShadows = exportSettings['use_shadows'] and bl_light.use_shadow and bl_light.type != 'AREA'
+        useShadows = exportSettings['use_shadows'] and bl_light.use_shadow
 
         if bpy.app.version < (2,81,0):
             cameraNear = bl_light.shadow_buffer_clip_start
             # usability improvement
-            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT') and cameraNear < SPOT_SHADOW_MIN_NEAR:
+            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT' or bl_light.type == 'AREA') and cameraNear < SPOT_SHADOW_MIN_NEAR:
                 cameraNear = SPOT_SHADOW_MIN_NEAR
             cameraFar = bl_light.shadow_buffer_clip_end
 
@@ -1307,6 +1308,45 @@ def generateLights(operator, context, exportSettings, glTF):
 
     if len(lights) > 0:
         gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'lights': lights})
+
+
+def generateLightProbes(operator, context, exportSettings, glTF):
+    """
+    Generates the top level lightProbes entry.
+    """
+
+    probes = []
+
+    filteredLightProbes = exportSettings['filtered_light_probes']
+    for blProbe in filteredLightProbes:
+
+        probe = {
+            'name': blProbe.name,
+            'type': blProbe.type,
+            'influenceDistance': blProbe.influence_distance,
+            'clipStart': blProbe.clip_start,
+            'visibilityGroup': (blProbe.visibility_collection.name
+                    if blProbe.visibility_collection is not None else None),
+            'visibilityGroupInv': blProbe.invert_visibility_collection
+        }
+
+        if blProbe.type == 'CUBEMAP':
+            probe['influenceType'] = blProbe.influence_type
+            probe['parallaxType'] = blProbe.parallax_type if blProbe.use_custom_parallax else blProbe.influence_type
+            probe['parallaxDistance'] = blProbe.parallax_distance if blProbe.use_custom_parallax else blProbe.influence_distance
+            probe['intensity'] = blProbe.intensity
+            probe['clipEnd'] = blProbe.clip_end
+            probe['influenceGroup'] = (blProbe.v3d.influence_collection.name
+                    if blProbe.v3d.use_custom_influence
+                    and blProbe.v3d.influence_collection is not None else None)
+            probe['influenceGroupInv'] = blProbe.v3d.invert_influence_collection
+        else:
+            probe['falloff'] = blProbe.falloff
+
+        probes.append(probe)
+
+    if len(probes):
+        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'lightProbes': probes})
 
 
 def generateMeshes(operator, context, exportSettings, glTF):
@@ -1607,7 +1647,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                     morph_index = 0
                     for bl_shape_key in bl_mesh.shape_keys.key_blocks:
-                        if bl_shape_key != bl_shape_key.relative_key:
+                        if bl_shape_key != bl_shape_key.relative_key and bl_shape_key != bl_mesh.shape_keys.reference_key:
 
                             target_position_id = 'MORPH_POSITION_' + str(morph_index)
                             target_normal_id = 'MORPH_NORMAL_' + str(morph_index)
@@ -1699,9 +1739,10 @@ def generateMeshes(operator, context, exportSettings, glTF):
                     targetNames = []
 
                     for bl_shape_key in bl_mesh.shape_keys.key_blocks:
-                        if bl_shape_key != bl_shape_key.relative_key:
+                        if bl_shape_key != bl_shape_key.relative_key and bl_shape_key != bl_mesh.shape_keys.reference_key:
                             weights.append(bl_shape_key.value)
                             targetNames.append(bl_shape_key.name)
+
 
                     mesh['weights'] = weights
 
@@ -1807,6 +1848,33 @@ def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
 
     return mesh
 
+def generateClippingPlanes(operator, context, exportSettings, glTF):
+    '''
+    Generates the top level clippingPlanes entry.
+    '''
+
+    planes = []
+
+    filteredClippingPlanes = exportSettings['filtered_clipping_planes']
+
+    for blPlane in filteredClippingPlanes:
+        planes.append({
+            'name': blPlane.name,
+            'clippingGroup': (blPlane.v3d.clipping_plane_collection.name
+                              if blPlane.v3d.clipping_plane_collection is not None else None),
+            'negated': blPlane.v3d.clipping_plane_negated,
+            'clipShadows': blPlane.v3d.clipping_plane_shadows,
+            'clipIntersection': not blPlane.v3d.clipping_plane_union,
+            'crossSection': blPlane.v3d.clipping_plane_cross_section if blPlane.v3d.clipping_plane_union else False,
+            'color': extractVec(blPlane.v3d.clipping_plane_color)[0:3],
+            'opacity': blPlane.v3d.clipping_plane_color[3],
+            'renderSide': blPlane.v3d.clipping_plane_render_side,
+            'size': blPlane.v3d.clipping_plane_size
+        })
+
+    if len(planes):
+        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'clippingPlanes': planes})
+
 
 def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
     """
@@ -1853,9 +1921,20 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
         if light >= 0:
             v3dExt['light'] = light
 
+    elif bl_obj_type == 'LIGHT_PROBE':
+        probe = gltf.getLightProbeIndex(glTF, bl_obj.data.name)
+        if probe >= 0:
+            v3dExt['lightProbe'] = probe
+
+    elif bl_obj_type == 'EMPTY' and bl_obj.v3d.clipping_plane:
+        plane = gltf.getClippingPlaneIndex(glTF, bl_obj.name)
+        if plane >= 0:
+            v3dExt['clippingPlane'] = plane
+
     v3dExt['hidden'] = bl_obj.hide_render
     v3dExt['renderOrder'] = bl_obj.v3d.render_order
     v3dExt['frustumCulling'] = bl_obj.v3d.frustum_culling
+    v3dExt['hidpiCompositing'] = bl_obj.v3d.hidpi_compositing
 
     if (bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'FONT', 'META'] and
             exportSettings['use_shadows']):
@@ -1869,6 +1948,9 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
             if coll is not None and coll.hide_render:
                 v3dExt['hidden'] = True
                 break
+
+    v3dExt['objectIndex'] = bl_obj.pass_index
+    v3dExt['objectColor'] = getVec3(bl_obj.color)
 
     if exportSettings['custom_props']:
         props = createCustomProperty(bl_obj)
@@ -2199,7 +2281,9 @@ def generateNodes(operator, context, exportSettings, glTF):
         # constraints
 
         v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node_data')
-        if v3dExt and exportSettings['export_constraints'] and len(bl_obj.constraints):
+        if v3dExt and ((exportSettings['export_constraints'] and len(bl_obj.constraints)) or
+                       objHasFixOrthoZoom(bl_obj) or objHasCanvasFitParams(bl_obj) or
+                       bl_obj.v3d.canvas_break_enabled):
             v3dExt['constraints'] = extractConstraints(glTF, bl_obj)
 
         # first-person camera link to collision material
@@ -2375,6 +2459,10 @@ def nodeIsLamp(node):
 def nodeIsCurve(node):
     return ('extensions' in node and 'S8S_v3d_node_data' in node['extensions']
             and 'curve' in node['extensions']['S8S_v3d_node_data'])
+
+def nodeIsPlaneReflProbe(node):
+    return ('extensions' in node and 'S8S_v3d_node_data' in node['extensions']
+            and 'lightProbe' in node['extensions']['S8S_v3d_node_data'])
 
 
 def generateImages(operator, context, exportSettings, glTF):
@@ -2957,6 +3045,7 @@ def generateMaterials(operator, context, exportSettings, glTF):
             else:
                 v3dExt['nodeGraph'] = composeNodeGraph(bl_mat, exportSettings, glTF)
 
+        v3dExt['materialIndex'] = bl_mat.pass_index
 
         alphaMode = 'OPAQUE'
 
@@ -2982,6 +3071,12 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
             v3dExt['blendMode'] = blendMode
 
+        if bl_mat.blend_method == 'HASHED':
+            v3dExt['alphaToCoverage'] = True
+
+        # disable GTAO for BLEND materials due to implementation issues
+        v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
+
         # receive
         if exportSettings['use_shadows']:
             # useShadows is assigned on objects not materials
@@ -3005,6 +3100,33 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         glTF['materials'] = materials
 
+def getPostprocessingEffects(bl_scene):
+    ppEffects = []
+
+    if bl_scene.eevee.use_gtao:
+        ppEffects.append({
+            'type': 'ao',
+            'distance': bl_scene.eevee.gtao_distance,
+            'factor': bl_scene.eevee.gtao_factor,
+            'precision': bl_scene.eevee.gtao_quality,
+            'bentNormals': bl_scene.eevee.use_gtao_bent_normals,
+            'bounceApprox': bl_scene.eevee.use_gtao_bounce,
+        })
+
+    outline = bl_scene.v3d.outline
+    if outline.enabled:
+        ppEffects.append({
+            'type': 'outline',
+            'edgeStrength': outline.edge_strength,
+            'edgeGlow': outline.edge_glow,
+            'edgeThickness': outline.edge_thickness,
+            'pulsePeriod': outline.pulse_period,
+            'visibleEdgeColor': extractVec(outline.visible_edge_color),
+            'hiddenEdgeColor': extractVec(outline.hidden_edge_color),
+            'renderHiddenEdge': outline.render_hidden_edge
+        })
+
+    return ppEffects
 
 def generateScenes(operator, context, exportSettings, glTF):
     """
@@ -3068,23 +3190,9 @@ def generateScenes(operator, context, exportSettings, glTF):
         if exportSettings['use_hdr']:
             v3dExt['useHDR'] = True
 
-        outline = bl_scene.v3d.outline
-
-        if outline.enabled:
-            v3dExt['postprocessing'] = []
-
-            effect = {
-                'type': 'outline',
-                'edgeStrength': outline.edge_strength,
-                'edgeGlow': outline.edge_glow,
-                'edgeThickness': outline.edge_thickness,
-                'pulsePeriod': outline.pulse_period,
-                'visibleEdgeColor': extractVec(outline.visible_edge_color),
-                'hiddenEdgeColor': extractVec(outline.hidden_edge_color),
-                'renderHiddenEdge': outline.render_hidden_edge
-            }
-
-            v3dExt['postprocessing'].append(effect)
+        ppEffects = getPostprocessingEffects(bl_scene)
+        if len(ppEffects):
+            v3dExt['postprocessing'] = ppEffects
 
         if bl_scene.view_settings.view_transform == 'Filmic':
             v3dExt['toneMapping'] = {
@@ -3179,11 +3287,17 @@ def generateGLTF(operator,
     generateLights(operator, context, exportSettings, glTF)
     bpy.context.window_manager.progress_update(50)
 
+    generateLightProbes(operator, context, exportSettings, glTF)
+    bpy.context.window_manager.progress_update(55)
+
     generateMeshes(operator, context, exportSettings, glTF)
     bpy.context.window_manager.progress_update(60)
 
-    generateNodes(operator, context, exportSettings, glTF)
+    generateClippingPlanes(operator, context, exportSettings, glTF)
     bpy.context.window_manager.progress_update(70)
+
+    generateNodes(operator, context, exportSettings, glTF)
+    bpy.context.window_manager.progress_update(72)
 
     if exportSettings['animations']:
         generateAnimations(operator, context, exportSettings, glTF)

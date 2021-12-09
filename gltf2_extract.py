@@ -481,7 +481,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         morph_max = len(bl_mesh.shape_keys.key_blocks) - 1
 
         for bl_shape_key in bl_mesh.shape_keys.key_blocks:
-            if bl_shape_key != bl_shape_key.relative_key:
+            if bl_shape_key != bl_shape_key.relative_key and bl_shape_key != bl_mesh.shape_keys.reference_key:
                 bl_shape_keys.append(bl_shape_key)
 
     # lazy normals calculation to optimize shape keys processing
@@ -541,7 +541,26 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
         if len(bl_polygon.loop_indices) == 3:
             loop_index_list.extend(bl_polygon.loop_indices)
-        elif len(bl_polygon.loop_indices) > 3:
+        
+        elif len(bl_polygon.loop_indices) == 4:
+            # NOTE: internal function does not work well with small quads, 
+            # so hardcoded triangulation by shortest diagonal
+
+            v = []
+            for loop_index in bl_polygon.loop_indices:
+                vertex_index = bl_mesh.loops[loop_index].vertex_index
+                v.append(bl_mesh.vertices[vertex_index].co)
+
+            if (v[1] - v[3]).length < (v[0] - v[2]).length:
+                triangles = [(0, 1, 3), (1, 2, 3)]
+            else:
+                triangles = [(0, 1, 2), (0, 2, 3)]
+                
+            for triangle in triangles:
+                for loop_idx in triangle:
+                    loop_index_list.append(bl_polygon.loop_indices[loop_idx])
+
+        elif len(bl_polygon.loop_indices) > 4:
             # Triangulation of polygon. Using internal function, as non-convex polygons could exist.
 
             polyline = []
@@ -1205,13 +1224,12 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
     edges = []
 
     bl_nodes = node_tree.nodes
-
     for bl_node in bl_nodes:
+
         node = {
             'name': bl_node.name,
             'type': bl_node.type + '_BL'
         }
-
         nodes.append(node);
 
         if bl_node.type == 'ATTRIBUTE':
@@ -1251,6 +1269,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
         elif bl_node.type == 'MAP_RANGE':
             node['clamp'] = bl_node.clamp
+            if bpy.app.version >= (2, 82, 0):
+                node['interpolationType'] = bl_node.interpolation_type
+            else:
+                node['interpolationType'] = 'LINEAR'
 
         elif bl_node.type == 'MATH':
             # reproducing ShaderNodeMath
@@ -1318,6 +1340,12 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                 node['outputTypes'].append(o[0])
 
             node['fragCode'] = genOSLCode(oslAST, shaderName)
+
+        elif bl_node.type == 'TEX_BRICK':
+            node['offset'] = bl_node.offset
+            node['offsetFrequency'] = bl_node.offset_frequency
+            node['squash'] = bl_node.squash
+            node['squashFrequency'] = bl_node.squash_frequency
 
         elif bl_node.type == 'TEX_COORD':
             # NOTE: will be replaced by the corresponding index from glTF['nodes'] later
@@ -1404,6 +1432,7 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['colorLayer'] = bl_node.layer_name
 
         node['inputs'] = []
+
         for bl_input in bl_node.inputs:
 
             # An input of type CUSTOM is usually the last input/output socket
@@ -1658,24 +1687,81 @@ def extractConstraints(glTF, bl_obj):
 
         if bl_cons.type == 'COPY_LOCATION':
             if target >= 0:
-                constraints.append(dict(cons, **{ 'type': 'copyLocation', 'target': target }))
+                constraints.append(dict(cons, **{
+                    'type': 'copyLocation',
+                    'target': target,
+                    'useX': bl_cons.use_x,
+                    'useY': bl_cons.use_z,
+                    'useZ': bl_cons.use_y,
+                    'invertX': bl_cons.invert_x,
+                    'invertY': bl_cons.invert_z,
+                    'invertZ': bl_cons.invert_y,
+                    'useOffset': bl_cons.use_offset,
+                    'influence': bl_cons.influence,
+                }))
 
         elif bl_cons.type == 'COPY_ROTATION':
             if target >= 0:
-                constraints.append(dict(cons, **{ 'type': 'copyRotation', 'target': target }))
+                constraints.append(dict(cons, **{
+                    'type': 'copyRotation',
+                    'target': target,
+                    'useX': bl_cons.use_x,
+                    'useY': bl_cons.use_z,
+                    'useZ': bl_cons.use_y,
+                    'invertX': bl_cons.invert_x,
+                    'invertY': bl_cons.invert_z,
+                    'invertZ': bl_cons.invert_y,
+                    'mixMode': bl_cons.mix_mode,
+                    'influence': bl_cons.influence,
+                    'fixCameraLightRotation': True,
+                }))
 
         elif bl_cons.type == 'COPY_SCALE':
             if target >= 0:
-                constraints.append(dict(cons, **{ 'type': 'copyScale', 'target': target }))
+                constraints.append(dict(cons, **{
+                    'type': 'copyScale',
+                    'target': target,
+                    'useX': bl_cons.use_x,
+                    'useY': bl_cons.use_z,
+                    'useZ': bl_cons.use_y,
+                    'power': bl_cons.power,
+                    'useMakeUniform': bl_cons.use_make_uniform,
+                    'useOffset': bl_cons.use_offset,
+                    'useAdd': bl_cons.use_add,
+                    'influence': bl_cons.influence,
+                }))
 
         elif bl_cons.type == 'COPY_TRANSFORMS':
-            if target >= 0:
-                constraints.append(dict(cons, **{ 'type': 'copyLocation', 'target': target }))
-                constraints.append(dict(cons, **{ 'type': 'copyRotation', 'target': target }))
-                constraints.append(dict(cons, **{ 'type': 'copyScale', 'target': target }))
+            constraints.append(dict(cons, **{
+                'type': 'copyTransforms',
+                'target': target,
+                'mixMode': bl_cons.mix_mode,
+                'influence': bl_cons.influence,
+                'fixCameraLightRotation': True,
+            }))
+
+        elif bl_cons.type == 'DAMPED_TRACK':
+            constraints.append(dict(cons, **{
+                'type': 'dampedTrack',
+                'target': target,
+                'trackAxis': extractAxisParam(bl_cons.track_axis, 'TRACK_', True),
+                'influence': bl_cons.influence,
+                'fixCameraLightRotation': True,
+            }))
+
+        elif bl_cons.type == 'LIMIT_DISTANCE':
+            constraints.append(dict(cons, **{
+                'type': 'limitDistance',
+                'target': target,
+                'distance': bl_cons.distance,
+                'limitMode': bl_cons.limit_mode,
+                'useTransformLimit': bl_cons.use_transform_limit,
+                'influence': bl_cons.influence,
+            }))
 
         elif bl_cons.type == 'LIMIT_LOCATION':
-            constraints.append(dict(cons, **{ 'type': 'limitLocation',
+            constraints.append(dict(cons, **{
+                'type': 'limitLocation',
                 'minX': bl_cons.min_x if bl_cons.use_min_x else '-Infinity',
                 'maxX': bl_cons.max_x if bl_cons.use_max_x else 'Infinity',
                 'minY': bl_cons.min_z if bl_cons.use_min_z else '-Infinity',
@@ -1686,18 +1772,31 @@ def extractConstraints(glTF, bl_obj):
 
         elif bl_cons.type == 'LIMIT_ROTATION':
             if bl_cons.use_limit_x:
-                constraints.append(dict(cons, **{ 'type': 'limitRotation',
-                        'axis': 'X', 'min': bl_cons.min_x, 'max': bl_cons.max_x }))
+                constraints.append(dict(cons, **{
+                    'type': 'limitRotation',
+                    'axis': 'X',
+                    'min': bl_cons.min_x,
+                    'max': bl_cons.max_x
+                }))
             if bl_cons.use_limit_y:
-                constraints.append(dict(cons, **{ 'type': 'limitRotation',
-                        'axis': 'Z', 'min': -bl_cons.max_y, 'max': -bl_cons.min_y }))
+                constraints.append(dict(cons, **{
+                    'type': 'limitRotation',
+                    'axis': 'Z',
+                    'min': -bl_cons.max_y,
+                    'max': -bl_cons.min_y
+                }))
             if bl_cons.use_limit_z:
-                constraints.append(dict(cons, **{ 'type': 'limitRotation',
-                        'axis': 'Y', 'min': bl_cons.min_z, 'max': bl_cons.max_z }))
+                constraints.append(dict(cons, **{
+                    'type': 'limitRotation',
+                    'axis': 'Y',
+                    'min': bl_cons.min_z,
+                    'max': bl_cons.max_z
+                }))
 
 
         elif bl_cons.type == 'LIMIT_SCALE':
-            constraints.append(dict(cons, **{ 'type': 'limitScale',
+            constraints.append(dict(cons, **{
+                'type': 'limitScale',
                 'minX': max(bl_cons.min_x, 0) if bl_cons.use_min_x else 0,
                 'maxX': max(bl_cons.max_x, 0) if bl_cons.use_max_x else 'Infinity',
                 'minY': max(bl_cons.min_z, 0) if bl_cons.use_min_z else 0,
@@ -1713,6 +1812,7 @@ def extractConstraints(glTF, bl_obj):
                     'target': target,
                     'trackAxis': extractAxisParam(bl_cons.track_axis, 'TRACK_', True),
                     'lockAxis': extractAxisParam(bl_cons.lock_axis, 'LOCK_', False),
+                    'fixCameraLightRotation': True,
                 }))
 
         elif bl_cons.type == 'TRACK_TO':
@@ -1722,6 +1822,7 @@ def extractConstraints(glTF, bl_obj):
                     'target': target,
                     'trackAxis': extractAxisParam(bl_cons.track_axis, 'TRACK_', True),
                     'upAxis': extractAxisParam(bl_cons.up_axis, 'UP_', True),
+                    'fixCameraLightRotation': True,
                 }))
 
         elif bl_cons.type == 'CHILD_OF':
@@ -1730,7 +1831,8 @@ def extractConstraints(glTF, bl_obj):
                     'type': 'childOf',
                     'target': target,
                     'offsetMatrix': extractMat(convertSwizzleMatrix(
-                            bl_cons.inverse_matrix @ bl_obj.matrix_basis))
+                            bl_cons.inverse_matrix @ bl_obj.matrix_basis)),
+                    'fixCameraLightRotation': True,
                 }))
 
         elif bl_cons.type == 'FLOOR':
@@ -1740,8 +1842,41 @@ def extractConstraints(glTF, bl_obj):
                     'type': 'floor',
                     'target': target,
                     'offset': -bl_cons.offset if floorLocation in ['Z', '-Z'] else bl_cons.offset,
-                    'floorLocation': floorLocation
+                    'floorLocation': floorLocation,
+                    'useRotation': bl_cons.use_rotation,
                 }))
+
+    if objHasFixOrthoZoom(bl_obj):
+        constraints.append({
+            'name': 'Fix Ortho Zoom',
+            'mute': False,
+            'type': 'fixOrthoZoom',
+            'target': gltf.getNodeIndex(glTF, bl_obj.parent.name)
+        })
+
+    if objHasCanvasFitParams(bl_obj):
+        constraints.append({
+            'name': 'Canvas Fit',
+            'mute': False,
+            'type': 'canvasFit',
+            'target': gltf.getNodeIndex(glTF, bl_obj.parent.name),
+            'edgeH': bl_obj.v3d.canvas_fit_x,
+            'edgeV': bl_obj.v3d.canvas_fit_y,
+            'fitShape': bl_obj.v3d.canvas_fit_shape,
+            'offset': bl_obj.v3d.canvas_fit_offset
+        })
+
+    if bl_obj.v3d.canvas_break_enabled:
+        constraints.append({
+            'name': 'Canvas Visibility Breakpoints',
+            'mute': False,
+            'type': 'canvasBreakpoints',
+            'minWidth': gltf.processInfinity(bl_obj.v3d.canvas_break_min_width),
+            'maxWidth': gltf.processInfinity(bl_obj.v3d.canvas_break_max_width),
+            'minHeight': gltf.processInfinity(bl_obj.v3d.canvas_break_min_height),
+            'maxHeight': gltf.processInfinity(bl_obj.v3d.canvas_break_max_height),
+            'orientation': bl_obj.v3d.canvas_break_orientation
+        })
 
     return constraints
 

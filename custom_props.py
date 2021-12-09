@@ -328,7 +328,7 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
 
     anim_offset: bpy.props.FloatProperty(
         name = 'Offset',
-        description = 'Animation offset, frames',
+        description = 'Animation offset in frames',
         default = 0,
         options = NO_ANIM_OPTS
     )
@@ -353,6 +353,203 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         name = 'Receive Shadows',
         description = 'Allow this object to receive shadows',
         default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    hidpi_compositing: bpy.props.BoolProperty(
+        name = 'HiDPI Compositing',
+        description = 'Render this object (and its children) using the separate HiDPI (Retina) compositing pass',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    fix_ortho_zoom: bpy.props.BoolProperty(
+        name = 'Fix Ortho Zoom',
+        description = ('Apply inverse orthographic camera zoom as scaling factor for this object'),
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane: bpy.props.BoolProperty(
+        name = 'Clipping Plane',
+        description = 'Clipping plane object',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_collection: bpy.props.PointerProperty(
+        type = bpy.types.Collection,
+        name = 'Affected Objects',
+        description = 'Objects affected by the clipping plane',
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_negated: bpy.props.BoolProperty(
+        name = 'Negated',
+        description = 'Swap clipped and unclipped sides',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_shadows: bpy.props.BoolProperty(
+        name = 'Clip Shadows',
+        description = 'Clip shadows casted from the clipped objects',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_union: bpy.props.BoolProperty(
+        name = 'Union Planes',
+        description = 'Construct a union from all the clipping planes, affecting the object, not their intersection',
+        default = True,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_cross_section: bpy.props.BoolProperty(
+        name = 'Filled Cross-Section',
+        description = 'Fill cross-section between the clipping plane and the affected objects',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_color: bpy.props.FloatVectorProperty(
+        name = 'Cross-Section Color',
+        description = 'Cross-section diffuse color and opacity',
+        default = (0.5, 0.0, 0.0, 1.0),
+        subtype = 'COLOR',
+        size = 4,
+        min = 0,
+        soft_max = 1,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_size: bpy.props.FloatProperty(
+        name = 'Cross-Section Plane Size',
+        description = 'Cross-section plane size (increase if you use larger scene size)',
+        default = 100,
+        min = 0,
+        soft_max = 1000,
+        max = 1000000,
+        options = NO_ANIM_OPTS
+    )
+
+    clipping_plane_render_side: bpy.props.EnumProperty(
+        name='Cross-Section Render Side',
+        description = 'Which side of clipping plane cross-section geometry will be rendered',
+        default = 'FRONT',
+        items = [
+            ('DOUBLE', 'Double-sided', 'Render both sides (reduced performance)'),
+            ('BACK', 'Back Side', 'Render back side (better performance)'),
+            ('FRONT', 'Front Side', 'Render front side (better performance, default)'),
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    canvas_fit_x: bpy.props.EnumProperty(
+        name = 'Horizontal',
+        description = 'Horizontal canvas edge to fit object to',
+        default = 'NONE',
+        items = [
+            ('NONE', 'None', 'None', 'ALIGN_FLUSH', 0),
+            ('LEFT', 'Left', 'Left', 'ALIGN_LEFT', 1),
+            ('RIGHT', 'Right', 'Right', 'ALIGN_RIGHT', 2),
+            ('STRETCH', 'Stretch', 'Stretch', 'ALIGN_JUSTIFY', 3)
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    canvas_fit_y: bpy.props.EnumProperty(
+        name = 'Vertical',
+        description = 'Vertical canvas edge to fit object to',
+        default = 'NONE',
+        items = [
+            ('NONE', 'None', 'None', 'ALIGN_FLUSH', 0),
+            ('TOP', 'Top', 'Top', 'ALIGN_TOP', 1),
+            ('BOTTOM', 'Bottom', 'Bottom', 'ALIGN_BOTTOM', 2),
+            ('STRETCH', 'Stretch', 'Stretch', 'ALIGN_JUSTIFY', 3)
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    canvas_fit_shape: bpy.props.EnumProperty(
+        name = 'Shape',
+        description = 'Canvas fit shape',
+        default = 'BOX',
+        items = [
+            ('BOX', 'Box', 'Box', 'CUBE', 0),
+            ('SPHERE', 'Sphere', 'Sphere', 'SPHERE', 1)
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    canvas_fit_offset: bpy.props.FloatProperty(
+        name = 'Fit Offset',
+        description = ('Canvas fit offset'),
+        default = 0,
+        min = 0,
+        precision = 2,
+        options = NO_ANIM_OPTS
+    )
+
+
+    canvas_break_enabled: bpy.props.BoolProperty(
+        name = 'Visibility Breakpoints',
+        description = 'Enable breakpoints to affect object visibility depending on canvas size and orientation',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    canvas_break_min_width: bpy.props.FloatProperty(
+        name = 'Min Width',
+        description = 'Minimum canvas width the object stay visible',
+        default = 0,
+        min = 0,
+        step = 100,
+        precision = 1,
+        options = NO_ANIM_OPTS,
+        subtype = 'PIXEL'
+    )
+
+    canvas_break_max_width: bpy.props.FloatProperty(
+        name = 'Max Width',
+        description = 'Maximum canvas width the object stay visible',
+        default = math.inf,
+        min = 0,
+        step = 100,
+        precision = 1,
+        options = NO_ANIM_OPTS,
+        subtype = 'PIXEL'
+    )
+
+    canvas_break_min_height: bpy.props.FloatProperty(
+        name = 'Min Height',
+        description = 'Minimum canvas height the object stay visible',
+        default = 0,
+        min = 0,
+        precision = 1,
+        options = NO_ANIM_OPTS,
+        subtype = 'PIXEL'
+    )
+
+    canvas_break_max_height: bpy.props.FloatProperty(
+        name = 'Max Height',
+        description = 'Maximum canvas height the object stay visible',
+        default = math.inf,
+        min = 0,
+        precision = 1,
+        options = NO_ANIM_OPTS,
+        subtype = 'PIXEL'
+    )
+
+    canvas_break_orientation: bpy.props.EnumProperty(
+        name = 'Orientation',
+        description = 'Screen orientation the object stay visible',
+        default = 'ALL',
+        items = [
+            ('PORTRAIT', 'Portrait', 'Portrait orientation', 2),
+            ('LANDSCAPE', 'Landscape', 'Landscape orientation', 1),
+            ('ALL', 'All', 'Both landscape and portrait orientation', 0)
+        ],
         options = NO_ANIM_OPTS
     )
 
@@ -501,6 +698,13 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         name = 'Story Height',
         description = 'First-person story height, specify proper value for multi-story buildings',
         default = 3,
+        options = NO_ANIM_OPTS
+    )
+
+    enable_pointer_lock: bpy.props.BoolProperty(
+        name = 'Enable PointerLock',
+        description = 'Enable PointerLock to capture the mouse pointer',
+        default = False,
         options = NO_ANIM_OPTS
     )
 
@@ -719,6 +923,30 @@ class V3DCollectionSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+class V3DLightProbeSettings(bpy.types.PropertyGroup):
+
+    use_custom_influence: bpy.props.BoolProperty(
+        name = 'Custom Influence',
+        description = ('This group of options is used for selecting objects '
+                'that will be affected by this lightprobe. The Influence '
+                'Collection option (if set to a non-empty value) will be used '
+                'instead of the Type and Radius/Distance general probe settings'),
+        options = NO_ANIM_OPTS
+    )
+
+    influence_collection: bpy.props.PointerProperty(
+        type = bpy.types.Collection,
+        name = 'Influence Collection',
+        description = 'Objects affected by the lightprobe',
+        options = NO_ANIM_OPTS
+    )
+
+    invert_influence_collection: bpy.props.BoolProperty(
+        name = 'Invert Collection',
+        description = 'Invert influence collection',
+        options = NO_ANIM_OPTS
+    )
+
 def register():
     bpy.utils.register_class(V3DCollectionSettings)
     bpy.utils.register_class(V3DExportSettings)
@@ -735,6 +963,7 @@ def register():
     bpy.utils.register_class(V3DLineRenderingSettings)
     bpy.utils.register_class(V3DCurveSettings)
     bpy.utils.register_class(V3DMeshSettings)
+    bpy.utils.register_class(V3DLightProbeSettings)
 
     bpy.types.World.v3d = bpy.props.PointerProperty(
         name = "Verge3D world settings",
@@ -796,6 +1025,11 @@ def register():
         type = V3DCollectionSettings
     )
 
+    bpy.types.LightProbe.v3d = bpy.props.PointerProperty(
+        name = "Verge3D lightprobe settings",
+        type = V3DLightProbeSettings
+    )
+
 
 def unregister():
     bpy.utils.unregister_class(V3DTextureSettings)
@@ -812,8 +1046,8 @@ def unregister():
     bpy.utils.unregister_class(V3DOutlineSettings)
     bpy.utils.unregister_class(V3DWorldSettings)
     bpy.utils.unregister_class(V3DExportSettings)
-
     bpy.utils.unregister_class(V3DCollectionSettings)
+    bpy.utils.unregister_class(V3DLightProbeSettings)
 
     del bpy.types.Material.v3d
     del bpy.types.Light.v3d
@@ -825,3 +1059,4 @@ def unregister():
     del bpy.types.Scene.v3d
     del bpy.types.World.v3d
     del bpy.types.Collection.v3d
+    del bpy.types.LightProbe.v3d

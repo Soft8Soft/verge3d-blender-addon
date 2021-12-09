@@ -471,6 +471,23 @@ def filterApply(exportSettings):
 
     exportSettings['filtered_lights'] = filtered_lights
 
+
+    filtered_light_probes = []
+
+    for bl_probe in bpy.data.lightprobes:
+
+        if bl_probe.users == 0:
+            continue
+
+        # only "Reflection Cubemap" and "Reflection Plane" light probes are currently supported
+        if bl_probe.type != 'CUBEMAP' and bl_probe.type != 'PLANAR':
+            continue
+
+        filtered_light_probes.append(bl_probe)
+
+    exportSettings['filtered_light_probes'] = filtered_light_probes
+
+
     joint_indices = {}
 
     if exportSettings['skins']:
@@ -489,3 +506,14 @@ def filterApply(exportSettings):
                 grp[bl_bone.name] = len(grp)
 
     exportSettings['joint_indices'] = joint_indices
+
+
+    filtered_clipping_planes = []
+
+    for bl_obj in bpy.data.objects:
+        if bl_obj.type == 'EMPTY' and bl_obj.v3d.clipping_plane:
+            filtered_clipping_planes.append(bl_obj)
+
+    exportSettings['filtered_clipping_planes'] = filtered_clipping_planes
+
+

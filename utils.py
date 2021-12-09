@@ -511,3 +511,20 @@ def calcLightThresholdDist(bl_light, threshold):
         * abs(bl_light.energy / 100)
         / max(threshold, 1e-16)
     ))
+
+
+def objHasFixOrthoZoom(bl_obj):
+    if (bl_obj.parent and bl_obj.parent.type == 'CAMERA' and
+            bl_obj.parent.data.type == 'ORTHO' and bl_obj.v3d.fix_ortho_zoom):
+        return True
+    else:
+        return False
+
+
+def objHasCanvasFitParams(bl_obj):
+    if (bl_obj.parent and bl_obj.parent.type == 'CAMERA' and
+            (bl_obj.v3d.canvas_fit_x != 'NONE' or bl_obj.v3d.canvas_fit_y != 'NONE')):
+        return True
+    else:
+        return False
+

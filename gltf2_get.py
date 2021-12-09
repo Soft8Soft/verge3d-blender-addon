@@ -396,7 +396,7 @@ def getVec2(default_value, init_value = [0.0, 0.0]):
     Return vec2 with a given default/fallback value.
     """
 
-    return_value = init_value
+    return_value = init_value.copy()
 
     if default_value is None or len(default_value) < 2:
         return return_value
@@ -417,7 +417,7 @@ def getVec3(default_value, init_value = [0.0, 0.0, 0.0]):
     Return vec3 with a given default/fallback value.
     """
 
-    return_value = init_value
+    return_value = init_value.copy()
 
     if default_value is None or len(default_value) < 3:
         return return_value
@@ -438,7 +438,7 @@ def getVec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
     Return vec4 with a given default/fallback value.
     """
 
-    return_value = init_value
+    return_value = init_value.copy()
 
     if default_value is None or len(default_value) < 4:
         return return_value
