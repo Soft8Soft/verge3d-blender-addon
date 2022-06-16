@@ -56,6 +56,12 @@ def finish(exportSettings):
         for temporary_mat in exportSettings['temporary_materials']:
             bpy.data.materials.remove(temporary_mat)
 
+    for bl_image in exportSettings['filtered_images']:
+        del bl_image['compression_error_status']
+
+    del exportSettings['uri_cache']['uri'][:]
+    del exportSettings['uri_cache']['bl_datablocks'][:]
+
     # HACK: fix user count for materials, which can be 0 in case of copying objects
     # for bpy.data.meshes.new_from_object operation
     for obj in bpy.data.objects:
@@ -86,9 +92,7 @@ def save(operator, context, exportSettings):
     bpy.context.window_manager.progress_update(0)
 
 
-
     prepare(exportSettings)
-
 
 
     glTF = {}
@@ -108,7 +112,6 @@ def save(operator, context, exportSettings):
 
     glTF_encoded = json.dumps(glTF, indent=indent, separators=separators,
             sort_keys=True, ensure_ascii=False)
-
 
 
     if exportSettings['format'] == 'ASCII':
@@ -172,9 +175,7 @@ def save(operator, context, exportSettings):
         compressLZMA(exportSettings['filepath'], exportSettings)
 
 
-
     finish(exportSettings)
-
 
 
     printLog('INFO', 'Finished glTF 2.0 export')
@@ -191,6 +192,12 @@ def cleanupDataKeys(glTF):
             for entity in val:
                 if 'id' in entity:
                     del entity['id']
-        elif key == 'extensions' and 'S8S_v3d_data' in val:
-            cleanupDataKeys(val['S8S_v3d_data'])
+        elif key == 'extensions' and 'S8S_v3d_lights' in val:
+            cleanupDataKeys(val['S8S_v3d_lights'])
+        elif key == 'extensions' and 'S8S_v3d_light_probes' in val:
+            cleanupDataKeys(val['S8S_v3d_light_probes'])
+        elif key == 'extensions' and 'S8S_v3d_clipping_planes' in val:
+            cleanupDataKeys(val['S8S_v3d_clipping_planes'])
+        elif key == 'extensions' and 'S8S_v3d_curves' in val:
+            cleanupDataKeys(val['S8S_v3d_curves'])
 

@@ -21,6 +21,7 @@ import mathutils.geometry
 import math, io, os, re, tempfile
 
 import pluginUtils
+import pluginUtils as pu
 from pluginUtils.log import *
 import pluginUtils.gltf as gltf
 
@@ -374,7 +375,7 @@ def extractPrimitivePack(a, indices, use_tangents):
 def checkUseNodeAttrs(bl_mat):
     mat_type = getMaterialType(bl_mat)
 
-    if mat_type == 'CYCLES':
+    if mat_type == 'EEVEE':
         return True
     else:
         return False
@@ -541,9 +542,9 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
         if len(bl_polygon.loop_indices) == 3:
             loop_index_list.extend(bl_polygon.loop_indices)
-        
+
         elif len(bl_polygon.loop_indices) == 4:
-            # NOTE: internal function does not work well with small quads, 
+            # NOTE: internal function does not work well with small quads,
             # so hardcoded triangulation by shortest diagonal
 
             v = []
@@ -555,7 +556,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
                 triangles = [(0, 1, 3), (1, 2, 3)]
             else:
                 triangles = [(0, 1, 2), (0, 2, 3)]
-                
+
             for triangle in triangles:
                 for loop_idx in triangle:
                     loop_index_list.append(bl_polygon.loop_indices[loop_idx])
@@ -573,14 +574,8 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             triangles = mathutils.geometry.tessellate_polygon((polyline,))
 
             for triangle in triangles:
-                if bpy.app.version >= (2,81,0):
-                    for loop_idx in triangle:
-                        loop_index_list.append(bl_polygon.loop_indices[loop_idx])
-                else:
-                    # old Blender version had bug with flipped triangles
-                    loop_index_list.append(bl_polygon.loop_indices[triangle[0]])
-                    loop_index_list.append(bl_polygon.loop_indices[triangle[2]])
-                    loop_index_list.append(bl_polygon.loop_indices[triangle[1]])
+                for loop_idx in triangle:
+                    loop_index_list.append(bl_polygon.loop_indices[loop_idx])
 
         else:
             continue
@@ -1241,6 +1236,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
         elif bl_node.type == 'BUMP':
             node['invert'] = bl_node.invert
+        elif bl_node.type == 'COMBINE_COLOR':
+            node['mode'] = bl_node.mode
+        elif bl_node.type == 'CURVE_FLOAT':
+            node['curveData'] = extractCurveMapping(bl_node.mapping, (-1,1))
         elif bl_node.type == 'CURVE_RGB':
             node['curveData'] = extractCurveMapping(bl_node.mapping, (0,1))
         elif bl_node.type == 'CURVE_VEC':
@@ -1251,40 +1250,21 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                     bl_node.node_tree.name)
 
         elif bl_node.type == 'MAPPING':
-            # reproducing ShaderNodeMapping
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeMapping.html
-
-            if bpy.app.version < (2,81,0):
-                node['rotation'] = extractVec(bl_node.rotation)
-                node['scale'] = extractVec(bl_node.scale)
-                node['translation'] = extractVec(bl_node.translation)
-
-                node['max'] = extractVec(bl_node.max)
-                node['min'] = extractVec(bl_node.min)
-
-                node['useMax'] = bl_node.use_max
-                node['useMin'] = bl_node.use_min
-
             node['vectorType'] = bl_node.vector_type
 
         elif bl_node.type == 'MAP_RANGE':
+            # blender version > 3.0.0
+            if hasattr(bl_node, "data_type"):
+                node['dataType'] = bl_node.data_type
+
             node['clamp'] = bl_node.clamp
-            if bpy.app.version >= (2, 82, 0):
-                node['interpolationType'] = bl_node.interpolation_type
-            else:
-                node['interpolationType'] = 'LINEAR'
+            node['interpolationType'] = bl_node.interpolation_type
 
         elif bl_node.type == 'MATH':
-            # reproducing ShaderNodeMath
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeMath.html
-
             node['operation'] = bl_node.operation
             node['useClamp'] = bl_node.use_clamp
 
         elif bl_node.type == 'MIX_RGB':
-            # reproducing ShaderNodeMixRGB
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeMixRGB.html
-
             node['blendType'] = bl_node.blend_type
             node['useClamp'] = bl_node.use_clamp
 
@@ -1341,6 +1321,9 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
             node['fragCode'] = genOSLCode(oslAST, shaderName)
 
+        elif bl_node.type == 'SEPARATE_COLOR':
+            node['mode'] = bl_node.mode
+
         elif bl_node.type == 'TEX_BRICK':
             node['offset'] = bl_node.offset
             node['offsetFrequency'] = bl_node.offset_frequency
@@ -1389,26 +1372,16 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['groundAlbedo'] = bl_node.ground_albedo
 
         elif bl_node.type == 'TEX_VORONOI':
-
-            if bpy.app.version < (2, 81, 11):
-
-                node['coloring'] = bl_node.coloring
-                node['distance'] = bl_node.distance
-                node['feature'] = bl_node.feature
-
-            else:
-                # only 3D is supported right now
-                # node['dimension'] = '3D'
-                node['distance'] = bl_node.distance
-                node['feature'] = bl_node.feature
+            # only 3D is supported right now
+            # node['dimension'] = '3D'
+            node['distance'] = bl_node.distance
+            node['feature'] = bl_node.feature
 
         elif bl_node.type == 'TEX_WAVE':
             node['waveType'] = bl_node.wave_type
             node['waveProfile'] = bl_node.wave_profile
-            node['bandsDirection'] = ('DIAGONAL' if bpy.app.version < (2, 83, 0)
-                    else bl_node.bands_direction)
-            node['ringsDirection'] = ('SPHERICAL' if bpy.app.version < (2, 83, 0)
-                    else bl_node.rings_direction)
+            node['bandsDirection'] = bl_node.bands_direction
+            node['ringsDirection'] = bl_node.rings_direction
 
         elif bl_node.type == 'VALTORGB':
             node['curve'] = extractColorRamp(bl_node.color_ramp)
@@ -1421,9 +1394,6 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['invert'] = bl_node.invert
 
         elif bl_node.type == 'VECT_TRANSFORM':
-            # reproducing ShaderNodeVectorTransform
-            # https://docs.blender.org/api/current/bpy.types.ShaderNodeVectorTransform.html
-
             node['vectorType'] = bl_node.vector_type
             node['convertFrom'] = bl_node.convert_from
             node['convertTo'] = bl_node.convert_to
@@ -1438,6 +1408,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             # An input of type CUSTOM is usually the last input/output socket
             # in the "Group Input"/"Group Output" nodes, should be safe to omit
             if bl_input.type == 'CUSTOM':
+                continue
+
+            # Invisible Blender-specific input introduced in Blender 3.2
+            if bl_input.name == 'Weight' and bl_input.enabled == False:
                 continue
 
             defval = getSocketDefvalCompat(bl_input, node['type'] == 'OSL_NODE',
@@ -1505,11 +1479,7 @@ def extractCurveMapping(mapping, x_range):
         x = x_range[0] + pix_size * i
 
         for curve_map in mapping.curves:
-
-            if bpy.app.version < (2, 82, 1):
-                data.append(curve_map.evaluate(x))
-            else:
-                data.append(mapping.evaluate(curve_map, x))
+            data.append(mapping.evaluate(curve_map, x))
 
     return data
 
@@ -1905,13 +1875,28 @@ def extractAxisParam(param, prefix, use_negative):
         printLog('ERROR', 'Incorrect axis param: ' + param)
         return ''
 
-def extractImageBindata(bl_image, scene):
+def extractImageBindata(bl_image, scene, exportSettings):
 
-    if bl_image.file_format == 'JPEG':
+    fileFormat = bl_image.file_format
+
+    if imgNeedsCompression(bl_image, exportSettings):
+        if fileFormat == 'JPEG':
+            data = extractImageBindataJPEG(bl_image, scene)
+        elif fileFormat == 'HDR':
+            data = extractImageBindataHDR(bl_image, scene)
+        else:
+            data = extractImageBindataPNG(bl_image, scene)
+
+        if fileFormat == 'HDR':
+            return pu.manager.AppManagerConn.compressLZMABuffer(data)
+        else:
+            return pu.convert.compressKTX2(srcData=data, method=bl_image.v3d.compression_method)
+
+    elif fileFormat == 'JPEG':
         return extractImageBindataJPEG(bl_image, scene)
-    elif bl_image.file_format == 'BMP':
+    elif fileFormat == 'BMP':
         return extractImageBindataBMP(bl_image, scene)
-    elif bl_image.file_format == 'HDR':
+    elif fileFormat == 'HDR':
         return extractImageBindataHDR(bl_image, scene)
     else:
         return extractImageBindataPNG(bl_image, scene)

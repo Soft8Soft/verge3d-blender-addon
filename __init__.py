@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (3, 9, 0),
+    "version": (4, 0, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "wiki_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -103,6 +103,7 @@ class V3D_OT_export():
         exportSettings['export_constraints'] = v3d_export.export_constraints
         exportSettings['custom_props'] = v3d_export.export_custom_props
         exportSettings['lzma_enabled'] = v3d_export.lzma_enabled
+        exportSettings['compress_textures'] = v3d_export.compress_textures
         exportSettings['optimize_attrs'] = v3d_export.optimize_attrs
         exportSettings['aa_method'] = v3d_export.aa_method
         exportSettings['use_hdr'] = v3d_export.use_hdr
@@ -114,7 +115,7 @@ class V3D_OT_export():
             exportSettings['frame_range'] = False
             exportSettings['move_keyframes'] = False
 
-        exportSettings['uri_data'] = { 'uri': [], 'bl_datablocks': [] }
+        exportSettings['uri_cache'] = { 'uri': [], 'bl_datablocks': [] }
         exportSettings['binary'] = bytearray()
         exportSettings['binaryfilename'] = os.path.splitext(os.path.basename(self.filepath))[0] + '.bin'
 

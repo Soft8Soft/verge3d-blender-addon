@@ -110,6 +110,9 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row.prop(v3d_export, 'lzma_enabled')
 
         row = layout.row()
+        row.prop(v3d_export, 'compress_textures')
+
+        row = layout.row()
         row.prop(v3d_export, 'optimize_attrs')
 
 
@@ -120,13 +123,12 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = box.row()
         row.prop(v3d_export, 'use_shadows')
 
-        if bpy.app.version >= (2,81,0):
-            split = box.split()
-            split.active = v3d_export.use_shadows
-            col = split.column()
-            col.label(text='Shadow Map Filtering')
-            col = split.column()
-            col.prop(v3d_export, 'shadow_map_type', text='')
+        split = box.split()
+        split.active = v3d_export.use_shadows
+        col = split.column()
+        col.label(text='Shadow Map Filtering')
+        col = split.column()
+        col.prop(v3d_export, 'shadow_map_type', text='')
 
         split = box.split()
         split.active = v3d_export.use_shadows
@@ -480,32 +482,17 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
         type = light.type
         shadow = light.v3d.shadow
 
-        if bpy.app.version < (2,81,0):
+        row = layout.row()
+        row.label(text='Shadow:')
 
-            if type == 'SUN':
+        row = layout.row()
+        row.active = (context.scene.v3d_export.shadow_map_type
+                not in ['BASIC', 'BILINEAR'])
+        row.prop(shadow, 'radius', text='Blur Radius')
 
-                row = layout.row()
-                row.label(text='Shadow:')
-
-                row = layout.row()
-                row.prop(shadow, 'camera_size', text='Shadow Size (fallback)')
-            else:
-                row = layout.row()
-                row.label(text='Not available for this light type')
-
-        else:
-
-            row = layout.row()
-            row.label(text='Shadow:')
-
-            row = layout.row()
-            row.active = (context.scene.v3d_export.shadow_map_type
-                    not in ['BASIC', 'BILINEAR'])
-            row.prop(shadow, 'radius', text='Blur Radius')
-
-            row = layout.row()
-            row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
-            row.prop(shadow, 'esm_exponent', text='ESM Bias')
+        row = layout.row()
+        row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
+        row.prop(shadow, 'esm_exponent', text='ESM Bias')
 
 
 
@@ -713,6 +700,7 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
         node = context.active_node
         return node is not None and (
                 isinstance(node, bpy.types.ShaderNodeTexImage)
+                or isinstance(node, bpy.types.ShaderNodeTexEnvironment)
                 or isinstance(node, bpy.types.ShaderNodeTexNoise)
         )
 
@@ -729,6 +717,23 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
             row = layout.row()
             row.prop(node.v3d, 'anisotropy', text='Ratio')
 
+            image = node.image
+            if image:
+                row = layout.row()
+                row.label(text='Texture Compression:')
+
+                row = layout.row()
+                row.prop(image.v3d, 'compression_method', text='Method')
+
+        elif isinstance(node, bpy.types.ShaderNodeTexEnvironment):
+            image = node.image
+            if image:
+                row = layout.row()
+                row.label(text='Texture Compression:')
+
+                row = layout.row()
+                row.prop(image.v3d, 'compression_method', text='Hint')
+
         elif isinstance(node, bpy.types.ShaderNodeTexNoise):
 
             row = layout.row()
@@ -742,10 +747,6 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
 
 
 def execBrowser(url):
-    # always try to run server before starting browers
-    # fixes several issues with closed Blender
-    AppManagerConn.start(getRoot(), 'BLENDER', True)
-
     try:
         webbrowser.open(url)
     except BaseException:
@@ -780,30 +781,31 @@ class V3D_OT_app_manager(bpy.types.Operator):
     bl_options = {"INTERNAL"}
 
     def execute(self, context):
+        AppManagerConn.start(getRoot(), 'BLENDER', True)
         execBrowser(getAppManagerHost())
         return {"FINISHED"}
 
 
 class V3D_OT_sneak_peek(bpy.types.Operator):
-    bl_idname = "v3d.sneak_peek"
-    bl_label = "Sneak Peek"
-    bl_description = "Export to temporary location and preview the scene in Verge3D"
-    bl_options = {"INTERNAL"}
+    bl_idname = 'v3d.sneak_peek'
+    bl_label = 'Sneak Peek'
+    bl_description = 'Export to temporary location and preview the scene in Verge3D'
+    bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        prev_dir = join(getRoot(), "player", "preview")
+        # always try to run server before sneak peek
+        # fixes several issues with closed Blender
+        AppManagerConn.start(getRoot(), 'BLENDER', True)
 
-        if os.path.exists(prev_dir):
-            shutil.rmtree(prev_dir)
-        os.mkdir(prev_dir)
+        prevDir = AppManagerConn.getPreviewDir(True)
 
-        bpy.ops.v3d.export_gltf(filepath=join(prev_dir, 'sneak_peek.gltf'),
+        bpy.ops.v3d.export_gltf(filepath=join(prevDir, 'sneak_peek.gltf'),
                                 export_sneak_peek = True)
 
         execBrowser(getAppManagerHost() +
-                'player/player.html?load=preview/sneak_peek.gltf')
+                'player/player.html?load=/sneak_peek/sneak_peek.gltf')
 
-        return {"FINISHED"}
+        return {'FINISHED'}
 
 @persistent
 def loadHandler(dummy):

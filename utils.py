@@ -21,6 +21,8 @@ import mathutils
 
 import pyosl.glslgen
 
+import pluginUtils as pu
+
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
 
@@ -110,6 +112,19 @@ def getTextureName(bl_texture):
 
     return tex_name
 
+def imgNeedsCompression(bl_image, exportSettings):
+    method = bl_image.v3d.compression_method
+
+    if bl_image.get('compression_error_status') == 1:
+        return False
+    # only JPEG/PNG (ktx2) or HDR (xz/ktx2) compression supported
+    elif (exportSettings['compress_textures'] and method != 'DISABLE' and
+            bl_image.file_format in ['JPEG', 'PNG', 'HDR'] and
+            pu.isPowerOfTwo(bl_image.size[0]) and pu.isPowerOfTwo(bl_image.size[1])):
+        return True
+    else:
+        return False
+
 def mat4IsIdentity(mat4):
     return mat4 == mathutils.Matrix.Identity(4)
 
@@ -151,12 +166,13 @@ def mat4SvdDecomposeToMatrs(mat4):
 def findArmature(obj):
 
     for mod in obj.modifiers:
-        if mod.type == 'ARMATURE' and mod.object is not None:
+        if mod.type == 'ARMATURE' and mod.object is not None and mod.object.users > 0:
             return mod.object
 
     # use obj.find_armature as a last resort, because it doesn't work with many
     # armature modifiers
-    return obj.find_armature()
+    armature = obj.find_armature()
+    return armature if armature is not None and armature.users > 0 else None
 
 def matHasBlendBackside(bl_mat):
     return (matIsBlend(bl_mat) and
@@ -217,25 +233,6 @@ def objDataUsesLineRendering(bl_obj_data):
 
 def getObjectAllCollections(blObj):
     return [coll for coll in bpy.data.collections if blObj in coll.all_objects[:]]
-
-def getBlurPixelRadius(context, blLight):
-
-    if blLight.type == 'SUN':
-        relativeRadius = (blLight.shadow_buffer_soft / 100
-                * int(context.scene.eevee.shadow_cascade_size))
-        # blur strength doesn't increase after a certain point
-        return min(max(relativeRadius, 0), 100)
-    else:
-        blurGrade = math.floor(blLight.shadow_buffer_soft
-                * int(context.scene.eevee.shadow_cube_size) / 1000)
-        blurGrade = min(blurGrade, 9)
-
-        # some approximation of Blender blur radius
-        if blurGrade > 2:
-            return 4.22 * (blurGrade - 1.5)
-        else:
-            return blurGrade
-
 
 def objHasExportedModifiers(obj):
     """

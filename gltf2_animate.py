@@ -22,6 +22,8 @@ import mathutils
 from pluginUtils.log import printLog
 from .gltf2_extract import *
 
+QUAT_X_90 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi/2)
+QUAT_X_270 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi + math.pi/2)
 
 def animateGetInterpolation(exportSettings, bl_fcurve_list):
     """
@@ -307,8 +309,8 @@ def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation,
             # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            if node_type == 'NODE_X_90':
-                rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+            # apply additional rotation for lamps, cameras, fonts and their childs 
+            rotation = correctRotationQuat(rotation, node_type)
 
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -365,8 +367,8 @@ def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpol
             # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            if node_type == 'NODE_X_90':
-                rotation = rotation @ mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
+            # apply additional rotation for lamps, cameras, fonts and their childs 
+            rotation = correctRotationQuat(rotation, node_type)
 
         # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -438,13 +440,10 @@ def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation
             in_tangent = convertSwizzleRotation(in_tangent)
             out_tangent = convertSwizzleRotation(out_tangent)
 
-            if node_type == 'NODE_X_90':
-                quat_x90 = mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2)
-
-                rotation = rotation @ quat_x90
-                in_tangent = in_tangent @ quat_x90
-                out_tangent = out_tangent @ quat_x90
-
+            # apply additional rotation for lamps, cameras, fonts and their childs 
+            rotation = correctRotationQuat(rotation, node_type)
+            in_tangent = correctRotationQuat(in_tangent, node_type)
+            out_tangent = correctRotationQuat(out_tangent, node_type)
 
         # Bring to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
@@ -652,3 +651,15 @@ def animateEnergy(exportSettings, energy, interpolation):
         keyframe_index += 1
 
     return result, result_in_tangent, result_out_tangent
+
+def correctRotationQuat(rotation, node_type):
+    # apply additional rotation for lamps, cameras, fonts and their childs 
+
+    if node_type == 'NODE_X_90':
+        rotation = rotation @ QUAT_X_270
+    elif node_type == 'NODE_INV_X_90':
+        rotation = QUAT_X_90 @ rotation 
+    elif node_type == 'NODE_INV_X_90_X_90':
+        rotation = QUAT_X_90 @ rotation @ QUAT_X_270
+
+    return rotation

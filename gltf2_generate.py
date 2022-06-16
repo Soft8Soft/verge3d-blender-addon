@@ -57,6 +57,13 @@ MAX_SHADOW_CAM_FAR = 10000
 PMREM_SIZE_MIN = 256
 PMREM_SIZE_MAX = 1024
 
+ROTATION_NODE_TYPES = [
+    'NODE_X_90',
+    'NODE_INV_X_90',
+    'NODE_INV_X_90_X_90'
+
+]
+
 def generateAsset(operator, context, exportSettings, glTF):
     """
     Generates the top level asset entry.
@@ -130,8 +137,17 @@ def generateAnimationsParameter(operator,
     node_type = 'NODE'
     used_node_name = bl_node_name
 
-    if bl_obj.type == 'CAMERA' or bl_obj.type == 'LIGHT' or bl_obj.type == 'CURVE':
+    # correcting rotation animation
+    if bl_obj.type == 'CAMERA' or bl_obj.type == 'LIGHT' or bl_obj.type == 'FONT':
         node_type = 'NODE_X_90'
+
+    parent = bl_obj.parent
+    if parent:
+        if parent.type in ('CAMERA', 'LIGHT', 'FONT'):
+            if node_type == 'NODE_X_90':
+                node_type = 'NODE_INV_X_90_X_90'
+            else:
+                node_type = 'NODE_INV_X_90'
 
     if bl_bone_name != None:
         node_type = 'JOINT'
@@ -148,7 +164,7 @@ def generateAnimationsParameter(operator,
         if node_name != None and not is_morph_data:
             if (node_type == 'JOINT' or node_type == 'MAT_NODE') and used_node_name != node_name:
                 continue
-            elif node_type == 'NODE' or node_type == 'NODE_X_90':
+            elif node_type == 'NODE' or node_type in ROTATION_NODE_TYPES:
                 continue
             else:
                 prefix = node_name + "_"
@@ -245,26 +261,51 @@ def generateAnimationsParameter(operator,
     sampler_name = prefix + action.name + "_rotation"
 
     if getIndex(samplers, sampler_name) == -1:
-        if rotation_axis_angle.count(None) < 4:
+
+        has_axis_angle = rotation_axis_angle.count(None) < 4
+        has_euler = rotation_euler.count(None) < 3
+        has_quaternion = rotation_quaternion.count(None) < 4
+
+        if has_axis_angle:
             interpolation = animateGetInterpolation(exportSettings, rotation_axis_angle)
             # conversion required in any case
             if interpolation == 'CUBICSPLINE':
                 interpolation = 'CONVERSION_NEEDED'
-            rotation_data = animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
 
-        if rotation_euler.count(None) < 3:
+            rotation_data = rotation_data or {}
+            rotation_data.update(animateRotationAxisAngle(exportSettings,
+                    rotation_axis_angle, interpolation, node_type,
+                    used_node_name, matrix_correction, matrix_basis))
+
+        if has_euler:
             interpolation = animateGetInterpolation(exportSettings, rotation_euler)
             # conversion required in any case
             # also for linear interpolation to fix issues with e.g 2*PI keyframe differences
             if interpolation == 'CUBICSPLINE' or interpolation == 'LINEAR':
                 interpolation = 'CONVERSION_NEEDED'
-            rotation_data = animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
 
-        if rotation_quaternion.count(None) < 4:
+            rotation_data = rotation_data or {}
+            rotation_data.update(animateRotationEuler(exportSettings,
+                    rotation_euler, rotation_mode, interpolation, node_type,
+                    used_node_name, matrix_correction, matrix_basis))
+
+        if has_quaternion:
             interpolation = animateGetInterpolation(exportSettings, rotation_quaternion)
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
-            rotation_data, rotation_in_tangent_data, rotation_out_tangent_data = animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
+            rotation_data_quat, rotation_in_tangent_data, rotation_out_tangent_data = animateRotationQuaternion(
+                    exportSettings, rotation_quaternion, interpolation,
+                    node_type, used_node_name, matrix_correction, matrix_basis)
+
+            rotation_data = rotation_data or {}
+            rotation_data.update(rotation_data_quat)
+
+        if has_quaternion and (has_axis_angle or has_euler):
+            # NOTE: set tangent data to zeros just in case, since it's not clear
+            # what to do with it when mixing different types of rotation keyframes
+            rotation_in_tangent_data = [0.0, 0.0, 0.0, 0.0]
+            rotation_out_tangent_data = [0.0, 0.0, 0.0, 0.0]
+
 
     if rotation_data is not None:
         keys = sorted(rotation_data.keys())
@@ -597,7 +638,7 @@ def generateAnimationsParameter(operator,
         if node_name != None and not is_morph_data:
             if (node_type == 'JOINT' or node_type == 'MAT_NODE') and used_node_name != node_name:
                 continue
-            elif node_type == 'NODE' or node_type == 'NODE_X_90':
+            elif node_type == 'NODE' or node_type in ROTATION_NODE_TYPES:
                 continue
             else:
                 prefix = node_name + "_"
@@ -726,7 +767,8 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
                 setSelectedObject(bl_obj)
 
-                bpy.ops.nla.bake(frame_start=start, frame_end=end,
+                # NOTE: int to prevent crashes in Blender 3.1+
+                bpy.ops.nla.bake(frame_start=int(start), frame_end=int(end),
                         only_selected=False, visual_keying=True)
 
                 restoreSelectedObjects()
@@ -955,7 +997,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
                 'samplers' : data[1]
             }
 
-            v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_animation_data', animation)
+            v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_animation', animation)
 
             bl_obj = data[2]
             v3dExt['auto'] = bl_obj.v3d.anim_auto
@@ -1000,7 +1042,7 @@ def generateCameras(operator, context, exportSettings, glTF):
     if len(cameras) > 0:
         glTF['cameras'] = cameras
 
-        gltf.appendExtension(glTF, 'S8S_v3d_camera_data')
+        gltf.appendExtension(glTF, 'S8S_v3d_camera')
 
 def generateCamera(bl_camera, glTF):
     camera = {}
@@ -1091,7 +1133,7 @@ def generateCamera(bl_camera, glTF):
         v3dExt['fpsStoryHeight'] = bl_camera.v3d.fps_story_height
         v3dExt['enablePointerLock'] = bl_camera.v3d.enable_pointer_lock
 
-    camera['extensions'] = { 'S8S_v3d_camera_data' : v3dExt }
+    camera['extensions'] = { 'S8S_v3d_camera' : v3dExt }
 
     return camera
 
@@ -1139,7 +1181,7 @@ def generateCameraFromView(aspectRatio):
         orthographic['ymag'] = ymag
 
     v3dExt = {}
-    camera['extensions'] = { 'S8S_v3d_camera_data' : v3dExt }
+    camera['extensions'] = { 'S8S_v3d_camera' : v3dExt }
 
     v3dExt['viewportFitType'] = 'VERTICAL'
     v3dExt['viewportFitInitialAspect'] = aspectRatio
@@ -1190,83 +1232,44 @@ def generateLights(operator, context, exportSettings, glTF):
 
         useShadows = exportSettings['use_shadows'] and bl_light.use_shadow
 
-        if bpy.app.version < (2,81,0):
-            cameraNear = bl_light.shadow_buffer_clip_start
-            # usability improvement
-            if (bl_light.type == 'SPOT' or bl_light.type == 'POINT' or bl_light.type == 'AREA') and cameraNear < SPOT_SHADOW_MIN_NEAR:
-                cameraNear = SPOT_SHADOW_MIN_NEAR
-            cameraFar = bl_light.shadow_buffer_clip_end
+        eeveeCtx = context.scene.eevee
 
-            orthoSize = bl_light.v3d.shadow.camera_size
-
-            eeveeCtx = context.scene.eevee
-            light['shadow'] = {
-                'enabled': useShadows,
-                'mapSize': int(eeveeCtx.shadow_cascade_size
-                        if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
-
-                # used as a shadow size for PCF fallback
-                'cameraOrthoLeft': -orthoSize / 2,
-                'cameraOrthoRight': orthoSize / 2,
-                'cameraOrthoBottom': -orthoSize / 2,
-                'cameraOrthoTop': orthoSize / 2,
-
-                'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
-                'cameraNear': cameraNear,
-                'cameraFar': cameraFar,
-                'radius': (bl_light.shadow_buffer_soft if bl_light.type == 'SUN'
-                        else getBlurPixelRadius(context, bl_light)),
-                # NOTE: negate bias since the negative is more appropriate in most cases
-                # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.shadow_buffer_bias * 0.0018,
-                'expBias': bl_light.shadow_buffer_exp
-            }
-
-            if bl_light.type == 'SUN':
-                light['shadow']['csm'] = {
-                    'maxDistance': bl_light.shadow_cascade_max_distance
-                }
+        if bl_light.type == 'SUN':
+            # NOTE: the following values are not relevant because the engine
+            # calculates near/far dynamically for directional shadows
+            cameraNear = SUN_DEFAULT_NEAR
+            cameraFar = SUN_DEFAULT_FAR
 
         else:
+            cameraNear = max(bl_light.shadow_buffer_clip_start,
+                    SPOT_SHADOW_MIN_NEAR) # usability improvement
 
-            eeveeCtx = context.scene.eevee
+            # should bl_light.cutoff_distance affect this?
+            cameraFar = calcLightThresholdDist(bl_light,
+                    eeveeCtx.light_threshold)
+            cameraFar = min(cameraFar, MAX_SHADOW_CAM_FAR)
 
-            if bl_light.type == 'SUN':
-                # NOTE: the following values are not relevant because the engine
-                # calculates near/far dynamically for directional shadows
-                cameraNear = SUN_DEFAULT_NEAR
-                cameraFar = SUN_DEFAULT_FAR
+        light['shadow'] = {
+            'enabled': useShadows,
+            'mapSize': int(eeveeCtx.shadow_cascade_size
+                    if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
 
-            else:
-                cameraNear = max(bl_light.shadow_buffer_clip_start,
-                        SPOT_SHADOW_MIN_NEAR) # usability improvement
+            'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
+            'cameraNear': cameraNear,
+            'cameraFar': cameraFar,
+            'radius': bl_light.v3d.shadow.radius,
+            # NOTE: negate bias since the negative is more appropriate in most cases
+            # but keeping it positive in the UI is more user-friendly
+            'bias': -bl_light.shadow_buffer_bias * 0.0018,
+            # empirical value that gives good results
+            'slopeScaledBias': 2.5,
+            'expBias': bl_light.v3d.shadow.esm_exponent,
+        }
 
-                # should bl_light.cutoff_distance affect this?
-                cameraFar = calcLightThresholdDist(bl_light,
-                        eeveeCtx.light_threshold)
-                cameraFar = min(cameraFar, MAX_SHADOW_CAM_FAR)
-
-            light['shadow'] = {
-                'enabled': useShadows,
-                'mapSize': int(eeveeCtx.shadow_cascade_size
-                        if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
-
-                'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
-                'cameraNear': cameraNear,
-                'cameraFar': cameraFar,
-                'radius': bl_light.v3d.shadow.radius,
-                # NOTE: negate bias since the negative is more appropriate in most cases
-                # but keeping it positive in the UI is more user-friendly
-                'bias': -bl_light.shadow_buffer_bias * 0.0018,
-                # empirical value that gives good results
-                'slopeScaledBias': 2.5,
-                'expBias': bl_light.v3d.shadow.esm_exponent,
+        if bl_light.type == 'SUN':
+            light['shadow']['csm'] = {
+                'maxDistance': bl_light.shadow_cascade_max_distance
             }
-
-            if bl_light.type == 'SUN':
-                light['shadow']['csm'] = {
-                    'maxDistance': bl_light.shadow_cascade_max_distance
-                }
 
 
         if bl_light.type == 'POINT' or bl_light.type == 'SPOT' or bl_light.type == 'AREA':
@@ -1307,7 +1310,7 @@ def generateLights(operator, context, exportSettings, glTF):
         lights.append(light)
 
     if len(lights) > 0:
-        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'lights': lights})
+        gltf.appendExtension(glTF, 'S8S_v3d_lights', glTF, {'lights': lights})
 
 
 def generateLightProbes(operator, context, exportSettings, glTF):
@@ -1346,7 +1349,7 @@ def generateLightProbes(operator, context, exportSettings, glTF):
         probes.append(probe)
 
     if len(probes):
-        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'lightProbes': probes})
+        gltf.appendExtension(glTF, 'S8S_v3d_light_probes', glTF, {'lightProbes': probes})
 
 
 def generateMeshes(operator, context, exportSettings, glTF):
@@ -1387,7 +1390,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
         mesh = {}
 
-        v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_mesh_data', mesh)
+        v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_mesh', mesh)
 
         if is_line:
             line_settings = srcDatablock.v3d.line_rendering_settings
@@ -1411,7 +1414,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 primitive['material'] = getOrCreateDefaultMatIndex(glTF)
                 # it's possible that there were no materials in the scene, so
                 # the default one should 'register' the v3d material extension
-                gltf.appendExtension(glTF, 'S8S_v3d_material_data')
+                gltf.appendExtension(glTF, 'S8S_v3d_materials')
             else:
                 printLog('WARNING', 'Material ' + internal_primitive['material'] + ' not found')
             indices = internal_primitive['indices']
@@ -1873,7 +1876,7 @@ def generateClippingPlanes(operator, context, exportSettings, glTF):
         })
 
     if len(planes):
-        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'clippingPlanes': planes})
+        gltf.appendExtension(glTF, 'S8S_v3d_clipping_planes', glTF, {'clippingPlanes': planes})
 
 
 def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
@@ -1890,8 +1893,7 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
     node_matrix = bl_obj.matrix_basis
     generateNodeParameter(node_matrix, node)
 
-    v3dExt = {}
-    node['extensions'] = { 'S8S_v3d_node_data' : v3dExt }
+    v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_node', node)
 
     if bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'META']:
 
@@ -1908,7 +1910,7 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
         else:
             curve = getCurveIndex(glTF, bl_obj.data.name)
             if curve >= 0:
-                v3dExt['curve'] = curve
+                gltf.appendExtension(glTF, 'S8S_v3d_curves', node, {'curve' : curve})
 
     elif bl_obj_type == 'CAMERA':
         # NOTE: possible issues with libraries
@@ -1919,17 +1921,17 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
     elif bl_obj_type == 'LIGHT':
         light = gltf.getLightIndex(glTF, bl_obj.data.name)
         if light >= 0:
-            v3dExt['light'] = light
+            gltf.appendExtension(glTF, 'S8S_v3d_lights', node, {'light' : light})
 
     elif bl_obj_type == 'LIGHT_PROBE':
         probe = gltf.getLightProbeIndex(glTF, bl_obj.data.name)
         if probe >= 0:
-            v3dExt['lightProbe'] = probe
+            gltf.appendExtension(glTF, 'S8S_v3d_light_probes', node, {'lightProbe' : probe})
 
     elif bl_obj_type == 'EMPTY' and bl_obj.v3d.clipping_plane:
         plane = gltf.getClippingPlaneIndex(glTF, bl_obj.name)
         if plane >= 0:
-            v3dExt['clippingPlane'] = plane
+            gltf.appendExtension(glTF, 'S8S_v3d_clipping_planes', node, {'clippingPlane' : plane})
 
     v3dExt['hidden'] = bl_obj.hide_render
     v3dExt['renderOrder'] = bl_obj.v3d.render_order
@@ -1950,7 +1952,7 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
                 break
 
     v3dExt['objectIndex'] = bl_obj.pass_index
-    v3dExt['objectColor'] = getVec3(bl_obj.color)
+    v3dExt['objectColor'] = getVec4(bl_obj.color)
 
     if exportSettings['custom_props']:
         props = createCustomProperty(bl_obj)
@@ -1968,8 +1970,8 @@ def inheritParentProps(node, nodeParent):
     """
     Inherit parent props such as groups and visibility
     """
-    v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node_data')
-    v3dExtParent = gltf.getAssetExtension(nodeParent, 'S8S_v3d_node_data')
+    v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node')
+    v3dExtParent = gltf.getAssetExtension(nodeParent, 'S8S_v3d_node')
 
     if v3dExt and v3dExtParent:
         if v3dExtParent['hidden'] == True:
@@ -2125,7 +2127,7 @@ def generateNodes(operator, context, exportSettings, glTF):
     if len(nodes) > 0:
         glTF['nodes'] = nodes
 
-        gltf.appendExtension(glTF, 'S8S_v3d_node_data')
+        gltf.appendExtension(glTF, 'S8S_v3d_node')
 
     if exportSettings['skins']:
         for bl_obj in filtered_objects_with_dg:
@@ -2155,52 +2157,43 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                     bpy.context.window.scene = obj_scene
 
+
             joints = []
 
-            joints_written = False
+            for bl_bone in bl_obj.pose.bones:
+                node = {}
 
+                correction_matrix_local = bl_bone.bone.matrix_local.copy()
+                if bl_bone.parent is not None:
+                    correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
+
+                matrix_basis = bl_bone.matrix_basis
+                if exportSettings['bake_armature_actions']:
+                    matrix_basis = bl_obj.convert_space(pose_bone=bl_bone, matrix=bl_bone.matrix, from_space='POSE', to_space='LOCAL')
+
+                generateNodeParameter(correction_matrix_local @ matrix_basis, node)
+
+                node['name'] = bl_obj.name + "_" + bl_bone.name
+
+                joints.append(len(nodes))
+                nodes.append(node)
+
+            # add data for the armature itself at the end
+            skeleton = gltf.getNodeIndex(glTF, bl_obj.name)
+            joints.append(skeleton)
 
 
             children_list = list(bl_obj.children)
-
             for bl_check_object in filtered_objects_with_dg:
                 bl_check_armature = findArmature(bl_check_object)
 
                 if bl_check_armature == bl_obj and bl_check_object not in children_list:
                     children_list.append(bl_check_object)
 
-
-
             for bl_object_child in children_list:
-
-                # Property: skin and node
-
-
                 inverse_matrices = []
 
                 for bl_bone in bl_obj.pose.bones:
-
-                    if not joints_written:
-                        node = {}
-
-                        correction_matrix_local = bl_bone.bone.matrix_local.copy()
-
-                        if bl_bone.parent is not None:
-                            correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
-
-                        matrix_basis = bl_bone.matrix_basis
-
-                        if exportSettings['bake_armature_actions']:
-                            matrix_basis = bl_obj.convert_space(pose_bone=bl_bone, matrix=bl_bone.matrix, from_space='POSE', to_space='LOCAL')
-
-                        generateNodeParameter(correction_matrix_local @ matrix_basis, node)
-
-                        node['name'] = bl_obj.name + "_" + bl_bone.name
-
-                        joints.append(len(nodes))
-
-                        nodes.append(node)
-
                     bind_shape_matrix = bl_obj.matrix_world.inverted() @ bl_object_child.matrix_world
                     inverse_bind_matrix = convertSwizzleMatrix(bl_bone.bone.matrix_local.inverted() @ bind_shape_matrix)
 
@@ -2208,20 +2201,12 @@ def generateNodes(operator, context, exportSettings, glTF):
                         for row in range(0, 4):
                             inverse_matrices.append(inverse_bind_matrix[row][column])
 
-                # add data for the armature itself at the end
-                skeleton = gltf.getNodeIndex(glTF, bl_obj.name)
-
-                if not joints_written:
-                    joints.append(skeleton)
-
                 armature_inverse_bind_matrix = convertSwizzleMatrix(
                         bl_obj.matrix_world.inverted() @ bl_object_child.matrix_world)
 
                 for column in range(0, 4):
                     for row in range(0, 4):
                         inverse_matrices.append(armature_inverse_bind_matrix[row][column])
-
-                joints_written = True
 
                 skin = {}
 
@@ -2280,7 +2265,7 @@ def generateNodes(operator, context, exportSettings, glTF):
 
         # constraints
 
-        v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node_data')
+        v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node')
         if v3dExt and ((exportSettings['export_constraints'] and len(bl_obj.constraints)) or
                        objHasFixOrthoZoom(bl_obj) or objHasCanvasFitParams(bl_obj) or
                        bl_obj.v3d.canvas_break_enabled):
@@ -2293,7 +2278,7 @@ def generateNodes(operator, context, exportSettings, glTF):
                 bl_obj.data.v3d.controls == 'FIRST_PERSON' and
                 bl_obj.data.v3d.fps_collision_material):
 
-            v3d_cam_data = gltf.getAssetExtension(glTF['cameras'][node['camera']], 'S8S_v3d_camera_data')
+            v3d_cam_data = gltf.getAssetExtension(glTF['cameras'][node['camera']], 'S8S_v3d_camera')
             if v3d_cam_data:
                 mat = gltf.getMaterialIndex(glTF, bl_obj.data.v3d.fps_collision_material.name)
                 if mat >= 0:
@@ -2453,16 +2438,16 @@ def nodeIsCamera(node):
     return 'camera' in node
 
 def nodeIsLamp(node):
-    return ('extensions' in node and 'S8S_v3d_node_data' in node['extensions']
-            and 'light' in node['extensions']['S8S_v3d_node_data'])
+    return ('extensions' in node and 'S8S_v3d_lights' in node['extensions']
+            and 'light' in node['extensions']['S8S_v3d_lights'])
 
 def nodeIsCurve(node):
-    return ('extensions' in node and 'S8S_v3d_node_data' in node['extensions']
-            and 'curve' in node['extensions']['S8S_v3d_node_data'])
+    return ('extensions' in node and 'S8S_v3d_curves' in node['extensions']
+            and 'curve' in node['extensions']['S8S_v3d_curves'])
 
 def nodeIsPlaneReflProbe(node):
-    return ('extensions' in node and 'S8S_v3d_node_data' in node['extensions']
-            and 'lightProbe' in node['extensions']['S8S_v3d_node_data'])
+    return ('extensions' in node and 'S8S_v3d_light_probes' in node['extensions']
+            and 'lightProbe' in node['extensions']['S8S_v3d_light_probes'])
 
 
 def generateImages(operator, context, exportSettings, glTF):
@@ -2475,60 +2460,76 @@ def generateImages(operator, context, exportSettings, glTF):
     images = []
 
     for bl_image in filtered_images:
-
-        image = {}
-
-        uri = getImageExportedURI(exportSettings, bl_image)
-
-        if exportSettings['format'] == 'ASCII':
-            # use external file
-
-            old_path = bl_image.filepath_from_user()
-            new_path = norm(exportSettings['filedirectory'] + uri)
-
-            if (bl_image.is_dirty or bl_image.packed_file is not None
-                    or not os.path.isfile(old_path)):
-                # always extract data for dirty/packed/missing images,
-                # because they can differ from an external source's data
-
-                img_data = extractImageBindata(bl_image, context.scene)
-
-                with open(new_path, 'wb') as f:
-                    f.write(img_data)
-
-            elif old_path != new_path:
-                # copy an image to a new location
-
-                if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG'
-                        and bl_image.file_format != 'BMP' and bl_image.file_format != 'HDR'):
-                    # need conversion to PNG
-
-                    img_data = extractImageBindataPNG(bl_image, context.scene)
-
-                    with open(new_path, 'wb') as f:
-                        f.write(img_data)
-                else:
-                    shutil.copyfile(old_path, new_path)
-
-            image['uri'] = uri
-
-        else:
-            # store image in glb
-
-            img_data = extractImageBindata(bl_image, context.scene)
-
-            bufferView = gltf.generateBufferView(glTF, exportSettings['binary'], img_data, '', 0)
-
-            image['mimeType'] = getImageExportedMimeType(bl_image)
-            image['bufferView'] = bufferView
-
-        exportSettings['uri_data']['uri'].append(uri)
-        exportSettings['uri_data']['bl_datablocks'].append(bl_image)
+        try:
+            image = createImage(bl_image, context, exportSettings, glTF)
+        except pu.convert.CompressionFailed:
+            bl_image['compression_error_status'] = 1
+            # try again without compression
+            image = createImage(bl_image, context, exportSettings, glTF)
 
         images.append(image)
 
     if len (images) > 0:
         glTF['images'] = images
+
+def createImage(bl_image, context, exportSettings, glTF):
+
+    image = {}
+
+    uri = getImageExportedURI(exportSettings, bl_image)
+
+    if exportSettings['format'] == 'ASCII':
+
+        old_path = bl_image.filepath_from_user()
+        # try to reuse external file if new_path == old_path
+        new_path = norm(exportSettings['filedirectory'] + uri)
+
+        if (bl_image.is_dirty or bl_image.packed_file is not None
+                or not os.path.isfile(old_path)):
+            # always extract data for dirty/packed/missing images,
+            # because they can differ from an external source's data
+
+            img_data = extractImageBindata(bl_image, context.scene, exportSettings)
+
+            with open(new_path, 'wb') as f:
+                f.write(img_data)
+
+        elif os.path.normcase(old_path) != os.path.normcase(new_path):
+            # copy an image to a new location
+
+            if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG'
+                    and bl_image.file_format != 'BMP' and bl_image.file_format != 'HDR'):
+                # need conversion to PNG
+
+                img_data = extractImageBindata(bl_image, context.scene, exportSettings)
+
+                with open(new_path, 'wb') as f:
+                    f.write(img_data)
+
+            elif imgNeedsCompression(bl_image, exportSettings):
+                if bl_image.file_format == 'HDR':
+                    pu.manager.AppManagerConn.compressLZMA(old_path, dstPath=new_path)
+                else:
+                    pu.convert.compressKTX2(old_path, dstPath=new_path, method=bl_image.v3d.compression_method)
+            else:
+                shutil.copyfile(old_path, new_path)
+
+        image['uri'] = uri
+
+    else:
+        # store image in glb
+
+        img_data = extractImageBindata(bl_image, context.scene, exportSettings)
+
+        bufferView = gltf.generateBufferView(glTF, exportSettings['binary'], img_data, '', 0)
+
+        image['mimeType'] = getImageExportedMimeType(bl_image, exportSettings)
+        image['bufferView'] = bufferView
+
+    exportSettings['uri_cache']['uri'].append(uri)
+    exportSettings['uri_cache']['bl_datablocks'].append(bl_image)
+
+    return image
 
 
 def generateTextures(operator, context, exportSettings, glTF):
@@ -2539,8 +2540,6 @@ def generateTextures(operator, context, exportSettings, glTF):
     filtered_textures = exportSettings['filtered_textures']
 
     textures = []
-
-    v3dExt_used = False
 
     # shader node textures or texture slots
     for bl_tex in filtered_textures:
@@ -2585,15 +2584,16 @@ def generateTextures(operator, context, exportSettings, glTF):
         # 'source' isn't required but must be >=0 according to GLTF 2.0 spec.
         img_index = getImageIndex(exportSettings, uri)
         if img_index >= 0:
-            texture['source'] = img_index
+            if os.path.splitext(uri)[1] == '.ktx2':
+                gltf.appendExtension(glTF, 'KHR_texture_basisu', texture, { 'source' : img_index })
+            elif os.path.splitext(uri)[1] in ['.hdr', '.xz']: # HDR or compressed HDR
+                v3dExt['source'] = img_index
+            else:
+                texture['source'] = img_index
 
-        texture['extensions'] = { 'S8S_v3d_texture_data' : v3dExt }
-        v3dExt_used = True
+        gltf.appendExtension(glTF, 'S8S_v3d_texture', texture, v3dExt)
 
         textures.append(texture)
-
-    if v3dExt_used:
-        gltf.appendExtension(glTF, 'S8S_v3d_texture_data')
 
     if len (textures) > 0:
         glTF['textures'] = textures
@@ -2607,7 +2607,7 @@ def generateNodeGraphs(operator, context, exportSettings, glTF):
     filtered_node_groups = exportSettings['filtered_node_groups']
 
     if len(filtered_node_groups) > 0:
-        ext = gltf.appendExtension(glTF, 'S8S_v3d_data', glTF)
+        ext = gltf.appendExtension(glTF, 'S8S_v3d_materials', glTF)
         graphs = ext['nodeGraphs'] = []
 
         # store group names prior to processing them in case of group multiple
@@ -2668,7 +2668,7 @@ def generateFonts(operator, context, exportSettings, glTF):
         fonts.append(font)
 
     if len(fonts) > 0:
-        gltf.appendExtension(glTF, 'S8S_v3d_data', glTF, {'fonts': fonts})
+        gltf.appendExtension(glTF, 'S8S_v3d_curves', glTF, {'fonts': fonts})
 
 def generateCurves(operator, context, exportSettings, glTF):
     """
@@ -2753,7 +2753,7 @@ def generateCurves(operator, context, exportSettings, glTF):
         curves.append(curve)
 
     if len(curves) > 0:
-        ext = gltf.appendExtension(glTF, 'S8S_v3d_data', glTF)
+        ext = gltf.appendExtension(glTF, 'S8S_v3d_curves', glTF)
         ext['curves'] = curves
 
 def generateMaterials(operator, context, exportSettings, glTF):
@@ -2765,14 +2765,8 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
     materials = []
 
-    v3dExtUsed = False
-
     for bl_mat in filtered_materials:
         material = {}
-
-        v3dExt = {}
-        material['extensions'] = { 'S8S_v3d_material_data' : v3dExt }
-        v3dExtUsed = True
 
         mat_type = getMaterialType(bl_mat)
 
@@ -2780,120 +2774,7 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         if mat_type == 'PBR':
             for bl_node in bl_mat.node_tree.nodes:
-                if (isinstance(bl_node, bpy.types.ShaderNodeGroup) and
-                    bl_node.node_tree.name.startswith('Verge3D PBR')):
-
-                    alpha = 1.0
-
-                    material['pbrMetallicRoughness'] = {}
-
-                    pbrMetallicRoughness = material['pbrMetallicRoughness']
-
-                    index = getTextureIndexNode(exportSettings, glTF, 'BaseColor', bl_node)
-                    if index >= 0:
-                        baseColorTexture = {
-                            'index' : index
-                        }
-
-                        texCoord = getTexcoordIndex(glTF, 'BaseColor', bl_node)
-                        if texCoord > 0:
-                            baseColorTexture['texCoord'] = texCoord
-
-                        pbrMetallicRoughness['baseColorTexture'] = baseColorTexture
-
-                    baseColorFactor = getVec4(bl_node.inputs['BaseColorFactor'].default_value, [1.0, 1.0, 1.0, 1.0])
-                    if baseColorFactor[0] != 1.0 or baseColorFactor[1] != 1.0 or baseColorFactor[2] != 1.0 or baseColorFactor[3] != 1.0:
-                        pbrMetallicRoughness['baseColorFactor'] = baseColorFactor
-                        alpha = baseColorFactor[3]
-
-
-                    metallicFactor = getScalar(bl_node.inputs['MetallicFactor'].default_value, 1.0)
-                    if metallicFactor != 1.0:
-                        pbrMetallicRoughness['metallicFactor'] = metallicFactor
-
-                    roughnessFactor = getScalar(bl_node.inputs['RoughnessFactor'].default_value, 1.0)
-                    if roughnessFactor != 1.0:
-                        pbrMetallicRoughness['roughnessFactor'] = roughnessFactor
-
-
-                    index = getTextureIndexNode(exportSettings, glTF, 'MetallicRoughness', bl_node)
-                    if index >= 0:
-                        metallicRoughnessTexture = {
-                            'index' : index
-                        }
-
-                        texCoord = getTexcoordIndex(glTF, 'MetallicRoughness', bl_node)
-                        if texCoord > 0:
-                            metallicRoughnessTexture['texCoord'] = texCoord
-
-                        pbrMetallicRoughness['metallicRoughnessTexture'] = metallicRoughnessTexture
-
-
-                    index = getTextureIndexNode(exportSettings, glTF, 'Emissive', bl_node)
-                    if index >= 0:
-                        emissiveTexture = {
-                            'index' : index
-                        }
-
-                        texCoord = getTexcoordIndex(glTF, 'Emissive', bl_node)
-                        if texCoord > 0:
-                            emissiveTexture['texCoord'] = texCoord
-
-                        material['emissiveTexture'] = emissiveTexture
-
-
-                    emissiveFactor = getVec3(bl_node.inputs['EmissiveFactor'].default_value, [0.0, 0.0, 0.0])
-                    if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
-                        material['emissiveFactor'] = emissiveFactor
-
-
-                    index = getTextureIndexNode(exportSettings, glTF, 'Normal', bl_node)
-                    if index >= 0:
-                        normalTexture = {
-                            'index' : index
-                        }
-
-                        texCoord = getTexcoordIndex(glTF, 'Normal', bl_node)
-                        if texCoord > 0:
-                            normalTexture['texCoord'] = texCoord
-
-                        scale = getScalar(bl_node.inputs['NormalScale'].default_value, 1.0)
-
-                        if scale != 1.0:
-                            normalTexture['scale'] = scale
-
-                        material['normalTexture'] = normalTexture
-
-
-                    if len(bl_node.inputs['Occlusion'].links) > 0:
-                        index = getTextureIndexNode(exportSettings, glTF, 'Occlusion', bl_node)
-                        if index >= 0:
-                            occlusionTexture = {
-                                'index' : index
-                            }
-
-                            texCoord = getTexcoordIndex(glTF, 'Occlusion', bl_node)
-                            if texCoord > 0:
-                                occlusionTexture['texCoord'] = texCoord
-
-                            strength = getScalar(bl_node.inputs['OcclusionStrength'].default_value, 1.0)
-
-                            if strength != 1.0:
-                                occlusionTexture['strength'] = strength
-
-                            material['occlusionTexture'] = occlusionTexture
-
-                    if bl_mat.v3d.render_side == 'DOUBLE':
-                        material['doubleSided'] = True
-
-                    # Use Color_0
-
-                    if getScalar(bl_node.inputs['Use COLOR_0'].default_value, 0.0) < 0.5:
-                        exportSettings['use_no_color'].append(bl_mat.name)
-
-
-                elif isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled):
-
+                if isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled):
                     material['pbrMetallicRoughness'] = {}
                     pbrMetallicRoughness = material['pbrMetallicRoughness']
 
@@ -3021,6 +2902,8 @@ def generateMaterials(operator, context, exportSettings, glTF):
         else:
             # Basic and Node-based materials
 
+            v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_materials', material)
+
             if matHasBlendBackside(bl_mat):
                 v3dExt['depthWrite'] = False
                 material['doubleSided'] = True
@@ -3039,13 +2922,36 @@ def generateMaterials(operator, context, exportSettings, glTF):
             if bl_mat.v3d.dithering == True:
                 v3dExt['dithering'] = bl_mat.v3d.dithering
 
-            if mat_type == 'CYCLES':
+            if mat_type == 'EEVEE':
                 v3dExt['nodeGraph'] = extractNodeGraph(bl_mat.node_tree,
                         exportSettings, glTF)
             else:
                 v3dExt['nodeGraph'] = composeNodeGraph(bl_mat, exportSettings, glTF)
 
-        v3dExt['materialIndex'] = bl_mat.pass_index
+            v3dExt['materialIndex'] = bl_mat.pass_index
+
+            if matIsBlend(bl_mat):
+
+                if bl_mat.blend_method == 'ADD':
+                    blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE')
+                elif bl_mat.blend_method == 'BLEND':
+                    blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE_MINUS_SRC_ALPHA')
+                elif bl_mat.blend_method == 'MULTIPLY':
+                    blendMode = gltf.createBlendMode('FUNC_ADD', 'DST_COLOR', 'ONE_MINUS_SRC_ALPHA')
+
+                v3dExt['blendMode'] = blendMode
+
+            if bl_mat.blend_method == 'HASHED':
+                v3dExt['alphaToCoverage'] = True
+
+            # disable GTAO for BLEND materials due to implementation issues
+            v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
+
+            # receive
+            if exportSettings['use_shadows']:
+                # useShadows is assigned on objects not materials
+                v3dExt['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
+
 
         alphaMode = 'OPAQUE'
 
@@ -3060,28 +2966,6 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         material['name'] = bl_mat.name
 
-        if matIsBlend(bl_mat):
-
-            if bl_mat.blend_method == 'ADD':
-                blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE')
-            elif bl_mat.blend_method == 'BLEND':
-                blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE_MINUS_SRC_ALPHA')
-            elif bl_mat.blend_method == 'MULTIPLY':
-                blendMode = gltf.createBlendMode('FUNC_ADD', 'DST_COLOR', 'ONE_MINUS_SRC_ALPHA')
-
-            v3dExt['blendMode'] = blendMode
-
-        if bl_mat.blend_method == 'HASHED':
-            v3dExt['alphaToCoverage'] = True
-
-        # disable GTAO for BLEND materials due to implementation issues
-        v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
-
-        # receive
-        if exportSettings['use_shadows']:
-            # useShadows is assigned on objects not materials
-            v3dExt['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
-
         if exportSettings['custom_props']:
             props = createCustomProperty(bl_mat)
 
@@ -3092,20 +2976,16 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         materials.append(material)
 
-
     if len (materials) > 0:
-        if v3dExtUsed:
-            gltf.appendExtension(glTF, 'S8S_v3d_material_data')
-
-
         glTF['materials'] = materials
+
 
 def getPostprocessingEffects(bl_scene):
     ppEffects = []
 
     if bl_scene.eevee.use_gtao:
         ppEffects.append({
-            'type': 'ao',
+            'type': 'gtao',
             'distance': bl_scene.eevee.gtao_distance,
             'factor': bl_scene.eevee.gtao_factor,
             'precision': bl_scene.eevee.gtao_quality,
@@ -3165,7 +3045,7 @@ def generateScenes(operator, context, exportSettings, glTF):
             scene['nodes'] = nodes
 
         v3dExt = {}
-        scene['extensions'] = { 'S8S_v3d_scene_data' : v3dExt }
+        scene['extensions'] = { 'S8S_v3d_scene' : v3dExt }
 
         if bl_scene.world:
             world_mat = gltf.getMaterialIndex(glTF, WORLD_NODE_MAT_NAME.substitute(
@@ -3177,7 +3057,7 @@ def generateScenes(operator, context, exportSettings, glTF):
 
         if exportSettings['use_shadows']:
             v3dExt['shadowMap'] = {
-                'type': 'ESM' if bpy.app.version < (2,81,0) else exportSettings['shadow_map_type'],
+                'type': exportSettings['shadow_map_type'],
                 'renderReverseSided' : True if exportSettings['shadow_map_side'] == 'BACK' else False,
                 'renderSingleSided' : False if exportSettings['shadow_map_side'] == 'BOTH' else True,
                 'esmDistanceScale': exportSettings['esm_distance_scale']
@@ -3219,7 +3099,7 @@ def generateScenes(operator, context, exportSettings, glTF):
     if len(scenes) > 0:
         glTF['scenes'] = scenes
 
-        gltf.appendExtension(glTF, 'S8S_v3d_scene_data')
+        gltf.appendExtension(glTF, 'S8S_v3d_scene')
 
 def generateScene(operator, context, exportSettings, glTF):
     """
@@ -3241,7 +3121,7 @@ def generateFinish(operator, context, exportSettings, glTF):
             if nGraph is not None:
                 nodeGraphReplaceTexCoordObject(nGraph, glTF)
 
-    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_data')
+    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_materials')
     if v3dExt is not None and 'nodeGraphs' in v3dExt:
         for nGraph in v3dExt['nodeGraphs']:
             nodeGraphReplaceTexCoordObject(nGraph, glTF)

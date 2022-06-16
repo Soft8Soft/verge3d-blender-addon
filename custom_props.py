@@ -77,6 +77,13 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    compress_textures: bpy.props.BoolProperty(
+        name = 'Compress Textures',
+        description = 'Store textures in KTX2 compression format',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
     optimize_attrs: bpy.props.BoolProperty(
         name = 'Optimize Mesh Attributes',
         description = 'Remove unused geometry attributes (such as tangents) from exported meshes',
@@ -710,30 +717,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
 
 
 class V3DShadowSettings(bpy.types.PropertyGroup):
-    """Shadow settings are part of lamp settngs"""
-    bias: bpy.props.FloatProperty(
-        name = 'Bias',
-        description = 'Shadow map bias',
-        default = 0.0015,
-        precision = 4,
-        step = 0.01,
-        options = NO_ANIM_OPTS
-    )
-
-    map_size: bpy.props.EnumProperty(
-        name = 'Map Size',
-        description = 'Shadow map size in pixels',
-        default = '1024',
-        items = [
-            ('4096', '4096', '4096 pixels'),
-            ('2048', '2048', '2048 pixels'),
-            ('1024', '1024', '1024 pixels'),
-            ('512', '512', '512 pixels'),
-            ('256', '256', '256 pixels'),
-            ('128', '128', '128 pixels')
-        ],
-        options = NO_ANIM_OPTS
-    )
+    """Shadow settings are part of light settings"""
 
     radius: bpy.props.FloatProperty(
         name = 'Radius',
@@ -754,43 +738,11 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    camera_near: bpy.props.FloatProperty(
-        name = 'Near',
-        description = 'Shadow map camera near distance',
-        default = 0.2,
-        min = 0,
-        options = NO_ANIM_OPTS
-    )
-    camera_far: bpy.props.FloatProperty(
-        name = 'Far',
-        description = 'Shadow map camera far distance',
-        default = 100,
-        min = 0,
-        options = NO_ANIM_OPTS
-    )
-    camera_size: bpy.props.FloatProperty(
-        name = 'Size',
-        description = 'Shadow map camera size for directional light',
-        default = 10,
-        min = 0,
-        options = NO_ANIM_OPTS
-    )
-    camera_fov: bpy.props.FloatProperty(
-        name = 'FOV',
-        description = 'Shadow map camera field of view for spot light',
-        default = math.pi/2,
-        min = 0,
-        subtype = 'ANGLE',
-        unit = 'ROTATION',
-        options = NO_ANIM_OPTS
-    )
-
 class V3DLightSettings(bpy.types.PropertyGroup):
     shadow: bpy.props.PointerProperty(
         name = 'Shadow Settings',
         type = V3DShadowSettings
     )
-
 
 class V3DMaterialSettings(bpy.types.PropertyGroup):
 
@@ -869,6 +821,20 @@ class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
         default = 1,
         precision = 2,
         step = 0.01,
+        options = NO_ANIM_OPTS
+    )
+
+class V3DImageSettings(bpy.types.PropertyGroup):
+    compression_method: bpy.props.EnumProperty(
+        name = 'Compression Method',
+        description = 'Texture compression method',
+        default = 'AUTO',
+        items = [
+            ('AUTO', 'Auto', 'Detect and apply best compression algorithm'),
+            ('UASTC', 'UASTC', 'Force UASTC compression algorithm which offers higher quality'),
+            ('ETC1S', 'ETC1S', 'Use ETC1S compression algorithm which offers better compression'),
+            ('DISABLE', 'Disable', 'Disable texture compression'),
+        ],
         options = NO_ANIM_OPTS
     )
 
@@ -960,6 +926,7 @@ def register():
     bpy.utils.register_class(V3DMaterialSettings)
     bpy.utils.register_class(V3DTextureSettings)
     bpy.utils.register_class(V3DTextureNoiseSettings)
+    bpy.utils.register_class(V3DImageSettings)
     bpy.utils.register_class(V3DLineRenderingSettings)
     bpy.utils.register_class(V3DCurveSettings)
     bpy.utils.register_class(V3DMeshSettings)
@@ -1010,6 +977,11 @@ def register():
         type = V3DTextureNoiseSettings
     )
 
+    bpy.types.Image.v3d = bpy.props.PointerProperty(
+        name = "Verge3D image settings",
+        type = V3DImageSettings
+    )
+
     bpy.types.Curve.v3d = bpy.props.PointerProperty(
         name = "Verge3D curve settings",
         type = V3DCurveSettings
@@ -1032,6 +1004,7 @@ def register():
 
 
 def unregister():
+    bpy.utils.unregister_class(V3DImageSettings)
     bpy.utils.unregister_class(V3DTextureSettings)
     bpy.utils.unregister_class(V3DTextureNoiseSettings)
     bpy.utils.unregister_class(V3DMaterialSettings)

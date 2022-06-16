@@ -397,20 +397,20 @@ def filterApply(exportSettings):
         if group.users == 0:
             continue
 
-        # only groups used by 'CYCLES' materials
+        # only groups used by 'EEVEE' materials
         for bl_mat in filtered_materials:
             mat_type = getMaterialType(bl_mat)
-            if mat_type == 'CYCLES':
+            if mat_type == 'EEVEE':
                 if (group not in filtered_node_groups and
                         group in extractMaterialNodeTrees(bl_mat.node_tree)):
                     filtered_node_groups.append(group)
 
     exportSettings['filtered_node_groups'] = filtered_node_groups
 
+
     filtered_textures = []
 
     for bl_mat in filtered_materials:
-        # PBR, CYCLES materials
         if bl_mat.node_tree and bl_mat.use_nodes:
             for bl_node in bl_mat.node_tree.nodes:
                 if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and
@@ -433,16 +433,13 @@ def filterApply(exportSettings):
 
     exportSettings['filtered_textures'] = filtered_textures
 
+
     filtered_images = []
 
     for bl_texture in filtered_textures:
-
-        img = (getTexImage(bl_texture) if isinstance(bl_texture,
-                (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment))
-                else getTexImage(bl_texture.texture))
-
-        if (img is not None and img not in filtered_images and img.users != 0
-                and img.size[0] > 0 and img.size[1] > 0):
+        img = getTexImage(bl_texture)
+        if img not in filtered_images:
+            img['compression_error_status'] = 0 # no error
             filtered_images.append(img)
 
     exportSettings['filtered_images'] = filtered_images

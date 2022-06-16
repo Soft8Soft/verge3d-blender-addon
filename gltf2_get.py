@@ -41,11 +41,11 @@ def getImageIndex(exportSettings, uri):
     Return the image index in the glTF array.
     """
 
-    if exportSettings['uri_data'] is None:
+    if exportSettings['uri_cache'] is None:
         return -1
 
-    if uri in exportSettings['uri_data']['uri']:
-        return exportSettings['uri_data']['uri'].index(uri)
+    if uri in exportSettings['uri_cache']['uri']:
+        return exportSettings['uri_cache']['uri'].index(uri)
 
     return -1
 
@@ -57,7 +57,7 @@ def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
     the same name but with different images.
     """
 
-    if (exportSettings['uri_data'] is None or glTF.get('textures') is None
+    if (exportSettings['uri_cache'] is None or glTF.get('textures') is None
             or bl_texture is None):
         return -1
 
@@ -66,19 +66,32 @@ def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
         return -1
 
     uri = getImageExportedURI(exportSettings, bl_image)
-    image_uri = exportSettings['uri_data']['uri']
+    image_uri = exportSettings['uri_cache']['uri']
     tex_name = getTextureName(bl_texture)
 
     index = 0
     for texture in glTF['textures']:
-        if 'source' in texture and 'name' in texture:
-            current_image_uri = image_uri[texture['source']]
+        source = getTextureSource(texture)
+        if source is not None and 'name' in texture:
+            current_image_uri = image_uri[source]
             if current_image_uri == uri and texture['name'] == tex_name:
                 return index
 
         index += 1
 
     return -1
+
+def getTextureSource(tex):
+    """texture source can also be in extension"""
+
+    if 'source' in tex:
+        return tex['source']
+    else:
+        ext = gltf.getAssetExtension(tex, 'KHR_texture_basisu')
+        if ext:
+            return ext['source']
+        else:
+            return None
 
 def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
     """
@@ -188,21 +201,16 @@ def getTexcoordIndex(glTF, name, shaderNode):
 
 def getMaterialType(bl_mat):
     """
-    get blender material type: PBR, CYCLES, BASIC
+    get blender material type: PBR, EEVEE, BASIC
     """
 
     if not bl_mat.use_nodes or bl_mat.node_tree == None:
         return 'BASIC'
 
-    for bl_node in bl_mat.node_tree.nodes:
-        if (isinstance(bl_node, bpy.types.ShaderNodeGroup) and
-                bl_node.node_tree.name.startswith('Verge3D PBR')):
-            return 'PBR'
-
     if bl_mat.v3d.gltf_compat:
         return 'PBR'
 
-    return 'CYCLES'
+    return 'EEVEE'
 
 def getSkinIndex(glTF, name, index_offset):
     """
@@ -246,7 +254,7 @@ def getCurveIndex(glTF, name):
     Return the curve index in the glTF array.
     """
 
-    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_data')
+    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_curves')
 
     if v3dExt == None:
         return -1
@@ -270,7 +278,7 @@ def getNodeGraphIndex(glTF, name):
     Return the node graph index in the glTF array.
     """
 
-    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_data')
+    v3dExt = gltf.getAssetExtension(glTF, 'S8S_v3d_materials')
 
     if v3dExt == None:
         return -1
@@ -292,39 +300,46 @@ def getImageExportedURI(exportSettings, bl_image):
     """
     Return exported URI for a blender image.
     """
-
     name, ext = os.path.splitext(bpy.path.basename(bl_image.filepath))
 
-    uri_name = name if name != '' else 'v3d_exported_image_' + bl_image.name
+    name = name if name != '' else 'v3d_exported_image_' + bl_image.name.lower().replace(' ', '_')
 
-    uri_ext = ''
-    if (bl_image.file_format == 'JPEG'
+    if imgNeedsCompression(bl_image, exportSettings):
+        if bl_image.file_format == 'HDR':
+            ext = '.hdr.xz'
+        else:
+            ext = '.ktx2'
+    elif (bl_image.file_format == 'JPEG'
             or bl_image.file_format == 'BMP'
             or bl_image.file_format == 'HDR'
             or bl_image.file_format == 'PNG'):
-        if ext != '':
-            uri_ext = ext
+        if ext == '':
+            ext = '.' + bl_image.file_format.lower()
     else:
-        uri_ext = '.png'
+        ext = '.png'
 
-    uri_data = exportSettings['uri_data']
+    unique_uri = name + ext
+    uri_cache = exportSettings['uri_cache']
 
-    unique_uri = uri_name + uri_ext
     i = 0
-    while unique_uri in uri_data['uri']:
-
-        index = uri_data['uri'].index(unique_uri)
-        if uri_data['bl_datablocks'][index] == bl_image:
+    while unique_uri in uri_cache['uri']:
+        index = uri_cache['uri'].index(unique_uri)
+        if uri_cache['bl_datablocks'][index] == bl_image:
             break
 
         i += 1
-        unique_uri = uri_name + '_' + integerToBlSuffix(i) + uri_ext
+        unique_uri = name + '_' + integerToBlSuffix(i) + ext
 
     return unique_uri
 
-def getImageExportedMimeType(bl_image):
+def getImageExportedMimeType(bl_image, exportSettings):
 
-    if bl_image.file_format == 'JPEG':
+    if imgNeedsCompression(bl_image, exportSettings):
+        if bl_image.file_format == 'HDR':
+            return 'application/x-xz'
+        else:
+            return 'image/ktx2'
+    elif bl_image.file_format == 'JPEG':
         return 'image/jpeg'
     elif bl_image.file_format == 'BMP':
         return 'image/bmp'
@@ -387,27 +402,6 @@ def getScalar(default_value, init_value = 0.0):
         return return_value
 
     return_value = default_value
-
-    return return_value
-
-
-def getVec2(default_value, init_value = [0.0, 0.0]):
-    """
-    Return vec2 with a given default/fallback value.
-    """
-
-    return_value = init_value.copy()
-
-    if default_value is None or len(default_value) < 2:
-        return return_value
-
-    index = 0
-    for number in default_value:
-        return_value[index] = number
-
-        index += 1
-        if index == 2:
-            return return_value
 
     return return_value
 
@@ -499,21 +493,16 @@ def getOrCreateDefaultMatIndex(glTF):
         if 'materials' not in glTF:
             glTF['materials'] = []
 
-        glTF['materials'].append(createDefaultMaterialCycles())
+        glTF['materials'].append(createDefaultMaterial())
 
         def_idx = len(glTF['materials']) - 1
 
     return def_idx
 
-def createDefaultMaterialCycles():
+def createDefaultMaterial():
     return {
-        "emissiveFactor" : [
-            0.0,
-            0.0,
-            0.0
-        ],
         "extensions" : {
-            "S8S_v3d_material_data" : {
+            "S8S_v3d_materials" : {
                 "nodeGraph" : {
                     "edges" : [
                         {
@@ -528,7 +517,7 @@ def createDefaultMaterialCycles():
                             "inputs" : [
                                 [ 0, 0, 0, 0 ],
                                 [ 0, 0, 0, 0 ],
-                                0.0
+                                [ 0, 0, 0 ]
                             ],
                             "is_active_output" : True,
                             "name" : "Material Output",
