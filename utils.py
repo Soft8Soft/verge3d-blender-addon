@@ -524,4 +524,3 @@ def objHasCanvasFitParams(bl_obj):
         return True
     else:
         return False
-

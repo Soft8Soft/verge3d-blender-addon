@@ -81,13 +81,17 @@ def generateAsset(operator, context, exportSettings, glTF):
 
 def generateAnimChannel(glTF, blObject, samplerName, path, nodeName, samplers, channels):
 
-    channel = gltf.createAnimChannel(getIndex(samplers, samplerName), gltf.getNodeIndex(glTF, nodeName), path)
-    # to resolve default animation params
-    channel['bl_obj'] = blObject
+    idx = getIndex(samplers, samplerName)
+    if idx > -1:
+        channel = gltf.createAnimChannel(idx, gltf.getNodeIndex(glTF, nodeName), path)
+        # to resolve default animation params
+        channel['bl_obj'] = blObject
 
-    channels.append(channel)
+        channels.append(channel)
 
-    return channel
+        return channel
+    else:
+        return None
 
 def generateAnimationsParameter(operator,
                   context,
@@ -103,7 +107,8 @@ def generateAnimationsParameter(operator,
                   rotation_mode,
                   matrix_correction,
                   matrix_basis,
-                  is_morph_data):
+                  is_morph_data,
+                  constraint_name=None):
     """
     Helper function for storing animation parameters.
     """
@@ -119,6 +124,7 @@ def generateAnimationsParameter(operator,
     rotation_quaternion = [None, None, None, None]
     scale = [None, None, None]
     value = []
+    eval_time = [] # follow path constraint animation
     # for material node animation
     default_value = [None]
     energy = [None]
@@ -131,7 +137,8 @@ def generateAnimationsParameter(operator,
         'scale' : scale,
         'value' : value,
         'default_value': default_value,
-        'energy': energy
+        'energy': energy,
+        'eval_time': eval_time
     }
 
     node_type = 'NODE'
@@ -172,15 +179,18 @@ def generateAnimationsParameter(operator,
 
         data_path = getAnimParam(bl_fcurve.data_path)
 
-        if (data_path not in ['location', 'rotation_axis_angle', 'rotation_euler',
-                'rotation_quaternion', 'scale', 'value', 'default_value', 'energy']):
+        if (data_path not in ['location', 'rotation_axis_angle',
+                'rotation_euler', 'rotation_quaternion', 'scale',
+                'value', 'default_value', 'energy', 'eval_time']):
             continue
 
-        if data_path != 'value':
+        if data_path not in ['value', 'eval_time']:
             data[data_path][bl_fcurve.array_index] = bl_fcurve
         else:
             data[data_path].append(bl_fcurve)
 
+    # same for all animations we export currently
+    componentType = 'FLOAT'
 
     # create location sampler
 
@@ -190,15 +200,9 @@ def generateAnimationsParameter(operator,
 
         if getIndex(samplers, sampler_name) == -1:
 
-            sampler = {}
-
             interpolation = animateGetInterpolation(exportSettings, location)
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
-
-            sampler['interpolation'] = interpolation
-            if interpolation == 'CONVERSION_NEEDED':
-                sampler['interpolation'] = 'LINEAR'
 
             translation_data, in_tangent_data, out_tangent_data = animateLocation(
                     exportSettings, location, interpolation, node_type, used_node_name,
@@ -229,27 +233,28 @@ def generateAnimationsParameter(operator,
                         values.append(out_tangent_data[key][i])
 
 
-            componentType = "FLOAT"
             count = len(final_keys)
-            type = "SCALAR"
+            if count:
+                sampler = {}
 
-            input = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    final_keys, componentType, count, type, '')
+                sampler['interpolation'] = interpolation
+                if interpolation == 'CONVERSION_NEEDED':
+                    sampler['interpolation'] = 'LINEAR'
 
-            sampler['input'] = input
+                type = 'SCALAR'
+                input = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        final_keys, componentType, count, type, '')
+                sampler['input'] = input
 
+                count = len(values) // 3
+                type = 'VEC3'
+                output = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        values, componentType, count, type, '')
+                sampler['output'] = output
 
-            componentType = "FLOAT"
-            count = len(values) // 3
-            type = "VEC3"
+                sampler['name'] = sampler_name
 
-            output = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    values, componentType, count, type, "")
-
-            sampler['output'] = output
-            sampler['name'] = sampler_name
-
-            samplers.append(sampler)
+                samplers.append(sampler)
 
     # create rotation sampler
 
@@ -306,7 +311,6 @@ def generateAnimationsParameter(operator,
             rotation_in_tangent_data = [0.0, 0.0, 0.0, 0.0]
             rotation_out_tangent_data = [0.0, 0.0, 0.0, 0.0]
 
-
     if rotation_data is not None:
         keys = sorted(rotation_data.keys())
         values = []
@@ -331,32 +335,26 @@ def generateAnimationsParameter(operator,
                 for i in range(0, 4):
                     values.append(rotation_out_tangent_data[key][i])
 
-
-        sampler = {}
-
-        componentType = "FLOAT"
         count = len(final_keys)
-        type = "SCALAR"
+        if count:
+            sampler = {}
 
-        input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, "")
+            sampler['interpolation'] = interpolation
+            if interpolation == 'CONVERSION_NEEDED':
+                sampler['interpolation'] = 'LINEAR'
 
-        sampler['input'] = input
+            type = 'SCALAR'
+            input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, '')
+            sampler['input'] = input
 
-        componentType = "FLOAT"
-        count = len(values) // 4
-        type = "VEC4"
+            count = len(values) // 4
+            type = 'VEC4'
+            output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, '')
+            sampler['output'] = output
 
-        output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, "")
+            sampler['name'] = sampler_name
 
-        sampler['output'] = output
-
-        sampler['interpolation'] = interpolation
-        if interpolation == 'CONVERSION_NEEDED':
-            sampler['interpolation'] = 'LINEAR'
-
-        sampler['name'] = sampler_name
-
-        samplers.append(sampler)
+            samplers.append(sampler)
 
     # create scale sampler
 
@@ -365,21 +363,11 @@ def generateAnimationsParameter(operator,
 
         if getIndex(samplers, sampler_name) == -1:
 
-            sampler = {}
-
-
-
             interpolation = animateGetInterpolation(exportSettings, scale)
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
 
-            sampler['interpolation'] = interpolation
-            if interpolation == 'CONVERSION_NEEDED':
-                sampler['interpolation'] = 'LINEAR'
-
             scale_data, in_tangent_data, out_tangent_data = animateScale(exportSettings, scale, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
-
-
 
             keys = sorted(scale_data.keys())
             values = []
@@ -404,31 +392,26 @@ def generateAnimationsParameter(operator,
                     for i in range(0, 3):
                         values.append(out_tangent_data[key][i])
 
-
-
-            componentType = "FLOAT"
             count = len(final_keys)
-            type = "SCALAR"
+            if count:
+                sampler = {}
 
-            input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, "")
+                sampler['interpolation'] = interpolation
+                if interpolation == 'CONVERSION_NEEDED':
+                    sampler['interpolation'] = 'LINEAR'
 
-            sampler['input'] = input
+                type = 'SCALAR'
+                input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, '')
+                sampler['input'] = input
 
+                count = len(values) // 3
+                type = 'VEC3'
+                output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, '')
+                sampler['output'] = output
 
+                sampler['name'] = sampler_name
 
-            componentType = "FLOAT"
-            count = len(values) // 3
-            type = "VEC3"
-
-            output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, "")
-
-            sampler['output'] = output
-
-
-
-            sampler['name'] = sampler_name
-
-            samplers.append(sampler)
+                samplers.append(sampler)
 
     # create morph target sampler
 
@@ -437,21 +420,11 @@ def generateAnimationsParameter(operator,
 
         if getIndex(samplers, sampler_name) == -1:
 
-            sampler = {}
-
-
-
             interpolation = animateGetInterpolation(exportSettings, value)
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
 
-            sampler['interpolation'] = interpolation
-            if interpolation == 'CONVERSION_NEEDED':
-                sampler['interpolation'] = 'LINEAR'
-
             value_data, in_tangent_data, out_tangent_data = animateValue(exportSettings, value, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
-
-
 
             keys = sorted(value_data.keys())
             values = []
@@ -476,31 +449,26 @@ def generateAnimationsParameter(operator,
                     for i in range(0, len(out_tangent_data[key])):
                         values.append(out_tangent_data[key][i])
 
-
-
-            componentType = "FLOAT"
             count = len(final_keys)
-            type = "SCALAR"
+            if count:
+                sampler = {}
 
-            input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, "")
+                sampler['interpolation'] = interpolation
+                if interpolation == 'CONVERSION_NEEDED':
+                    sampler['interpolation'] = 'LINEAR'
 
-            sampler['input'] = input
+                type = 'SCALAR'
+                input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, '')
+                sampler['input'] = input
 
+                count = len(values)
+                type = 'SCALAR'
+                output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, '')
+                sampler['output'] = output
 
+                sampler['name'] = sampler_name
 
-            componentType = "FLOAT"
-            count = len(values)
-            type = "SCALAR"
-
-            output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, "")
-
-            sampler['output'] = output
-
-
-
-            sampler['name'] = sampler_name
-
-            samplers.append(sampler)
+                samplers.append(sampler)
 
     # create material node anim sampler
     def_val_dim = len(default_value)
@@ -511,13 +479,7 @@ def generateAnimationsParameter(operator,
 
         if getIndex(samplers, sampler_name) == -1:
 
-            sampler = {}
-
             interpolation = animateGetInterpolation(exportSettings, default_value)
-            sampler['interpolation'] = interpolation
-
-            if interpolation == 'CONVERSION_NEEDED':
-                sampler['interpolation'] = 'LINEAR'
 
             def_val_data, in_tangent_data, out_tangent_data = animateDefaultValue(exportSettings,
                     default_value, interpolation)
@@ -545,43 +507,38 @@ def generateAnimationsParameter(operator,
                     for i in range(0, def_val_dim):
                         values.append(out_tangent_data[key][i])
 
-            componentType = "FLOAT"
             count = len(final_keys)
-            type = "SCALAR"
+            if count:
+                sampler = {}
 
-            input = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    final_keys, componentType, count, type, "")
+                sampler['interpolation'] = interpolation
+                if interpolation == 'CONVERSION_NEEDED':
+                    sampler['interpolation'] = 'LINEAR'
 
-            sampler['input'] = input
+                type = 'SCALAR'
+                input = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        final_keys, componentType, count, type, "")
+                sampler['input'] = input
 
+                count = len(values) // def_val_dim
+                if def_val_dim == 1:
+                    type = 'SCALAR'
+                else:
+                    type = 'VEC4'
+                output = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        values, componentType, count, type, "")
+                sampler['output'] = output
 
-            componentType = "FLOAT"
-            count = len(values) // def_val_dim
-            if def_val_dim == 1:
-                type = "SCALAR"
-            else:
-                type = "VEC4"
+                sampler['name'] = sampler_name
 
-            output = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    values, componentType, count, type, "")
-
-            sampler['output'] = output
-            sampler['name'] = sampler_name
-
-            samplers.append(sampler)
+                samplers.append(sampler)
 
     if energy.count(None) < 1:
         sampler_name = prefix + action.name + '_energy'
 
         if getIndex(samplers, sampler_name) == -1:
 
-            sampler = {}
-
             interpolation = animateGetInterpolation(exportSettings, energy)
-            sampler['interpolation'] = interpolation
-
-            if interpolation == 'CONVERSION_NEEDED':
-                sampler['interpolation'] = 'LINEAR'
 
             energy_data, in_tangent_data, out_tangent_data = animateEnergy(exportSettings,
                     energy, interpolation)
@@ -606,27 +563,100 @@ def generateAnimationsParameter(operator,
                 if interpolation == 'CUBICSPLINE':
                     values.append(out_tangent_data[key][0])
 
-            componentType = "FLOAT"
             count = len(final_keys)
-            type = "SCALAR"
+            if count:
+                sampler = {}
 
-            input = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    final_keys, componentType, count, type, "")
+                sampler['interpolation'] = interpolation
+                if interpolation == 'CONVERSION_NEEDED':
+                    sampler['interpolation'] = 'LINEAR'
 
+                type = 'SCALAR'
+                input = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        final_keys, componentType, count, type, "")
+                sampler['input'] = input
+
+                count = len(values)
+                type = 'SCALAR'
+                output = gltf.generateAccessor(glTF, exportSettings['binary'],
+                        values, componentType, count, type, "")
+                sampler['output'] = output
+
+                sampler['name'] = sampler_name
+
+                samplers.append(sampler)
+
+    if len(eval_time) > 0:
+        sampler_name = prefix + action.name + "_eval_time"
+
+        if getIndex(samplers, sampler_name) == -1:
+
+            interpolation = animateGetInterpolation(exportSettings, eval_time)
+
+            value_data, in_tangent_data, out_tangent_data = animateValue(exportSettings, eval_time, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
+
+            keys = sorted(value_data.keys())
+            values = []
+            final_keys = []
+
+            key_offset = 0.0
+            if len(keys) > 0 and exportSettings['move_keyframes']:
+                key_offset = bpy.context.scene.frame_start / bpy.context.scene.render.fps
+
+            for key in keys:
+                if key - key_offset < 0.0:
+                    continue
+
+                final_keys.append(key - key_offset)
+
+                if interpolation == 'CUBICSPLINE':
+                    for i in range(0, len(in_tangent_data[key])):
+                        values.append(in_tangent_data[key][i])
+                for i in range(0, len(value_data[key])):
+                    values.append(value_data[key][i])
+                if interpolation == 'CUBICSPLINE':
+                    for i in range(0, len(out_tangent_data[key])):
+                        values.append(out_tangent_data[key][i])
+
+            count = len(final_keys)
+
+            if count < 1:
+                printLog('WARNING', 'Follow path constraint supports only keyframe animation, constraint name: ' + constraint_name)
+                return None
+
+            sampler = {}
+
+            sampler['interpolation'] = interpolation
+            if interpolation == 'CONVERSION_NEEDED':
+                sampler['interpolation'] = 'LINEAR'
+
+            bl_follow_path_constraint = None
+            for bl_cons in bl_obj.constraints:
+                if bl_cons.is_valid and bl_cons.name == constraint_name:
+                    bl_follow_path_constraint = bl_cons
+                    break
+
+            if bl_follow_path_constraint is None:
+                printLog('WARNING', 'Can not export follow path animation, constraint name: ' + constraint_name)
+                return None
+
+            bl_spline = bl_follow_path_constraint.target.data
+            ratio = 1.0 / bl_spline.path_duration
+            for i in range(len(values)):
+                values[i] *= ratio
+
+            type ='SCALAR'
+            input = gltf.generateAccessor(glTF, exportSettings['binary'], final_keys, componentType, count, type, "")
             sampler['input'] = input
 
-            componentType = "FLOAT"
             count = len(values)
-            type = "SCALAR"
-
-            output = gltf.generateAccessor(glTF, exportSettings['binary'],
-                    values, componentType, count, type, "")
-
+            type = 'SCALAR'
+            output = gltf.generateAccessor(glTF, exportSettings['binary'], values, componentType, count, type, "")
             sampler['output'] = output
+
             sampler['name'] = sampler_name
 
             samplers.append(sampler)
-
 
 
     processed_paths = []
@@ -690,8 +720,7 @@ def generateAnimationsParameter(operator,
             sampler_name = prefix + action.name + '_mat_node_anim'
 
             channel = generateAnimChannel(glTF, bl_obj, sampler_name, path, bl_node_name, samplers, channels)
-
-            if bl_mat_name != None:
+            if channel and bl_mat_name != None:
                 channel['target']['extras'] = {
                     'material': gltf.getMaterialIndex(glTF, bl_mat_name)
                 }
@@ -705,6 +734,14 @@ def generateAnimationsParameter(operator,
             sampler_name = prefix + action.name + '_energy'
             generateAnimChannel(glTF, bl_obj, sampler_name, path, bl_node_name, samplers, channels)
 
+        elif data_path == 'eval_time':
+            path = 'constraint["' + constraint_name + '"].value'
+            if path in processed_paths:
+                continue
+            processed_paths.append(path)
+
+            sampler_name = prefix + action.name + '_eval_time'
+            generateAnimChannel(glTF, bl_obj, sampler_name, path, bl_node_name, samplers, channels)
 
 
 #
@@ -952,6 +989,36 @@ def generateAnimations(operator, context, exportSettings, glTF):
                         bl_action, channels, samplers, bl_obj, None,
                         bl_mat.name, name, bl_obj.rotation_mode,
                         correction_matrix_local, matrix_basis, False)
+
+
+    # export follow path constraint's animation
+
+    for bl_obj in filtered_objects_with_dg:
+        bl_follow_path_constraint = None
+        for bl_cons in bl_obj.constraints:
+            if bl_cons.is_valid and bl_cons.type == 'FOLLOW_PATH':
+                bl_follow_path_constraint = bl_cons
+                break
+
+        if (bl_obj.data is None or bl_follow_path_constraint is None or
+                bl_follow_path_constraint.target is None):
+            continue
+
+        bl_folow_path_obj = bl_follow_path_constraint.target
+        bl_spline = bl_folow_path_obj.data
+
+        if bl_spline is None or bl_spline.animation_data is None:
+            continue
+
+        bl_action = bl_spline.animation_data.action
+
+        if bl_action is None:
+            continue
+
+        generateAnimationsParameter(operator, context, exportSettings, glTF, bl_action,
+                channels, samplers, bl_obj, None, None, None, bl_obj.rotation_mode,
+                mathutils.Matrix.Identity(4), mathutils.Matrix.Identity(4), True,
+                bl_follow_path_constraint.name)
 
 
     if exportSettings['bake_armature_actions']:
@@ -1556,6 +1623,9 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             color_index = 0
 
+            # COMPAT: < Blender 3.2
+            bl_vertex_colors = bl_mesh.color_attributes if bpy.app.version >= (3, 2, 0) else bl_mesh.vertex_colors
+
             process_color = True
             while process_color:
                 color_id = 'COLOR_' + str(color_index)
@@ -1577,7 +1647,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                         continue
 
                     if internal_primitive['useNodeAttrs']:
-                        vc_layer_name = bl_mesh.vertex_colors[color_index].name
+                        vc_layer_name = bl_vertex_colors[color_index].name
                         v3dExt['colorLayers'][vc_layer_name] = color_id;
 
                     attributes[color_id] = color
@@ -2497,8 +2567,9 @@ def createImage(bl_image, context, exportSettings, glTF):
         elif os.path.normcase(old_path) != os.path.normcase(new_path):
             # copy an image to a new location
 
-            if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG'
-                    and bl_image.file_format != 'BMP' and bl_image.file_format != 'HDR'):
+            if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG' and
+                    bl_image.file_format != 'WEBP' and bl_image.file_format != 'BMP' and
+                    bl_image.file_format != 'HDR'):
                 # need conversion to PNG
 
                 img_data = extractImageBindata(bl_image, context.scene, exportSettings)
@@ -2584,9 +2655,11 @@ def generateTextures(operator, context, exportSettings, glTF):
         # 'source' isn't required but must be >=0 according to GLTF 2.0 spec.
         img_index = getImageIndex(exportSettings, uri)
         if img_index >= 0:
-            if os.path.splitext(uri)[1] == '.ktx2':
+            if os.path.splitext(uri)[1].lower() == '.ktx2':
                 gltf.appendExtension(glTF, 'KHR_texture_basisu', texture, { 'source' : img_index })
-            elif os.path.splitext(uri)[1] in ['.hdr', '.xz']: # HDR or compressed HDR
+            elif os.path.splitext(uri)[1].lower() == '.webp':
+                gltf.appendExtension(glTF, 'EXT_texture_webp', texture, { 'source' : img_index })
+            elif os.path.splitext(uri)[1].lower() in ['.hdr', '.xz']: # HDR or compressed HDR
                 v3dExt['source'] = img_index
             else:
                 texture['source'] = img_index

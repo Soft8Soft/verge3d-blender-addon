@@ -55,7 +55,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Verge3D glTF Exporter",
     "author": "Soft8Soft LLC",
-    "version": (4, 0, 0),
+    "version": (4, 1, 0),
     "blender": (2, 80, 0),
     "location": "File > Import-Export",
     "wiki_url": "https://www.soft8soft.com/docs/manual/en/index.html",

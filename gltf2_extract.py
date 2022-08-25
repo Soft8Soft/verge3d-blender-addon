@@ -447,10 +447,12 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
 
     vertex_colors = {}
+    # COMPAT: < Blender 3.2
+    bl_vertex_colors = bl_mesh.color_attributes if bpy.app.version >= (3, 2, 0) else bl_mesh.vertex_colors
 
     color_max = 0
     color_index = 0
-    for vertex_color in bl_mesh.vertex_colors:
+    for vertex_color in bl_vertex_colors:
         vertex_color_name = 'COLOR_' + str(color_index)
         vertex_colors[vertex_color_name] = vertex_color
 
@@ -625,13 +627,25 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             if color_max > 0 and export_color:
                 for color_index in range(0, color_max):
                     color_name = 'COLOR_' + str(color_index)
-                    color = vertex_colors[color_name].data[loop_index].color
 
-                    # vertex colors are defined in sRGB space but only needed to
-                    # be linear when rendered
-                    colors.append([pluginUtils.srgbToLinear(color[0]),
-                            pluginUtils.srgbToLinear(color[1]),
-                            pluginUtils.srgbToLinear(color[2]), color[3]])
+                    if bpy.app.version >= (3, 2, 0):
+                        if vertex_colors[color_name].domain == 'POINT':
+                            color = vertex_colors[color_name].data[vertex_index].color
+                        else:
+                            color = vertex_colors[color_name].data[loop_index].color
+
+                        colors.append([color[0], color[1], color[2], color[3]])
+
+                    # COMPAT: < Blender 3.2
+                    else:
+                        color = vertex_colors[color_name].data[loop_index].color
+
+                        # vertex colors are defined in sRGB space but only needed to
+                        # be linear when rendered
+                        colors.append([pluginUtils.srgbToLinear(color[0]),
+                                pluginUtils.srgbToLinear(color[1]),
+                                pluginUtils.srgbToLinear(color[2]), color[3]])
+
 
 
             if need_skin_attributes:
@@ -1383,6 +1397,9 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['bandsDirection'] = bl_node.bands_direction
             node['ringsDirection'] = bl_node.rings_direction
 
+        elif bl_node.type == 'TEX_WHITE_NOISE':
+            node['noise_dimension'] = bl_node.noise_dimensions
+
         elif bl_node.type == 'VALTORGB':
             node['curve'] = extractColorRamp(bl_node.color_ramp)
 
@@ -1702,32 +1719,72 @@ def extractConstraints(glTF, bl_obj):
                 }))
 
         elif bl_cons.type == 'COPY_TRANSFORMS':
-            constraints.append(dict(cons, **{
-                'type': 'copyTransforms',
-                'target': target,
-                'mixMode': bl_cons.mix_mode,
-                'influence': bl_cons.influence,
-                'fixCameraLightRotation': True,
-            }))
+            if target >= 0:
+                constraints.append(dict(cons, **{
+                    'type': 'copyTransforms',
+                    'target': target,
+                    'mixMode': bl_cons.mix_mode,
+                    'influence': bl_cons.influence,
+                    'fixCameraLightRotation': True,
+                }))
 
         elif bl_cons.type == 'DAMPED_TRACK':
-            constraints.append(dict(cons, **{
-                'type': 'dampedTrack',
-                'target': target,
-                'trackAxis': extractAxisParam(bl_cons.track_axis, 'TRACK_', True),
-                'influence': bl_cons.influence,
-                'fixCameraLightRotation': True,
-            }))
+            if target >= 0:
+                constraints.append(dict(cons, **{
+                    'type': 'dampedTrack',
+                    'target': target,
+                    'trackAxis': extractAxisParam(bl_cons.track_axis, 'TRACK_', True),
+                    'influence': bl_cons.influence,
+                    'fixCameraLightRotation': True,
+                }))
+
+        elif bl_cons.type == 'FOLLOW_PATH':
+            curveObj = bl_cons.target
+            spline = curveObj.data.splines.active
+            if spline and spline.point_count_u > 0:
+                splineAttrs = extractNURBSSpline(spline, curveObj.matrix_world)
+                frontAxisPrefix = 'FORWARD_'
+                if not 'FORWARD_' in bl_cons.forward_axis:
+                    frontAxisPrefix = 'TRACK_'
+
+                constraints.append(dict(cons, **{
+                    'type': 'motionPath',
+                    'degree': splineAttrs['degree'],
+                    'cvs': splineAttrs['cvs'],
+                    'knots': splineAttrs['knots'],
+                    'weights': splineAttrs['weights'],
+                    'value': curveObj.data.eval_time,
+                    'follow': bl_cons.use_curve_follow,
+                    'frontAxis': extractAxisParam(bl_cons.forward_axis, frontAxisPrefix, True),
+                    'upAxis': extractAxisParam(bl_cons.up_axis, 'UP_', True),
+                    'useFixedLocation': bl_cons.use_fixed_location,
+                    'usePointsTilt': splineAttrs['usePointsTilt'],
+                    'pointsTilt': splineAttrs['pointsTilt'],
+                    'fixedValue': bl_cons.offset_factor,
+                    'useClampValue': curveObj.data.use_path_clamp,
+                    'useCyclic': splineAttrs['useCyclic'],
+                    'influence': bl_cons.influence,
+                    # Blender's specific params
+                    'useChordLength': True,
+                    'useObjOffset': True,
+                    'objOffsetMode': 1, # MATRIX
+                    'objOffsetRotMode': 1, # CONSTRAINT_FIRST
+                    'fixCameraLightRotation': False, # disable, bcs useObjOffset is enabled
+                    # TODO
+                    # 'offsetValue': -(bl_cons.offset / curveObj.data.path_duration),
+                    # 'useCurveRadius': bl_cons.use_curve_radius,
+                }))
 
         elif bl_cons.type == 'LIMIT_DISTANCE':
-            constraints.append(dict(cons, **{
-                'type': 'limitDistance',
-                'target': target,
-                'distance': bl_cons.distance,
-                'limitMode': bl_cons.limit_mode,
-                'useTransformLimit': bl_cons.use_transform_limit,
-                'influence': bl_cons.influence,
-            }))
+            if target >= 0:
+                constraints.append(dict(cons, **{
+                    'type': 'limitDistance',
+                    'target': target,
+                    'distance': bl_cons.distance,
+                    'limitMode': bl_cons.limit_mode,
+                    'useTransformLimit': bl_cons.use_transform_limit,
+                    'influence': bl_cons.influence,
+                }))
 
         elif bl_cons.type == 'LIMIT_LOCATION':
             constraints.append(dict(cons, **{
@@ -1881,11 +1938,11 @@ def extractImageBindata(bl_image, scene, exportSettings):
 
     if imgNeedsCompression(bl_image, exportSettings):
         if fileFormat == 'JPEG':
-            data = extractImageBindataJPEG(bl_image, scene)
+            data = imageSaveRender(bl_image, scene, 'JPEG', 'RGB', quality=90)
         elif fileFormat == 'HDR':
-            data = extractImageBindataHDR(bl_image, scene)
+            data = imageSaveRender(bl_image, scene, 'HDR', 'RGB')
         else:
-            data = extractImageBindataPNG(bl_image, scene)
+            data = imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth=16, compression=90)
 
         if fileFormat == 'HDR':
             return pu.manager.AppManagerConn.compressLZMABuffer(data)
@@ -1893,19 +1950,23 @@ def extractImageBindata(bl_image, scene, exportSettings):
             return pu.convert.compressKTX2(srcData=data, method=bl_image.v3d.compression_method)
 
     elif fileFormat == 'JPEG':
-        return extractImageBindataJPEG(bl_image, scene)
+        return imageSaveRender(bl_image, scene, 'JPEG', 'RGB', quality=90)
+    elif fileFormat == 'WEBP':
+        return imageSaveRender(bl_image, scene, 'WEBP', 'RGBA', quality=90)
     elif fileFormat == 'BMP':
-        return extractImageBindataBMP(bl_image, scene)
+        # RGBA bitmaps seams to be not supported
+        return imageSaveRender(bl_image, scene, 'BMP', 'RGB')
     elif fileFormat == 'HDR':
-        return extractImageBindataHDR(bl_image, scene)
+        return imageSaveRender(bl_image, scene, 'HDR', 'RGB')
     else:
-        return extractImageBindataPNG(bl_image, scene)
+        return imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth=16, compression=90)
 
-def extractImageBindataPNG(bl_image, scene):
+def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, compression=None,
+                    quality=None):
 
     if not bl_image.is_dirty:
         # it's much faster to access packed file data if no conversion is needed
-        if bl_image.packed_file is not None and bl_image.file_format == 'PNG':
+        if bl_image.packed_file is not None and bl_image.file_format == file_format:
             return bl_image.packed_file.data
 
     tmp_img = tempfile.NamedTemporaryFile(delete=False)
@@ -1916,11 +1977,17 @@ def extractImageBindataPNG(bl_image, scene):
     color_mode = img_set.color_mode
     color_depth = img_set.color_depth
     compression = img_set.compression
+    quality = img_set.quality
 
-    img_set.file_format = 'PNG'
-    img_set.color_mode = 'RGBA'
-    img_set.color_depth = '16'
-    img_set.compression = 90
+    img_set.file_format = file_format
+    img_set.color_mode = color_mode
+
+    if color_depth is not None:
+        img_set.color_depth = color_depth
+    if compression is not None:
+        img_set.compression = compression
+    if quality is not None:
+        img_set.quality = quality
 
     bl_image.save_render(tmp_img.name, scene=scene)
 
@@ -1928,96 +1995,10 @@ def extractImageBindataPNG(bl_image, scene):
     img_set.color_mode = color_mode
     img_set.color_depth = color_depth
     img_set.compression = compression
-
-    bindata = tmp_img.read()
-
-    tmp_img.close()
-    os.unlink(tmp_img.name)
-
-    return bindata
-
-def extractImageBindataJPEG(bl_image, scene):
-
-    if not bl_image.is_dirty:
-        # it's much faster to access packed file data if no conversion is needed
-        if bl_image.packed_file is not None and bl_image.file_format == 'JPEG':
-            return bl_image.packed_file.data
-
-    tmp_img = tempfile.NamedTemporaryFile(delete=False)
-
-    img_set = scene.render.image_settings
-
-    file_format = img_set.file_format
-    color_mode = img_set.color_mode
-    quality = img_set.quality
-
-    img_set.file_format = 'JPEG'
-    img_set.color_mode = 'RGB'
-    img_set.quality = 90
-
-    bl_image.save_render(tmp_img.name, scene=scene)
-
-    img_set.file_format = file_format
-    img_set.color_mode = color_mode
     img_set.quality = quality
 
     bindata = tmp_img.read()
-    tmp_img.close()
-    os.unlink(tmp_img.name)
 
-    return bindata
-
-def extractImageBindataBMP(bl_image, scene):
-
-    if not bl_image.is_dirty:
-        # it's much faster to access packed file data if no conversion is needed
-        if bl_image.packed_file is not None and bl_image.file_format == 'BMP':
-            return bl_image.packed_file.data
-
-    tmp_img = tempfile.NamedTemporaryFile(delete=False)
-
-    img_set = scene.render.image_settings
-
-    file_format = img_set.file_format
-    color_mode = img_set.color_mode
-
-    img_set.file_format = 'BMP'
-    img_set.color_mode = 'RGB'
-
-    bl_image.save_render(tmp_img.name, scene=scene)
-
-    img_set.file_format = file_format
-    img_set.color_mode = color_mode
-
-    bindata = tmp_img.read()
-    tmp_img.close()
-    os.unlink(tmp_img.name)
-
-    return bindata
-
-def extractImageBindataHDR(bl_image, scene):
-
-    if not bl_image.is_dirty:
-        # it's much faster to access packed file data if no conversion is needed
-        if bl_image.packed_file is not None and bl_image.file_format == 'HDR':
-            return bl_image.packed_file.data
-
-    tmp_img = tempfile.NamedTemporaryFile(delete=False)
-
-    img_set = scene.render.image_settings
-
-    file_format = img_set.file_format
-    color_mode = img_set.color_mode
-
-    img_set.file_format = 'HDR'
-    img_set.color_mode = 'RGB'
-
-    bl_image.save_render(tmp_img.name, scene=scene)
-
-    img_set.file_format = file_format
-    img_set.color_mode = color_mode
-
-    bindata = tmp_img.read()
     tmp_img.close()
     os.unlink(tmp_img.name)
 
@@ -2044,3 +2025,115 @@ def extractFontBindata(bl_font):
     else:
         with open(getFontPath(bl_font), 'rb') as f:
             return f.read()
+
+def extractNURBSSpline(spline, matrixWorld = None):
+    """ Extract spline parameters as a dictionary. """
+
+    order = spline.order_u
+    degree = order - 1
+    knotsCount = spline.point_count_u + spline.order_u
+    cvs = []
+    knots = []
+    weights = []
+    pointsTilt = []
+    usePointsTilt = False
+
+    if spline.type == 'BEZIER':
+        degree = 3
+        counter = 1 if spline.use_cyclic_u else 0
+        for point in spline.bezier_points:
+            if matrixWorld:
+                posLeft = convertSwizzleLocation(matrixWorld @ point.handle_left)
+                pos = convertSwizzleLocation(matrixWorld @ point.co)
+                posRight = convertSwizzleLocation(matrixWorld @ point.handle_right)
+            else:
+                posLeft = convertSwizzleLocation(point.handle_left)
+                pos = convertSwizzleLocation(point.co)
+                posRight = convertSwizzleLocation(point.handle_right)
+            cvs.extend([posLeft.x, posLeft.y, posLeft.z,
+                        pos.x, pos.y, pos.z,
+                        posRight.x, posRight.y, posRight.z])
+            pointsTilt.append(point.tilt)
+            if not usePointsTilt and point.tilt != 0.0:
+                usePointsTilt = True
+
+            knots.extend([counter] * degree)
+            counter += 1
+
+        if spline.use_cyclic_u:
+            cvs = cvs[-6:] + cvs
+            knots = [0, 0, 0, 0] + knots
+            del cvs[-3:]
+            knots.append(knots[-1])
+        else:
+            knots.insert(0, knots[0])
+            knots.append(knots[-1])
+            del cvs[-3:]
+            del cvs[:3]
+
+        weights.extend([1] * (len(cvs) // 3))
+
+    elif spline.type == 'NURBS' or spline.type == 'POLY':
+        for point in spline.points:
+            pos = mathutils.Vector(point.co[0:3]) # ignore weight
+            if matrixWorld:
+                pos = convertSwizzleLocation(matrixWorld @ pos)
+            else:
+                pos = convertSwizzleLocation(pos)
+            cvs.extend([pos.x, pos.y, pos.z])
+            weights.append(point.weight if degree > 1 else 1) # hack, Blender's behavior
+            pointsTilt.append(point.tilt)
+            if not usePointsTilt and point.tilt != 0.0:
+                usePointsTilt = True
+
+        # Calculate knot values, blender does not store knots
+        innerMultiplicity = degree if spline.use_bezier_u else 1 # for knots
+
+        if spline.use_cyclic_u:
+            if spline.use_endpoint_u:
+                # behavior in blender version >= 3.2
+                head = tail = order
+                extraPointsNum = 1
+            elif spline.use_bezier_u:
+                # behavior in blender version >= 3.1
+                head = tail = order
+                cvs.extend(cvs[:3])
+                del cvs[:3]
+                extraPointsNum = 1
+            else:
+                head = tail = 1
+                extraPointsNum = degree
+            knotsCount += extraPointsNum
+            cvs.extend(cvs[:3*extraPointsNum])
+            weights.extend(weights[:extraPointsNum])
+            pointsTilt.extend(pointsTilt[:extraPointsNum])
+        elif spline.use_endpoint_u:
+            head = tail = order
+        elif spline.use_bezier_u:
+            head = order if order == 3 else min(2, innerMultiplicity)
+            tail = 0
+        else:
+            head = tail = 1
+
+        if spline.use_bezier_u and spline.use_endpoint_u:
+            head = tail = 1
+
+        knots.extend([0] * head)
+        knotVal = 1
+        innerKnotsCount = knotsCount - head - tail
+        for i in range(0, innerKnotsCount, innerMultiplicity):
+            knots.extend([knotVal] * min(innerMultiplicity, innerKnotsCount - i))
+            knotVal += 1
+
+        knots.extend([knotVal] * tail)
+
+    splineAttrs = {
+        'degree': degree,
+        'cvs': cvs,
+        'knots': knots,
+        'weights': weights,
+        'useCyclic': spline.use_cyclic_u,
+        'usePointsTilt': usePointsTilt,
+        'pointsTilt': pointsTilt,
+    }
+    return splineAttrs

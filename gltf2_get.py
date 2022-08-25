@@ -310,6 +310,7 @@ def getImageExportedURI(exportSettings, bl_image):
         else:
             ext = '.ktx2'
     elif (bl_image.file_format == 'JPEG'
+            or bl_image.file_format == 'WEBP'
             or bl_image.file_format == 'BMP'
             or bl_image.file_format == 'HDR'
             or bl_image.file_format == 'PNG'):
@@ -341,6 +342,8 @@ def getImageExportedMimeType(bl_image, exportSettings):
             return 'image/ktx2'
     elif bl_image.file_format == 'JPEG':
         return 'image/jpeg'
+    elif bl_image.file_format == 'WEBP':
+        return 'image/webp'
     elif bl_image.file_format == 'BMP':
         return 'image/bmp'
     elif bl_image.file_format == 'HDR':
