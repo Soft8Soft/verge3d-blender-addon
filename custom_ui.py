@@ -33,6 +33,9 @@ norm = os.path.normpath
 from pluginUtils.manager import AppManagerConn
 
 class V3DPanel():
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+
     COMPAT_ENGINES = ['CYCLES', 'BLENDER_EEVEE']
 
     @classmethod
@@ -58,8 +61,6 @@ class V3DPanel():
 
 class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
     """Located on render panel"""
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'render'
     bl_label = 'Verge3D Settings'
 
@@ -67,32 +68,12 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
-
-        # global export settings
+        layout.use_property_split = True
 
         v3d_export = bpy.data.scenes[0].v3d_export
 
         row = layout.row()
         row.prop(v3d_export, 'copyright')
-
-        col = layout.column()
-        col.label(text='Export Collections:')
-        col.template_list("COLLECTION_UL_export", "", bpy.data,
-                "collections", context.scene.v3d_export, "collections_exported_idx", rows=4)
-
-        # animation box
-
-        box = layout.box()
-        box.label(text='Animation:')
-
-        row = box.row()
-        row.prop(v3d_export, 'export_animations')
-        row = box.row()
-        row.prop(v3d_export, 'export_frame_range')
-        row = box.row()
-        row.prop(v3d_export, 'export_move_keyframes')
-        row = box.row()
-        row.prop(v3d_export, 'bake_armature_actions')
 
         row = layout.row()
         row.prop(v3d_export, 'export_constraints')
@@ -115,81 +96,14 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'optimize_attrs')
 
-
-        # shadow box
-        box = layout.box()
-        box.label(text='Shadows:')
-
-        row = box.row()
-        row.prop(v3d_export, 'use_shadows')
-
-        split = box.split()
-        split.active = v3d_export.use_shadows
-        col = split.column()
-        col.label(text='Shadow Map Filtering')
-        col = split.column()
-        col.prop(v3d_export, 'shadow_map_type', text='')
-
-        split = box.split()
-        split.active = v3d_export.use_shadows
-        col = split.column()
-        col.label(text='Shadow Map Side')
-        col = split.column()
-        col.prop(v3d_export, 'shadow_map_side', text='')
-
-        split = box.split()
-        split.active = v3d_export.use_shadows and v3d_export.shadow_map_type == 'ESM'
-        col = split.column()
-        col.label(text='ESM Distance Scale')
-        col = split.column()
-        col.prop(v3d_export, 'esm_distance_scale', text='')
-
-        split = layout.split()
-        col = split.column()
-        col.label(text='Anti-Aliasing')
-        col = split.column()
-        col.prop(v3d_export, 'aa_method', text='')
+        row = layout.row()
+        row.prop(v3d_export, 'aa_method')
 
         row = layout.row()
         row.prop(v3d_export, 'use_hdr')
 
-        split = layout.split()
-        col = split.column()
-        col.label(text='IBL Environment Mode')
-        col = split.column()
-        col.prop(v3d_export, 'ibl_environment_mode', text='')
-
-        # outline box
-
-        outline = context.scene.v3d.outline
-        outlineActive = outline.enabled
-
-        box = layout.box()
-        box.label(text='Outline:')
-
-        row = box.row()
-        row.prop(outline, 'enabled')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'edge_strength')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'edge_glow')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'edge_thickness')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'pulse_period')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'visible_edge_color')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'hidden_edge_color')
-        row = box.row()
-        row.active = outlineActive
-        row.prop(outline, 'render_hidden_edge')
+        row = layout.row()
+        row.prop(v3d_export, 'ibl_environment_mode')
 
 class COLLECTION_UL_export(bpy.types.UIList):
 
@@ -223,28 +137,110 @@ class COLLECTION_UL_export(bpy.types.UIList):
         return flt_flags, flt_neworder
 
 
-class V3D_PT_RenderLayerSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = 'render_layer'
-    bl_label = 'Verge3D Settings'
+
+class V3D_PT_RenderSettingsAnimation(bpy.types.Panel, V3DPanel):
+    bl_label = 'Animation'
+    bl_parent_id = 'V3D_PT_RenderSettings'
+
+    poll_datablock = 'scene'
+
+    def draw_header(self, context):
+        v3d_export = bpy.data.scenes[0].v3d_export
+        self.layout.prop(v3d_export, 'export_animations', text='')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        v3d_export = bpy.data.scenes[0].v3d_export
+        layout.active = v3d_export.export_animations
+
+        row = layout.row()
+        row.prop(v3d_export, 'export_frame_range')
+        row = layout.row()
+        row.prop(v3d_export, 'export_move_keyframes')
+        row = layout.row()
+        row.prop(v3d_export, 'bake_armature_actions')
+
+
+
+class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
+    bl_label = 'Shadows'
+    bl_parent_id = 'V3D_PT_RenderSettings'
+
+    poll_datablock = 'scene'
+
+    def draw_header(self, context):
+        v3d_export = bpy.data.scenes[0].v3d_export
+        self.layout.prop(v3d_export, 'use_shadows', text='')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        v3d_export = bpy.data.scenes[0].v3d_export
+        layout.active = v3d_export.use_shadows
+
+        row = layout.row()
+        row.prop(v3d_export, 'shadow_map_type')
+
+        row = layout.row()
+        row.prop(v3d_export, 'shadow_map_side')
+
+        row = layout.row()
+        row.prop(v3d_export, 'esm_distance_scale')
+        row.active = v3d_export.shadow_map_type == 'ESM'
+
+
+class V3D_PT_RenderSettingsOutline(bpy.types.Panel, V3DPanel):
+    bl_label = 'Outline Effect'
+    bl_parent_id = 'V3D_PT_RenderSettings'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    poll_datablock = 'scene'
+
+    def draw_header(self, context):
+        outline = context.scene.v3d.outline
+        self.layout.prop(outline, 'enabled', text='')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        outline = context.scene.v3d.outline
+        outlineActive = outline.enabled
+
+        layout.active = outlineActive
+
+        row = layout.row()
+        row.prop(outline, 'edge_strength')
+        row = layout.row()
+        row.prop(outline, 'edge_glow')
+        row = layout.row()
+        row.prop(outline, 'edge_thickness')
+        row = layout.row()
+        row.prop(outline, 'pulse_period')
+        row = layout.row()
+        row.prop(outline, 'visible_edge_color')
+        row = layout.row()
+        row.prop(outline, 'hidden_edge_color')
+        row = layout.row()
+        row.prop(outline, 'render_hidden_edge')
+
+
+class V3D_PT_RenderSettingsCollections(bpy.types.Panel, V3DPanel):
+    bl_label = 'Export Collections'
+    bl_parent_id = 'V3D_PT_RenderSettings'
 
     poll_datablock = 'scene'
 
     def draw(self, context):
         layout = self.layout
+        layout.template_list('COLLECTION_UL_export', '', bpy.data,
+                'collections', context.scene.v3d_export, 'collections_exported_idx', rows=4)
 
-        scene = context.scene
-
-        row = layout.row()
-        row.label(text='Export Layers:')
-
-        row = layout.row()
-        row.prop(scene.v3d, 'export_layers', text='')
 
 class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'world'
     bl_label = 'Verge3D Settings'
 
@@ -252,6 +248,7 @@ class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         world = context.world
 
@@ -260,23 +257,26 @@ class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
 
 
 class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'object'
     bl_label = 'Verge3D Settings'
 
     poll_datablock = 'object'
 
     def draw(self, context):
+        pass
+
+
+class V3D_PT_ObjectSettingsAnimation(bpy.types.Panel, V3DPanel):
+    bl_label = 'Animation'
+    bl_parent_id = 'V3D_PT_ObjectSettings'
+
+    poll_datablock = 'object'
+
+    def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
-        obj = context.object
-        v3d = obj.v3d
-
-        #layout.use_property_split = True
-
-        row = layout.row()
-        row.label(text='Animation:')
+        v3d = context.object.v3d
 
         row = layout.row()
         row.prop(v3d, 'anim_auto')
@@ -295,68 +295,78 @@ class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d, 'anim_offset')
 
-        if context.object.type in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT']:
-            row = layout.row()
-            row.label(text='Rendering:')
 
-            row = layout.row()
-            row.prop(v3d, 'render_order')
+class V3D_PT_ObjectSettingsRendering(bpy.types.Panel, V3DPanel):
+    bl_label = 'Rendering'
+    bl_parent_id = 'V3D_PT_ObjectSettings'
 
-            row = layout.row()
-            row.prop(v3d, 'frustum_culling')
+    poll_datablock = 'object'
 
-            row = layout.row()
-            row.prop(v3d, 'use_shadows')
+    @classmethod
+    def poll(cls, context):
+        return (super().poll(context) and
+                context.object.type in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT'])
 
-            row = layout.row()
-            row.prop(v3d, 'hidpi_compositing')
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
 
-        else:
-            row = layout.row()
-            row.label(text='Child Rendering:')
+        obj = context.object
+        v3d = obj.v3d
 
-            row = layout.row()
-            row.prop(v3d, 'hidpi_compositing')
+        row = layout.row()
+        row.prop(v3d, 'render_order')
+
+        row = layout.row()
+        row.prop(v3d, 'frustum_culling')
+
+        row = layout.row()
+        row.prop(v3d, 'use_shadows')
+
+        row = layout.row()
+        row.prop(v3d, 'hidpi_compositing')
 
         if obj.parent and obj.parent.type == 'CAMERA':
-
             if obj.parent.data.type == 'ORTHO':
                 row = layout.row()
                 row.prop(v3d, 'fix_ortho_zoom')
 
-            # canvas fit
 
-            row = layout.row()
-            row.label(text='Fit to Camera Edge:')
+class V3D_PT_ObjectSettingsChildRendering(bpy.types.Panel, V3DPanel):
+    bl_label = 'Child Rendering'
+    bl_parent_id = 'V3D_PT_ObjectSettings'
 
-            split = layout.split()
-            col = split.column()
-            col.label(text='Horizontal')
-            col = split.column()
-            col.prop(v3d, 'canvas_fit_x', text='')
+    poll_datablock = 'object'
 
-            split = layout.split()
-            col = split.column()
-            col.label(text='Vertical')
-            col = split.column()
-            col.prop(v3d, 'canvas_fit_y', text='')
+    @classmethod
+    def poll(cls, context):
+        return (super().poll(context) and not
+                context.object.type in ['MESH', 'CURVE', 'SURFACE', 'META', 'FONT'])
 
-            split = layout.split()
-            col = split.column()
-            col.label(text='Fit Shape')
-            col = split.column()
-            col.prop(v3d, 'canvas_fit_shape', text='')
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
 
-            split = layout.split()
-            col = split.column()
-            col.label(text='Fit Offset')
-            col = split.column()
-            col.prop(v3d, 'canvas_fit_offset', text='')
-
-        # visibility breakpoints
+        v3d = context.object.v3d
 
         row = layout.row()
-        row.prop(v3d, 'canvas_break_enabled')
+        row.prop(v3d, 'hidpi_compositing')
+
+
+class V3D_PT_ObjectSettingsVisibilityBreakpoints(bpy.types.Panel, V3DPanel):
+    bl_label = 'Visibility Breakpoints'
+    bl_parent_id = 'V3D_PT_ObjectSettings'
+
+    poll_datablock = 'object'
+
+    def draw_header(self, context):
+        v3d = context.object.v3d
+        self.layout.prop(v3d, 'canvas_break_enabled', text='')
+
+    def draw(self, context):
+        layout = self.layout
+
+        v3d = context.object.v3d
 
         brkpnts = v3d.canvas_break_enabled
 
@@ -373,14 +383,36 @@ class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
         split = layout.split()
         split.active = brkpnts
         col = split.column()
+        col.alignment = 'RIGHT'
         col.label(text='Orientation')
         col = split.column()
         col.prop(v3d, 'canvas_break_orientation', text='')
 
 
+class V3D_PT_ObjectSettingsFitCameraEdge(bpy.types.Panel, V3DPanel):
+    bl_label = 'Fit to Camera Edge'
+    bl_parent_id = 'V3D_PT_ObjectSettings'
+
+    poll_datablock = 'object'
+
+    @classmethod
+    def poll(cls, context):
+        return (super().poll(context) and
+                context.object.parent and context.object.parent.type == 'CAMERA')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        v3d = context.object.v3d
+
+        layout.prop(v3d, 'canvas_fit_x')
+        layout.prop(v3d, 'canvas_fit_y')
+        layout.prop(v3d, 'canvas_fit_shape')
+        layout.prop(v3d, 'canvas_fit_offset')
+
+
 class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
@@ -388,6 +420,7 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         camera = context.camera
         v3d = camera.v3d
@@ -396,12 +429,8 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
         row.prop(v3d, 'controls')
 
         if v3d.controls == 'FIRST_PERSON':
-            split = layout.split()
-            col = split.column()
-            col.label(text='Collision Material:')
-
-            col = split.column()
-            col.prop(v3d, 'fps_collision_material', text='')
+            row = layout.row()
+            row.prop(v3d, 'fps_collision_material')
 
             row = layout.row()
             row.prop(v3d, 'fps_gaze_level')
@@ -424,66 +453,88 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
         row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'move_speed')
 
-        if v3d.controls == 'ORBIT':
 
-            box = layout.box()
-            box.label(text='Target Object/Point')
+class V3D_PT_CameraSettingsTarget(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Target Object / Point'
+    bl_parent_id = 'V3D_PT_CameraSettings'
 
-            split = box.split(factor=0.5)
+    poll_datablock = 'camera'
 
-            column = split.column()
-            column.prop(v3d, 'orbit_target', text='Manual')
-            column.enabled = v3d.orbit_target_object is None
+    @classmethod
+    def poll(cls, context):
+        return (super().poll(context) and
+                context.camera.v3d.controls == 'ORBIT')
 
-            column = split.column()
-            column.label(text='From Object:')
-            column.prop(v3d, 'orbit_target_object', text='')
+    def draw(self, context):
+        layout = self.layout
 
-            column.operator('v3d.orbit_camera_target_from_cursor', text='From Cursor')
+        camera = context.camera
+        v3d = camera.v3d
 
-            box.operator('v3d.orbit_camera_update_view', text='Update View')
+        split = layout.split(factor=0.5)
 
-            row = layout.row()
+        column = split.column()
+        column.prop(v3d, 'orbit_target', text='Manual')
+        column.enabled = v3d.orbit_target_object is None
 
-            if camera.type == 'ORTHO':
-                row.prop(v3d, 'orbit_min_zoom')
-                row.prop(v3d, 'orbit_max_zoom')
-            else:
-                row.prop(v3d, 'orbit_min_distance')
-                row.prop(v3d, 'orbit_max_distance')
+        column = split.column()
+        column.label(text='From Object:')
+        column.prop(v3d, 'orbit_target_object', text='')
 
-            row = layout.row()
-            row.label(text='Vertical Rotation Limits:')
+        column.operator(V3D_OT_orbit_camera_target_from_cursor.bl_idname, text='From Cursor')
 
-            row = layout.row()
-            row.prop(v3d, 'orbit_min_polar_angle')
-            row.prop(v3d, 'orbit_max_polar_angle')
+        layout.operator(V3D_OT_orbit_camera_update_view.bl_idname, text='Update View')
+
+        row = layout.row()
+
+        if camera.type == 'ORTHO':
+            row.prop(v3d, 'orbit_min_zoom')
+            row.prop(v3d, 'orbit_max_zoom')
+        else:
+            row.prop(v3d, 'orbit_min_distance')
+            row.prop(v3d, 'orbit_max_distance')
+
+        row = layout.row()
+        row.label(text='Vertical Rotation Limits:')
+
+        row = layout.row()
+        row.prop(v3d, 'orbit_min_polar_angle')
+        row.prop(v3d, 'orbit_max_polar_angle')
 
 
-            row = layout.row()
-            row.label(text='Horizontal Rotation Limits:')
+        row = layout.row()
+        row.label(text='Horizontal Rotation Limits:')
 
-            row = layout.row()
-            row.prop(v3d, 'orbit_min_azimuth_angle')
-            row.prop(v3d, 'orbit_max_azimuth_angle')
+        row = layout.row()
+        row.prop(v3d, 'orbit_min_azimuth_angle')
+        row.prop(v3d, 'orbit_max_azimuth_angle')
+
 
 class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
     poll_datablock = 'light'
 
     def draw(self, context):
+        pass
+
+
+class V3D_PT_LightSettingsShadow(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Shadows'
+    bl_parent_id = 'V3D_PT_LightSettings'
+
+    poll_datablock = 'light'
+
+    def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         light = context.light
         type = light.type
         shadow = light.v3d.shadow
-
-        row = layout.row()
-        row.label(text='Shadow:')
 
         row = layout.row()
         row.active = (context.scene.v3d_export.shadow_map_type
@@ -495,10 +546,7 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
         row.prop(shadow, 'esm_exponent', text='ESM Bias')
 
 
-
 class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
@@ -511,6 +559,8 @@ class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
+
         v3d = context.curve.v3d
 
         box = layout.box()
@@ -527,59 +577,77 @@ class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
         row.prop(v3d.line_rendering_settings, 'width')
         row.active = is_active
 
+
 class V3D_PT_MeshSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
     poll_datablock = 'mesh'
 
     def draw(self, context):
+        pass
+
+
+class V3D_PT_MeshSettingsLineRendering(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Line Rendering'
+    bl_parent_id = 'V3D_PT_MeshSettings'
+
+    poll_datablock = 'mesh'
+
+    def draw_header(self, context):
+        v3d = context.mesh.v3d
+        self.layout.prop(v3d.line_rendering_settings, 'enable', text='')
+
+    def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
+
         v3d = context.mesh.v3d
 
-        box = layout.box()
-        row = box.row()
-        row.prop(v3d.line_rendering_settings, 'enable')
+        layout.active = getattr(v3d.line_rendering_settings, 'enable') is True
 
-        is_active = getattr(v3d.line_rendering_settings, 'enable') is True
-
-        row = box.row()
+        row = layout.row()
         row.prop(v3d.line_rendering_settings, 'color')
-        row.active = is_active
 
-        row = box.row()
+        row = layout.row()
         row.prop(v3d.line_rendering_settings, 'width')
-        row.active = is_active
+
 
 class V3D_PT_LightProbeSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
     poll_datablock = 'lightprobe'
 
     def draw(self, context):
+        pass
+
+
+class V3D_PT_LightProbeSettingsCustomInfluence(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Custom Influence'
+    bl_parent_id = 'V3D_PT_LightProbeSettings'
+
+    poll_datablock = 'lightprobe'
+
+    def draw_header(self, context):
+        v3d = context.lightprobe.v3d
+        self.layout.prop(v3d, 'use_custom_influence', text='')
+
+    def draw(self, context):
         layout = self.layout
 
         v3d = context.lightprobe.v3d
+        layout.active = getattr(v3d, 'use_custom_influence') is True
 
-        box = layout.box()
-        row = box.row()
-        row.prop(v3d, 'use_custom_influence')
-
-        row = box.row(align=True)
+        row = layout.row(align=True)
         row.use_property_split = True
         row.prop(v3d, 'influence_collection')
         row.prop(v3d, 'invert_influence_collection', text='', icon='ARROW_LEFTRIGHT')
-        row.active = getattr(v3d, 'use_custom_influence') is True
 
 
 class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'data'
     bl_label = 'Verge3D Clipping Plane'
 
@@ -587,14 +655,12 @@ class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         plane = context.object
 
-        split = layout.split()
-        col = split.column()
-        col.label(text='Affected Objects')
-        col = split.column()
-        col.prop(plane.v3d, 'clipping_plane_collection', text='')
+        row = layout.row()
+        row.prop(plane.v3d, 'clipping_plane_collection')
 
         row = layout.row()
         row.prop(plane.v3d, 'clipping_plane_negated')
@@ -605,35 +671,40 @@ class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(plane.v3d, 'clipping_plane_union')
 
+
+class V3D_PT_ClippingPlaneSettingsCrossSection(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Filled Cross-Section'
+    bl_parent_id = 'V3D_PT_ClippingPlaneSettings'
+
+    poll_datablock = 'clipping_plane'
+
+    def draw_header(self, context):
+        layout = self.layout
+
+        plane = context.object
+        layout.active = plane.v3d.clipping_plane_cross_section and plane.v3d.clipping_plane_union
+
+        layout.prop(plane.v3d, 'clipping_plane_cross_section', text='')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        plane = context.object
+        layout.active = plane.v3d.clipping_plane_cross_section and plane.v3d.clipping_plane_union
+
         row = layout.row()
-        row.active = plane.v3d.clipping_plane_union
-        row.prop(plane.v3d, 'clipping_plane_cross_section')
+        row.prop(plane.v3d, 'clipping_plane_color', text='Color')
 
-        split = layout.split()
-        split.active = plane.v3d.clipping_plane_cross_section and plane.v3d.clipping_plane_union
-        col = split.column()
-        col.label(text='Cross-Section Color')
-        col = split.column()
-        col.prop(plane.v3d, 'clipping_plane_color', text='')
+        row = layout.row()
+        row.prop(plane.v3d, 'clipping_plane_render_side', text='Render Side')
 
-        split = layout.split()
-        split.active = plane.v3d.clipping_plane_cross_section and plane.v3d.clipping_plane_union
-        col = split.column()
-        col.label(text='Render Side')
-        col = split.column()
-        col.prop(plane.v3d, 'clipping_plane_render_side', text='')
-
-        split = layout.split()
-        split.active = plane.v3d.clipping_plane_cross_section and plane.v3d.clipping_plane_union
-        col = split.column()
-        col.label(text='Cross-Section Size')
-        col = split.column()
-        col.prop(plane.v3d, 'clipping_plane_size', text='')
+        row = layout.split()
+        row.prop(plane.v3d, 'clipping_plane_size', text='Plane Size')
 
 
 class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
     bl_context = 'material'
     bl_label = 'Verge3D Settings'
 
@@ -641,10 +712,9 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         material = context.material
-
-        layout.use_property_split = True
 
         blend_back = utils.matHasBlendBackside(material)
 
@@ -669,25 +739,6 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(material.v3d, 'gltf_compat')
 
-class V3D_PT_TextureSettings(bpy.types.Panel, V3DPanel):
-    bl_space_type = 'PROPERTIES'
-    bl_region_type = 'WINDOW'
-    bl_context = 'texture'
-    bl_label = 'Verge3D Settings'
-
-    poll_datablock = 'texture'
-
-    def draw(self, context):
-        layout = self.layout
-
-        texture = context.texture
-
-        row = layout.row()
-        row.label(text='Anisotropic Filtering:')
-
-        row = layout.row()
-        row.prop(texture.v3d, 'anisotropy', 'Ratio')
-
 
 class V3D_PT_NodeSettings(bpy.types.Panel):
     bl_space_type = 'NODE_EDITOR'
@@ -706,6 +757,7 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        layout.use_property_split = True
 
         node = context.active_node
 
@@ -753,7 +805,7 @@ def execBrowser(url):
         print("Failed to open URL: " + url)
 
 class V3D_OT_orbit_camera_target_from_cursor(bpy.types.Operator):
-    bl_idname = 'v3d.orbit_camera_target_from_cursor'
+    bl_idname = 'camera.v3d_orbit_camera_target_from_cursor'
     bl_label = 'From Cursor'
     bl_description = 'Update target coordinates from cursor position'
     bl_options = {'INTERNAL'}
@@ -765,29 +817,17 @@ class V3D_OT_orbit_camera_target_from_cursor(bpy.types.Operator):
         return {'FINISHED'}
 
 class V3D_OT_orbit_camera_update_view(bpy.types.Operator):
-    bl_idname = "v3d.orbit_camera_update_view"
-    bl_label = "Update View"
-    bl_description = "Update view for the orbit camera"
-    bl_options = {"INTERNAL"}
+    bl_idname = 'camera.v3d_orbit_camera_update_view'
+    bl_label = 'Update View'
+    bl_description = 'Update view for the orbit camera'
+    bl_options = {'INTERNAL'}
 
     def execute(self, context):
         utils.updateOrbitCameraView(context.object, context.scene)
-        return {"FINISHED"}
-
-class V3D_OT_app_manager(bpy.types.Operator):
-    bl_idname = "v3d.app_manager"
-    bl_label = "Open App Manager"
-    bl_description = "Open Verge3D App Manager"
-    bl_options = {"INTERNAL"}
-
-    def execute(self, context):
-        AppManagerConn.start(getRoot(), 'BLENDER', True)
-        execBrowser(getAppManagerHost())
-        return {"FINISHED"}
-
+        return {'FINISHED'}
 
 class V3D_OT_sneak_peek(bpy.types.Operator):
-    bl_idname = 'v3d.sneak_peek'
+    bl_idname = 'view3d.v3d_sneak_peek'
     bl_label = 'Sneak Peek'
     bl_description = 'Export to temporary location and preview the scene in Verge3D'
     bl_options = {'INTERNAL'}
@@ -799,7 +839,7 @@ class V3D_OT_sneak_peek(bpy.types.Operator):
 
         prevDir = AppManagerConn.getPreviewDir(True)
 
-        bpy.ops.v3d.export_gltf(filepath=join(prevDir, 'sneak_peek.gltf'),
+        bpy.ops.export_scene.v3d_gltf(filepath=join(prevDir, 'sneak_peek.gltf'),
                                 export_sneak_peek = True)
 
         execBrowser(getAppManagerHost() +
@@ -807,20 +847,43 @@ class V3D_OT_sneak_peek(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class V3D_OT_app_manager(bpy.types.Operator):
+    bl_idname = 'view3d.v3d_app_manager'
+    bl_label = 'Open App Manager'
+    bl_description = 'Open Verge3D App Manager'
+    bl_options = {'INTERNAL'}
+
+    def execute(self, context):
+        AppManagerConn.start(getRoot(), 'BLENDER', True)
+        execBrowser(getAppManagerHost())
+        return {"FINISHED"}
+
+
 @persistent
 def loadHandler(dummy):
     printLog('INFO', 'Reexporting ' + V3D_OT_reexport_all.currBlend)
-    bpy.ops.v3d.export_gltf(filepath=V3D_OT_reexport_all.currGLTF)
+
+    exported = filepath=V3D_OT_reexport_all.currGLTF
+
+    if os.path.splitext(exported)[1] == '.gltf':
+        bpy.ops.export_scene.v3d_gltf(filepath=exported)
+    elif os.path.splitext(exported)[1] == '.glb':
+        bpy.ops.export_scene.v3d_glb(filepath=exported)
+    else:
+        printLog('ERROR', 'Invalid exported extension')
+
     V3D_OT_reexport_all.reexportNext()
 
 class V3D_OT_reexport_all(bpy.types.Operator):
-    bl_idname = "v3d.reexport_all"
-    bl_label = "Reexport all Verge3D assets"
-    bl_description = "Reexport all glTF files inside Verge3D SDK"
+    bl_idname = 'wm.v3d_reexport_all'
+    bl_label = 'Reexport all Verge3D assets'
+    bl_description = 'Reexport all glTF files inside Verge3D SDK'
 
     exported = []
     currBlend = None
     currGLTF = None
+
+    debugForceGLB = False
 
     @classmethod
     def reexportNext(cls):
@@ -839,6 +902,9 @@ class V3D_OT_reexport_all(bpy.types.Operator):
     def execute(self, context):
         apps = join(getRoot(), 'applications')
 
+        # NOTE: fixes crashes with copy.deepcopy()
+        sys.setrecursionlimit(10000)
+
         for root, dirs, files in os.walk(apps):
             for name in files:
                 if fnmatch.fnmatch(name, '*.blend'):
@@ -852,10 +918,8 @@ class V3D_OT_reexport_all(bpy.types.Operator):
 
                         # ignore incompatible blender files
 
-                        if verMaj != 2:
-                            continue
-
-                        if verMin < 80:
+                        if verMaj < 2 or (verMaj == 2 and verMin < 80):
+                            print('WARNING', f'Ignoring {blendpath}, made with {verMaj}.{verMin}')
                             continue
 
                         IGNORE = []
@@ -869,18 +933,20 @@ class V3D_OT_reexport_all(bpy.types.Operator):
 
                     gltfpath = findExportedAssetPath(blendpath)
                     if gltfpath:
+                        if self.__class__.debugForceGLB:
+                            gltfpath = os.path.splitext(gltfpath)[0] + '.glb'
                         self.__class__.exported.append((blendpath, gltfpath))
                         self.__class__.exported.sort()
 
         self.__class__.reexportNext()
 
-        return {"FINISHED"}
+        return {'FINISHED'}
 
 def btnSneakPeek(self, context):
-    self.layout.operator('v3d.sneak_peek', text='Sneak Peek')
+    self.layout.operator(V3D_OT_sneak_peek.bl_idname, text='Sneak Peek', icon='HIDE_OFF')
 
 def btnAppManager(self, context):
-    self.layout.operator('v3d.app_manager', text='App Manager')
+    self.layout.operator(V3D_OT_app_manager.bl_idname, text='App Manager', icon='WORDWRAP_ON')
 
 def menuUserManual(self, context):
     if context.scene.render.engine in V3DPanel.COMPAT_ENGINES:
@@ -889,7 +955,7 @@ def menuUserManual(self, context):
 
 def menuReexportAll(self, context):
     self.layout.separator()
-    self.layout.operator('v3d.reexport_all', icon='TOOL_SETTINGS')
+    self.layout.operator(V3D_OT_reexport_all.bl_idname, icon='TOOL_SETTINGS')
 
 
 class VIEW3D_MT_verge3d_add(bpy.types.Menu):
@@ -921,7 +987,7 @@ class V3D_OT_add_clipping_plane(bpy.types.Operator, bpy_extras.object_utils.AddO
         return {'FINISHED'}
 
 def menuVerge3dAdd(self, context):
-    self.layout.menu('VIEW3D_MT_verge3d_add', icon='SOLO_ON')
+    self.layout.menu(VIEW3D_MT_verge3d_add.bl_idname, icon='SOLO_ON')
 
 def register():
 
@@ -935,18 +1001,30 @@ def register():
         bpy.types.TOPBAR_MT_render.append(menuReexportAll)
 
     bpy.utils.register_class(V3D_PT_RenderSettings)
-    bpy.utils.register_class(V3D_PT_RenderLayerSettings)
+    bpy.utils.register_class(V3D_PT_RenderSettingsAnimation)
+    bpy.utils.register_class(V3D_PT_RenderSettingsShadows)
+    bpy.utils.register_class(V3D_PT_RenderSettingsOutline)
+    bpy.utils.register_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.register_class(V3D_PT_WorldSettings)
     bpy.utils.register_class(V3D_PT_ObjectSettings)
+    bpy.utils.register_class(V3D_PT_ObjectSettingsAnimation)
+    bpy.utils.register_class(V3D_PT_ObjectSettingsRendering)
+    bpy.utils.register_class(V3D_PT_ObjectSettingsChildRendering)
+    bpy.utils.register_class(V3D_PT_ObjectSettingsVisibilityBreakpoints)
+    bpy.utils.register_class(V3D_PT_ObjectSettingsFitCameraEdge)
     bpy.utils.register_class(V3D_PT_CameraSettings)
+    bpy.utils.register_class(V3D_PT_CameraSettingsTarget)
     bpy.utils.register_class(V3D_PT_LightSettings)
+    bpy.utils.register_class(V3D_PT_LightSettingsShadow)
     bpy.utils.register_class(V3D_PT_ClippingPlaneSettings)
+    bpy.utils.register_class(V3D_PT_ClippingPlaneSettingsCrossSection)
     bpy.utils.register_class(V3D_PT_MaterialSettings)
     bpy.utils.register_class(V3D_PT_CurveSettings)
-    bpy.utils.register_class(V3D_PT_TextureSettings)
     bpy.utils.register_class(V3D_PT_MeshSettings)
+    bpy.utils.register_class(V3D_PT_MeshSettingsLineRendering)
     bpy.utils.register_class(V3D_PT_NodeSettings)
     bpy.utils.register_class(V3D_PT_LightProbeSettings)
+    bpy.utils.register_class(V3D_PT_LightProbeSettingsCustomInfluence)
 
     bpy.utils.register_class(V3D_OT_orbit_camera_target_from_cursor)
     bpy.utils.register_class(V3D_OT_orbit_camera_update_view)
@@ -955,8 +1033,8 @@ def register():
     bpy.utils.register_class(COLLECTION_UL_export)
 
     if AppManagerConn.isAvailable(getRoot()):
-        bpy.utils.register_class(V3D_OT_app_manager)
         bpy.utils.register_class(V3D_OT_sneak_peek)
+        bpy.utils.register_class(V3D_OT_app_manager)
         bpy.types.VIEW3D_HT_header.append(btnSneakPeek)
         bpy.types.VIEW3D_HT_header.append(btnAppManager)
 
@@ -964,24 +1042,36 @@ def register():
 def unregister():
 
     if AppManagerConn.isAvailable(getRoot()):
-        bpy.types.VIEW3D_HT_header.remove(btnAppManager)
         bpy.types.VIEW3D_HT_header.remove(btnSneakPeek)
+        bpy.types.VIEW3D_HT_header.remove(btnAppManager)
         bpy.utils.unregister_class(V3D_OT_sneak_peek)
         bpy.utils.unregister_class(V3D_OT_app_manager)
 
     bpy.utils.unregister_class(V3D_PT_NodeSettings)
-    bpy.utils.unregister_class(V3D_PT_TextureSettings)
     bpy.utils.unregister_class(V3D_PT_ClippingPlaneSettings)
+    bpy.utils.unregister_class(V3D_PT_ClippingPlaneSettingsCrossSection)
     bpy.utils.unregister_class(V3D_PT_MaterialSettings)
     bpy.utils.unregister_class(V3D_PT_LightSettings)
+    bpy.utils.unregister_class(V3D_PT_LightSettingsShadow)
     bpy.utils.unregister_class(V3D_PT_CurveSettings)
     bpy.utils.unregister_class(V3D_PT_CameraSettings)
+    bpy.utils.unregister_class(V3D_PT_CameraSettingsTarget)
     bpy.utils.unregister_class(V3D_PT_ObjectSettings)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettingsAnimation)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettingsRendering)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettingsChildRendering)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettingsVisibilityBreakpoints)
+    bpy.utils.unregister_class(V3D_PT_ObjectSettingsFitCameraEdge)
     bpy.utils.unregister_class(V3D_PT_WorldSettings)
-    bpy.utils.unregister_class(V3D_PT_RenderLayerSettings)
     bpy.utils.unregister_class(V3D_PT_RenderSettings)
+    bpy.utils.unregister_class(V3D_PT_RenderSettingsAnimation)
+    bpy.utils.unregister_class(V3D_PT_RenderSettingsShadows)
+    bpy.utils.unregister_class(V3D_PT_RenderSettingsOutline)
+    bpy.utils.unregister_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.unregister_class(V3D_PT_MeshSettings)
+    bpy.utils.unregister_class(V3D_PT_MeshSettingsLineRendering)
     bpy.utils.unregister_class(V3D_PT_LightProbeSettings)
+    bpy.utils.unregister_class(V3D_PT_LightProbeSettingsCustomInfluence)
 
     bpy.utils.unregister_class(V3D_OT_reexport_all)
     bpy.utils.unregister_class(V3D_OT_orbit_camera_target_from_cursor)

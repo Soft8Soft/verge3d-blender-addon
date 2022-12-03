@@ -524,3 +524,8 @@ def objHasCanvasFitParams(bl_obj):
         return True
     else:
         return False
+
+def sceneFrameSetFloat(scene, value):
+    frame = math.floor(value)
+    subframe = value - frame
+    scene.frame_set(frame, subframe=subframe)

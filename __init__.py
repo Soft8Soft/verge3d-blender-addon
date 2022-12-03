@@ -27,6 +27,9 @@ join = os.path.join
 ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.append(join(ROOT_DIR, 'python'))
 
+PING_DELAY_FIRST = 5
+PING_DELAY = 1
+
 if 'bpy' in locals():
     import imp
     if 'gltf2_animate' in locals():
@@ -42,6 +45,8 @@ if 'bpy' in locals():
     if 'gltf2_get' in locals():
         imp.reload(gltf2_get)
 
+    if 'curve_approx' in locals():
+        imp.reload(curve_approx)
     if 'node_material_wrapper' in locals():
         imp.reload(node_material_wrapper)
     if 'utils' in locals():
@@ -53,14 +58,14 @@ from pluginUtils.path import getAppManagerHost, getRoot
 
 bl_info = {
     "name": "Verge3D",
-    "description": "Verge3D glTF Exporter",
-    "author": "Soft8Soft LLC",
-    "version": (4, 1, 0),
-    "blender": (2, 80, 0),
+    "description": "Artist-friendly toolkit for creating 3D web experiences",
+    "author": "Soft8Soft",
+    "version": (4, 2, 0),
+    "blender": (2, 83, 0),
     "location": "File > Import-Export",
-    "wiki_url": "https://www.soft8soft.com/docs/manual/en/index.html",
+    "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
     "tracker_url": "https://www.soft8soft.com/forum/bug-reports-and-feature-requests/",
-    "category": "Verge3D"
+    "category": "Render"
 }
 
 from bpy.props import (CollectionProperty,
@@ -145,7 +150,7 @@ class V3D_OT_export():
 
 class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
     '''Export scene to glTF 2.0 format'''
-    bl_idname = 'v3d.export_gltf'
+    bl_idname = 'export_scene.v3d_gltf'
     bl_label = 'Export Verge3D glTF'
 
     filename_ext = '.gltf'
@@ -155,7 +160,7 @@ class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
 
 class V3D_OT_export_glb(bpy.types.Operator, ExportHelper, V3D_OT_export):
     '''Export scene to glTF 2.0 binary format'''
-    bl_idname = 'v3d.export_glb'
+    bl_idname = 'export_scene.v3d_glb'
     bl_label = 'Export Verge3D glTF Binary'
 
     filename_ext = '.glb'
@@ -169,31 +174,44 @@ def menuExportGLTF(self, context):
 def menuExportGLB(self, context):
     self.layout.operator(V3D_OT_export_glb.bl_idname, text='Verge3D glTF Binary (.glb)')
 
+def pingAppManager():
+    if AppManagerConn.ping():
+        return PING_DELAY
+    else:
+        AppManagerConn.start(getRoot(), 'BLENDER', True)
+        return PING_DELAY_FIRST
+
 def register():
-    from . import custom_props, custom_ui
+    from . import custom_props, custom_ui, manual_map
 
     bpy.utils.register_class(V3D_OT_export_gltf)
     bpy.utils.register_class(V3D_OT_export_glb)
 
     custom_props.register()
     custom_ui.register()
+    manual_map.register()
 
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLB)
 
     if AppManagerConn.isAvailable(getRoot()):
         AppManagerConn.start(getRoot(), 'BLENDER', True)
+        bpy.app.timers.register(pingAppManager, first_interval=PING_DELAY_FIRST, persistent=True)
     else:
         printLog('WARNING', 'Verge3D App Manager is not available!')
 
 def unregister():
-    from . import custom_props, custom_ui
+    from . import custom_props, custom_ui, manual_map
 
     bpy.utils.unregister_class(V3D_OT_export_gltf)
     bpy.utils.unregister_class(V3D_OT_export_glb)
 
     custom_props.unregister()
     custom_ui.unregister()
+    manual_map.unregister()
 
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLB)
+
+    if AppManagerConn.isAvailable(getRoot()):
+        bpy.app.timers.unregister(pingAppManager)

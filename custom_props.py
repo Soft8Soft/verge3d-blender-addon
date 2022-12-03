@@ -43,7 +43,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     export_custom_props: bpy.props.BoolProperty(
-        name = 'Export Custom Properties',
+        name = 'Export Custom Props',
         description = 'Export object custom properties',
         default = False,
         options = NO_ANIM_OPTS
@@ -57,22 +57,22 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     export_frame_range: bpy.props.BoolProperty(
-        name = 'Export Within Playback Range',
-        description = 'Export within playback range',
+        name = 'Export Playback Range',
+        description = 'Export animation within scene playback range',
         default = False,
         options = NO_ANIM_OPTS
     )
 
     export_move_keyframes: bpy.props.BoolProperty(
         name = 'Keyframes Start With 0',
-        description = 'Keyframes start with 0',
+        description = 'Make exported animation keyframes start with 0',
         default = True,
         options = NO_ANIM_OPTS
     )
 
     lzma_enabled: bpy.props.BoolProperty(
-        name = 'Enable LZMA Compression',
-        description = 'Enable LZMA Compression',
+        name = 'LZMA Compression',
+        description = 'Enable LZMA compression for exported glTF files',
         default = False,
         options = NO_ANIM_OPTS
     )
@@ -85,7 +85,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     optimize_attrs: bpy.props.BoolProperty(
-        name = 'Optimize Mesh Attributes',
+        name = 'Optimize Mesh Attrs',
         description = 'Remove unused geometry attributes (such as tangents) from exported meshes',
         default = True,
         options = NO_ANIM_OPTS
@@ -156,7 +156,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         description = ('Scale factor for adjusting soft shadows to scenes of '
                 'various scales. It\'s generally useful to decrease this value '
                 'for larger scenes, especially if shadows still look sharp no '
-                'matter how big the blur radius is set.'),
+                'matter how big the blur radius is set'),
         default = 1,
         min = 0,
         soft_max = 10,
@@ -165,7 +165,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     ibl_environment_mode: bpy.props.EnumProperty(
-        name='IBL Environment Mode',
+        name='IBL Env. Mode',
         description = 'Preferred method of rendering the scene environment',
         default = 'PMREM',
         items = [
@@ -187,7 +187,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
 
     bake_armature_actions: bpy.props.BoolProperty(
         name = 'Bake Armature Actions',
-        description = '',
+        description = 'Bake armature actions before export',
         default = False,
         options = NO_ANIM_OPTS
     )
@@ -290,15 +290,6 @@ class V3DSceneSettings(bpy.types.PropertyGroup):
         type = V3DOutlineSettings
     )
 
-    export_layers: bpy.props.BoolVectorProperty(
-        name = 'Export Layers',
-        description = 'Exported layers - Shift-Click/Drag to select multple',
-        size = 20,
-        default = [True] * 20,
-        subtype = 'LAYER',
-        options = NO_ANIM_OPTS
-    )
-
 class V3DObjectSettings(bpy.types.PropertyGroup):
     anim_auto: bpy.props.BoolProperty(
         name = 'Auto Start',
@@ -341,10 +332,10 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
     )
 
     render_order: bpy.props.IntProperty(
-        name = 'Rendering Order',
+        name = 'Render Order',
         description = ('The rendering-order index. The smaller the index, the '
                 + 'earlier the object will be rendered. Useful for sorting'
-                + ' transparent objects.'),
+                + ' transparent objects'),
         default = 0,
         options = NO_ANIM_OPTS
     )
@@ -484,7 +475,8 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         default = 'BOX',
         items = [
             ('BOX', 'Box', 'Box', 'CUBE', 0),
-            ('SPHERE', 'Sphere', 'Sphere', 'SPHERE', 1)
+            ('SPHERE', 'Sphere', 'Sphere', 'SPHERE', 1),
+            ('POINT', 'Point', 'Point', 'DOT', 2)
         ],
         options = NO_ANIM_OPTS
     )
@@ -570,10 +562,10 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         description = 'Camera controls type',
         default = 'ORBIT',
         items = [
-            ('NONE', 'No controls', 'Disable camera controls', 0),
-            ('FIRST_PERSON', 'First-Person', 'First-person control mode', 3),
+            ('ORBIT', 'Orbit', 'Move camera around a target', 2),
             ('FLYING', 'Flying', 'Flying camera', 1),
-            ('ORBIT', 'Orbit', 'Move camera around a target', 2)
+            ('FIRST_PERSON', 'First-Person', 'First-person control mode', 3),
+            ('NONE', 'No controls', 'Disable camera controls', 0)
         ],
         options = NO_ANIM_OPTS
     )
@@ -697,7 +689,7 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
     fps_gaze_level: bpy.props.FloatProperty(
         name = 'Gaze Level',
         description = 'First-person gaze (head) level',
-        default = 1.8,
+        default = 1.7,
         options = NO_ANIM_OPTS
     )
 
@@ -815,7 +807,7 @@ class V3DTextureNoiseSettings(bpy.types.PropertyGroup):
 
     dispersion_factor: bpy.props.FloatProperty(
         name = 'Strength Factor',
-        description = 'Noise Strength Factor',
+        description = 'Noise strength factor',
         min = 0,
         max = 1,
         default = 1,

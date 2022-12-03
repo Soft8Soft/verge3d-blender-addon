@@ -120,6 +120,13 @@ def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
         else:
             return -1
 
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
+        if len(fromNode.inputs['Color'].links) > 0:
+            fromNode = fromNode.inputs['Color'].links[0].from_node
+        else:
+            return -1
+
+    # COMPAT: Blender < 3.3
     if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
         if len(fromNode.inputs['Image'].links) > 0:
             fromNode = fromNode.inputs['Image'].links[0].from_node
@@ -168,6 +175,10 @@ def getTexcoordIndex(glTF, name, shaderNode):
     if isinstance(fromNode, bpy.types.ShaderNodeNormalMap):
         fromNode = fromNode.inputs['Color'].links[0].from_node
 
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
+        fromNode = fromNode.inputs['Color'].links[0].from_node
+
+    # COMPAT: Blender < 3.3
     if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
         fromNode = fromNode.inputs['Image'].links[0].from_node
 

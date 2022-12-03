@@ -72,7 +72,7 @@ def generateAsset(operator, context, exportSettings, glTF):
     asset = {}
 
     asset['version'] = '2.0'
-    asset['generator'] = 'Soft8Soft Verge3D for Blender add-on'
+    asset['generator'] = 'Verge3D for Blender'
 
     if exportSettings['copyright'] != "":
         asset['copyright'] = exportSettings['copyright']
@@ -101,12 +101,10 @@ def generateAnimationsParameter(operator,
                   channels,
                   samplers,
                   bl_obj,
-                  bl_bone_name,
+                  bl_bone,
                   bl_mat_name,
                   bl_mat_node_name,
                   rotation_mode,
-                  matrix_correction,
-                  matrix_basis,
                   is_morph_data,
                   constraint_name=None):
     """
@@ -156,9 +154,9 @@ def generateAnimationsParameter(operator,
             else:
                 node_type = 'NODE_INV_X_90'
 
-    if bl_bone_name != None:
+    if bl_bone != None:
         node_type = 'JOINT'
-        used_node_name = bl_bone_name
+        used_node_name = bl_bone.name
     elif bl_mat_node_name != None:
         node_type = 'MAT_NODE'
         used_node_name = bl_mat_node_name
@@ -205,8 +203,8 @@ def generateAnimationsParameter(operator,
                 interpolation = 'CONVERSION_NEEDED'
 
             translation_data, in_tangent_data, out_tangent_data = animateLocation(
-                    exportSettings, location, interpolation, node_type, used_node_name,
-                    matrix_correction, matrix_basis)
+                    exportSettings, location, interpolation, node_type, bl_obj,
+                    bl_bone)
 
 
             keys = sorted(translation_data.keys())
@@ -279,8 +277,8 @@ def generateAnimationsParameter(operator,
 
             rotation_data = rotation_data or {}
             rotation_data.update(animateRotationAxisAngle(exportSettings,
-                    rotation_axis_angle, interpolation, node_type,
-                    used_node_name, matrix_correction, matrix_basis))
+                    rotation_axis_angle, interpolation, node_type, bl_obj,
+                    bl_bone))
 
         if has_euler:
             interpolation = animateGetInterpolation(exportSettings, rotation_euler)
@@ -292,7 +290,7 @@ def generateAnimationsParameter(operator,
             rotation_data = rotation_data or {}
             rotation_data.update(animateRotationEuler(exportSettings,
                     rotation_euler, rotation_mode, interpolation, node_type,
-                    used_node_name, matrix_correction, matrix_basis))
+                    bl_obj, bl_bone))
 
         if has_quaternion:
             interpolation = animateGetInterpolation(exportSettings, rotation_quaternion)
@@ -300,7 +298,7 @@ def generateAnimationsParameter(operator,
                 interpolation = 'CONVERSION_NEEDED'
             rotation_data_quat, rotation_in_tangent_data, rotation_out_tangent_data = animateRotationQuaternion(
                     exportSettings, rotation_quaternion, interpolation,
-                    node_type, used_node_name, matrix_correction, matrix_basis)
+                    node_type, bl_obj, bl_bone)
 
             rotation_data = rotation_data or {}
             rotation_data.update(rotation_data_quat)
@@ -367,7 +365,9 @@ def generateAnimationsParameter(operator,
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
 
-            scale_data, in_tangent_data, out_tangent_data = animateScale(exportSettings, scale, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
+            scale_data, in_tangent_data, out_tangent_data = animateScale(
+                    exportSettings, scale, interpolation, node_type, bl_obj,
+                    bl_bone)
 
             keys = sorted(scale_data.keys())
             values = []
@@ -424,7 +424,8 @@ def generateAnimationsParameter(operator,
             if interpolation == 'CUBICSPLINE' and node_type == 'JOINT':
                 interpolation = 'CONVERSION_NEEDED'
 
-            value_data, in_tangent_data, out_tangent_data = animateValue(exportSettings, value, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
+            value_data, in_tangent_data, out_tangent_data = animateValue(
+                    exportSettings, value, interpolation, node_type)
 
             keys = sorted(value_data.keys())
             values = []
@@ -593,7 +594,8 @@ def generateAnimationsParameter(operator,
 
             interpolation = animateGetInterpolation(exportSettings, eval_time)
 
-            value_data, in_tangent_data, out_tangent_data = animateValue(exportSettings, eval_time, interpolation, node_type, used_node_name, matrix_correction, matrix_basis)
+            value_data, in_tangent_data, out_tangent_data = animateValue(
+                    exportSettings, eval_time, interpolation, node_type)
 
             keys = sorted(value_data.keys())
             values = []
@@ -826,7 +828,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
         generateAnimationsParameter(operator, context, exportSettings, glTF, bl_action,
                 channels, samplers, bl_obj, None, None, None, bl_obj.rotation_mode,
-                mathutils.Matrix.Identity(4),  mathutils.Matrix.Identity(4), False)
+                False)
 
         if exportSettings['skins']:
             if bl_obj.type == 'ARMATURE' and len(bl_obj.pose.bones) > 0:
@@ -861,47 +863,25 @@ def generateAnimations(operator, context, exportSettings, glTF):
                     start = bpy.context.scene.frame_start
                     end = bpy.context.scene.frame_end
 
-
                 for frame in range(int(start), int(end) + 1):
                     bpy.context.scene.frame_set(frame)
 
                     for bl_bone in bl_obj.pose.bones:
+                        jointKey = getPtr(bl_bone)
+                        if not exportSettings['joint_cache'].get(jointKey):
+                            exportSettings['joint_cache'][jointKey] = {}
 
-                        matrix_basis = bl_bone.matrix_basis
+                        joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                                exportSettings['bake_armature_actions'])
 
-                        correction_matrix_local = bl_bone.bone.matrix_local.copy()
+                        tmp_location, tmp_rotation, tmp_scale = decomposeTransformSwizzle(joint_matrix)
 
-                        if bl_bone.parent is not None:
-                            correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
-
-                        if not exportSettings['joint_cache'].get(bl_bone.name):
-                            exportSettings['joint_cache'][bl_bone.name] = {}
-
-                        if exportSettings['bake_armature_actions']:
-                            matrix_basis = bl_obj.convert_space(pose_bone=bl_bone, matrix=bl_bone.matrix, from_space='POSE', to_space='LOCAL')
-
-                        matrix = correction_matrix_local @ matrix_basis
-
-                        tmp_location, tmp_rotation, tmp_scale = decomposeTransformSwizzle(matrix)
-
-                        exportSettings['joint_cache'][bl_bone.name][float(frame)] = [tmp_location, tmp_rotation, tmp_scale]
+                        exportSettings['joint_cache'][jointKey][float(frame)] = [tmp_location, tmp_rotation, tmp_scale]
 
                 for bl_bone in bl_obj.pose.bones:
-
-                    matrix_basis = bl_bone.matrix_basis
-
-                    correction_matrix_local = bl_bone.bone.matrix_local.copy()
-
-                    if bl_bone.parent is not None:
-                        correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
-
-                    if exportSettings['bake_armature_actions']:
-                        matrix_basis = bl_obj.convert_space(pose_bone=bl_bone, matrix=bl_bone.matrix, from_space='POSE', to_space='LOCAL')
-
                     generateAnimationsParameter(operator, context, exportSettings, glTF,
-                            bl_action, channels, samplers, bl_obj, bl_bone.name,
-                            None, None, bl_bone.rotation_mode, correction_matrix_local,
-                            matrix_basis, False)
+                            bl_action, channels, samplers, bl_obj, bl_bone,
+                            None, None, bl_bone.rotation_mode, False)
 
 
 
@@ -930,7 +910,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
         generateAnimationsParameter(operator, context, exportSettings, glTF, bl_action,
                 channels, samplers, bl_obj, None, None, None, bl_obj.rotation_mode,
-                mathutils.Matrix.Identity(4), mathutils.Matrix.Identity(4), True)
+                True)
 
         processed_meshes.append(bl_mesh)
 
@@ -953,7 +933,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
         generateAnimationsParameter(operator, context, exportSettings, glTF, bl_action,
                 channels, samplers, bl_obj, None, None, None, bl_obj.rotation_mode,
-                mathutils.Matrix.Identity(4), mathutils.Matrix.Identity(4), True)
+                True)
 
 
     # export material animation
@@ -979,16 +959,12 @@ def generateAnimations(operator, context, exportSettings, glTF):
             if bl_action == None:
                 continue
 
-            correction_matrix_local = mathutils.Matrix.Identity(4)
-            matrix_basis = mathutils.Matrix.Identity(4)
-
             node_names = [n.name for n in bl_mat.node_tree.nodes]
 
             for name in node_names:
                 generateAnimationsParameter(operator, context, exportSettings, glTF,
                         bl_action, channels, samplers, bl_obj, None,
-                        bl_mat.name, name, bl_obj.rotation_mode,
-                        correction_matrix_local, matrix_basis, False)
+                        bl_mat.name, name, bl_obj.rotation_mode, False)
 
 
     # export follow path constraint's animation
@@ -1017,8 +993,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
         generateAnimationsParameter(operator, context, exportSettings, glTF, bl_action,
                 channels, samplers, bl_obj, None, None, None, bl_obj.rotation_mode,
-                mathutils.Matrix.Identity(4), mathutils.Matrix.Identity(4), True,
-                bl_follow_path_constraint.name)
+                True, bl_follow_path_constraint.name)
 
 
     if exportSettings['bake_armature_actions']:
@@ -2233,15 +2208,10 @@ def generateNodes(operator, context, exportSettings, glTF):
             for bl_bone in bl_obj.pose.bones:
                 node = {}
 
-                correction_matrix_local = bl_bone.bone.matrix_local.copy()
-                if bl_bone.parent is not None:
-                    correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
 
-                matrix_basis = bl_bone.matrix_basis
-                if exportSettings['bake_armature_actions']:
-                    matrix_basis = bl_obj.convert_space(pose_bone=bl_bone, matrix=bl_bone.matrix, from_space='POSE', to_space='LOCAL')
-
-                generateNodeParameter(correction_matrix_local @ matrix_basis, node)
+                generateNodeParameter(joint_matrix, node)
 
                 node['name'] = bl_obj.name + "_" + bl_bone.name
 

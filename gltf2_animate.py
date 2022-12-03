@@ -14,16 +14,25 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+import math
 
 import bpy
-import math
 import mathutils
+import numpy as np
 
 from pluginUtils.log import printLog
 from .gltf2_extract import *
+from .utils import *
+
+from .curve_approx import approximateCurveMulti, calcCurveApproximationErrors
+
+DEBUG_ANIM_APPROX = False
 
 QUAT_X_90 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi/2)
 QUAT_X_270 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi + math.pi/2)
+
+CONST_INTERP_OFFSET = 0.001
+
 
 def animateGetInterpolation(exportSettings, bl_fcurve_list):
     """
@@ -137,51 +146,107 @@ def animateGatherKeys(exportSettings, fcurve_list, interpolation):
     keys = []
 
     if interpolation == 'CONVERSION_NEEDED':
-        start = None
-        end = None
+        fcurves = [fcurve for fcurve in fcurve_list if fcurve is not None]
+        if fcurves:
 
-        for bl_fcurve in fcurve_list:
-            if bl_fcurve is None:
-                continue
+            start = min([fcurve.range()[0] for fcurve in fcurves])
+            end = max([fcurve.range()[1] for fcurve in fcurves])
+            if exportSettings['frame_range']:
+                start = max(start, bpy.context.scene.frame_start)
+                end = min(end, bpy.context.scene.frame_end)
 
-            if start == None:
-                start = bl_fcurve.range()[0]
-            else:
-                start = min(start, bl_fcurve.range()[0])
+            rangeKeys = [start, end]
+            explicitKeys = []
+            constInterpFixKeys = []
+            for fcurve in fcurves:
+                kPoints = fcurve.keyframe_points
+                explicitKeys.extend([point.co[0] for point in kPoints])
 
-            if end == None:
-                end = bl_fcurve.range()[1]
-            else:
-                end = max(end, bl_fcurve.range()[1])
+                # Ensure that all points with the CONSTANT interpolation keep
+                # the "step" shape regardless of point distribution in the
+                # resulting piecewise linear approximation. To do that we sample
+                # additional points in close proximity (just before) of certain
+                # already existing keyframe point, i.e: { f(0.999) = 0; f(1) = 1 }
+                # - this keeps the step shape (or to be precise - a very abrupt
+                # slope).
+                constIndices = [idx for idx, point in enumerate(kPoints)
+                        if point.interpolation == 'CONSTANT']
+                constInterpFixKeys.extend([kPoints[idx + 1].co[0] - CONST_INTERP_OFFSET
+                        if idx < len(kPoints) - 1 else end - CONST_INTERP_OFFSET
+                        for idx in constIndices])
 
+            # Create a grid of points that fit into the (start, end) range.
+            # The amount of points per frame (and the grid step) is chosen so
+            # that all integers from the (start, end) range are among the keys.
+            # This is convenient to use as an initial approximation (which is
+            # the old 1 sample per frame approach). The initial approximation is
+            # used to estimate the overall error level.
 
+            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 100, 0.01, 2
+            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 10, 0.1, 1
+            SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 4, 0.25, 2
+            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 2, 0.5, 1
 
-            add_epsilon_keyframe = False
-            for bl_keyframe in bl_fcurve.keyframe_points:
-                if add_epsilon_keyframe:
-                    key = bl_keyframe.co[0] - 0.001
+            startCeiled = math.ceil(start * SEGM_PER_FRAME) / SEGM_PER_FRAME
+            endFloored = math.floor(end * SEGM_PER_FRAME) / SEGM_PER_FRAME
+            gridKeys = np.arange(startCeiled, endFloored, GRID_STEP, dtype=np.double)
+            gridKeys.round(DIGITS_TO_ROUND, gridKeys)
+            if gridKeys.size and gridKeys[-1] < endFloored:
+                gridKeys = np.append(gridKeys, endFloored)
 
-                    if key not in keys:
-                        keys.append(key)
+            allKeys = np.concatenate((rangeKeys, explicitKeys,
+                    constInterpFixKeys, gridKeys))
+            allKeys = np.unique(allKeys) # this also sorts the values
+            allValues = [np.vectorize(fcurve.evaluate)(allKeys) for fcurve in fcurves]
 
-                    add_epsilon_keyframe = False
+            if len(allKeys) >= 2:
+                rangeKeysMask = np.isin(allKeys, rangeKeys)
+                explicitKeysMask = np.isin(allKeys, explicitKeys)
+                constInterpFixKeysMask = np.isin(allKeys, constInterpFixKeys)
+                gridIntegerKeysMask = np.equal(np.mod(allKeys, 1), 0)
 
-                if bl_keyframe.interpolation == 'CONSTANT':
-                    add_epsilon_keyframe = True
+                initApproxMask = (rangeKeysMask + constInterpFixKeysMask
+                        + gridIntegerKeysMask)
+                initApproxMask[0] = True
+                initApproxMask[-1] = True
+                initApproxIndices = initApproxMask.nonzero()[0]
 
-            if add_epsilon_keyframe:
-                key = end - 0.001
+                initApproxErrors = [calcCurveApproximationErrors(allKeys,
+                        allValues[i], initApproxIndices) for i in range(len(fcurves))]
 
-                if key not in keys:
-                    keys.append(key)
+                mandatoryIndicesMask = (rangeKeysMask + constInterpFixKeysMask
+                        + explicitKeysMask)
 
-        key = start
-        while key <= end:
-            if not exportSettings['frame_range'] or (exportSettings['frame_range'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
-                keys.append(key)
-            key += 1.0
+                # Detect outliers among the error data of the initial
+                # approximation. These limits serve several purposes: they
+                # prevent the resulting approximation from having too large
+                # errors, and they keep the same level of errors while, in
+                # general, reducing the number of used keyframe points.
+                # See: https://en.wikipedia.org/wiki/Interquartile_range#Outliers
+                maxSegmentErrors = []
+                for errors in initApproxErrors:
+                    q1, q3 = np.quantile(errors, [0.25, 0.75])
+                    maxSegmentErrors.append(q3 + 1.5 * (q3 - q1))
 
-        keys.sort()
+                approxIndices = approximateCurveMulti(allKeys, allValues,
+                        mandatoryIndicesMask, maxSegmentErrors)
+                keys = list(allKeys[approxIndices])
+
+                if DEBUG_ANIM_APPROX:
+                    approxErrors = [calcCurveApproximationErrors(allKeys,
+                            allValues[i], approxIndices) for i in range(len(fcurves))]
+                    initMaxErr = max([max(err) for err in initApproxErrors])
+                    initErrSum = sum([sum(err) for err in initApproxErrors])
+                    resMaxErr = max([max(err) for err in approxErrors])
+                    resErrSum = sum([sum(err) for err in approxErrors])
+
+                    print()
+                    print(f'Range: [{start}, {end}], channels: {len(fcurves)}')
+                    print('                Length    MaxErr          ErrSum')
+                    print('-' * 56)
+                    print('Init Approx     %-8i  %.12f  %.12f' % (len(initApproxIndices), initMaxErr, initErrSum))
+                    print('Result Approx   %-8i  %.12f  %.12f' % (len(approxIndices), resMaxErr, resErrSum))
+                    print('-' * 56 + '\n')
 
     else:
         for bl_fcurve in fcurve_list:
@@ -199,12 +264,17 @@ def animateGatherKeys(exportSettings, fcurve_list, interpolation):
     return keys
 
 
-def animateLocation(exportSettings, location, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateLocation(exportSettings, location, interpolation, node_type, bl_obj,
+        bl_bone):
     """
     Calculates/gathers the key value pairs for location transformations.
     """
-    if not exportSettings['joint_cache'].get(node_name):
-        exportSettings['joint_cache'][node_name] = {}
+
+    jointKey = None
+    if node_type == 'JOINT':
+        jointKey = getPtr(bl_bone)
+        if not exportSettings['joint_cache'].get(jointKey):
+            exportSettings['joint_cache'][jointKey] = {}
 
     keys = animateGatherKeys(exportSettings, location, interpolation)
 
@@ -221,16 +291,16 @@ def animateLocation(exportSettings, location, interpolation, node_type, node_nam
         out_tangent = [0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
-                translation, tmp_rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][jointKey].get(keys[keyframe_index]):
+                translation, tmp_rotation, tmp_scale = exportSettings['joint_cache'][jointKey][keys[keyframe_index]]
             else:
-                bpy.context.scene.frame_set(keys[keyframe_index])
+                sceneFrameSetFloat(bpy.context.scene, keys[keyframe_index])
 
-                matrix = matrix_correction @ matrix_basis
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
+                translation, tmp_rotation, tmp_scale = decomposeTransformSwizzle(joint_matrix)
 
-                translation, tmp_rotation, tmp_scale = decomposeTransformSwizzle(matrix)
-
-                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [translation, tmp_rotation, tmp_scale]
+                exportSettings['joint_cache'][jointKey][keys[keyframe_index]] = [translation, tmp_rotation, tmp_scale]
         else:
             channel_index = 0
             for bl_fcurve in location:
@@ -264,12 +334,17 @@ def animateLocation(exportSettings, location, interpolation, node_type, node_nam
     return result, result_in_tangent, result_out_tangent
 
 
-def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation,
+        node_type, bl_obj, bl_bone):
     """
     Calculates/gathers the key value pairs for axis angle transformations.
     """
-    if not exportSettings['joint_cache'].get(node_name):
-        exportSettings['joint_cache'][node_name] = {}
+
+    jointKey = None
+    if node_type == 'JOINT':
+        jointKey = getPtr(bl_bone)
+        if not exportSettings['joint_cache'].get(jointKey):
+            exportSettings['joint_cache'][jointKey] = {}
 
     keys = animateGatherKeys(exportSettings, rotation_axis_angle, interpolation)
 
@@ -284,16 +359,16 @@ def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation,
         rotation = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][jointKey].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][jointKey][keys[keyframe_index]]
             else:
-                bpy.context.scene.frame_set(keys[keyframe_index])
+                sceneFrameSetFloat(bpy.context.scene, keys[keyframe_index])
 
-                matrix = matrix_correction @ matrix_basis
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(joint_matrix)
 
-                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
-
-                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][jointKey][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for bl_fcurve in rotation_axis_angle:
@@ -309,7 +384,7 @@ def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation,
             # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            # apply additional rotation for lamps, cameras, fonts and their childs 
+            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, node_type)
 
         # Bring back to glTF Quaternion notation.
@@ -322,12 +397,17 @@ def animateRotationAxisAngle(exportSettings, rotation_axis_angle, interpolation,
     return result
 
 
-def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationEuler(exportSettings, rotation_euler, rotation_mode,
+        interpolation, node_type, bl_obj, bl_bone):
     """
     Calculates/gathers the key value pairs for euler angle transformations.
     """
-    if not exportSettings['joint_cache'].get(node_name):
-        exportSettings['joint_cache'][node_name] = {}
+
+    jointKey = None
+    if node_type == 'JOINT':
+        jointKey = getPtr(bl_bone)
+        if not exportSettings['joint_cache'].get(jointKey):
+            exportSettings['joint_cache'][jointKey] = {}
 
     keys = animateGatherKeys(exportSettings, rotation_euler, interpolation)
 
@@ -342,16 +422,16 @@ def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpol
         rotation = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][jointKey].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][jointKey][keys[keyframe_index]]
             else:
-                bpy.context.scene.frame_set(keys[keyframe_index])
+                sceneFrameSetFloat(bpy.context.scene, keys[keyframe_index])
 
-                matrix = matrix_correction @ matrix_basis
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(joint_matrix)
 
-                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
-
-                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][jointKey][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for bl_fcurve in rotation_euler:
@@ -367,7 +447,7 @@ def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpol
             # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            # apply additional rotation for lamps, cameras, fonts and their childs 
+            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, node_type)
 
         # Bring back to glTF Quaternion notation.
@@ -380,12 +460,17 @@ def animateRotationEuler(exportSettings, rotation_euler, rotation_mode, interpol
     return result
 
 
-def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateRotationQuaternion(exportSettings, rotation_quaternion,
+        interpolation, node_type, bl_obj, bl_bone):
     """
     Calculates/gathers the key value pairs for quaternion transformations.
     """
-    if not exportSettings['joint_cache'].get(node_name):
-        exportSettings['joint_cache'][node_name] = {}
+
+    jointKey = None
+    if node_type == 'JOINT':
+        jointKey = getPtr(bl_bone)
+        if not exportSettings['joint_cache'].get(jointKey):
+            exportSettings['joint_cache'][jointKey] = {}
 
     keys = animateGatherKeys(exportSettings, rotation_quaternion, interpolation)
 
@@ -402,16 +487,16 @@ def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation
         out_tangent = [1.0, 0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][jointKey].get(keys[keyframe_index]):
+                tmp_location, rotation, tmp_scale = exportSettings['joint_cache'][jointKey][keys[keyframe_index]]
             else:
-                bpy.context.scene.frame_set(keys[keyframe_index])
+                sceneFrameSetFloat(bpy.context.scene, keys[keyframe_index])
 
-                matrix = matrix_correction @ matrix_basis
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
+                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(joint_matrix)
 
-                tmp_location, rotation, tmp_scale = decomposeTransformSwizzle(matrix)
-
-                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
+                exportSettings['joint_cache'][jointKey][keys[keyframe_index]] = [tmp_location, rotation, tmp_scale]
         else:
             channel_index = 0
             for bl_fcurve in rotation_quaternion:
@@ -440,7 +525,7 @@ def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation
             in_tangent = convertSwizzleRotation(in_tangent)
             out_tangent = convertSwizzleRotation(out_tangent)
 
-            # apply additional rotation for lamps, cameras, fonts and their childs 
+            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, node_type)
             in_tangent = correctRotationQuat(in_tangent, node_type)
             out_tangent = correctRotationQuat(out_tangent, node_type)
@@ -459,12 +544,17 @@ def animateRotationQuaternion(exportSettings, rotation_quaternion, interpolation
     return result, result_in_tangent, result_out_tangent
 
 
-def animateScale(exportSettings, scale, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateScale(exportSettings, scale, interpolation, node_type, bl_obj,
+        bl_bone):
     """
     Calculates/gathers the key value pairs for scale transformations.
     """
-    if not exportSettings['joint_cache'].get(node_name):
-        exportSettings['joint_cache'][node_name] = {}
+
+    jointKey = None
+    if node_type == 'JOINT':
+        jointKey = getPtr(bl_bone)
+        if not exportSettings['joint_cache'].get(jointKey):
+            exportSettings['joint_cache'][jointKey] = {}
 
     keys = animateGatherKeys(exportSettings, scale, interpolation)
 
@@ -481,16 +571,16 @@ def animateScale(exportSettings, scale, interpolation, node_type, node_name, mat
         out_tangent = [0.0, 0.0, 0.0]
 
         if node_type == 'JOINT':
-            if exportSettings['joint_cache'][node_name].get(keys[keyframe_index]):
-                tmp_location, tmp_rotation, scale_data = exportSettings['joint_cache'][node_name][keys[keyframe_index]]
+            if exportSettings['joint_cache'][jointKey].get(keys[keyframe_index]):
+                tmp_location, tmp_rotation, scale_data = exportSettings['joint_cache'][jointKey][keys[keyframe_index]]
             else:
-                bpy.context.scene.frame_set(keys[keyframe_index])
+                sceneFrameSetFloat(bpy.context.scene, keys[keyframe_index])
 
-                matrix = matrix_correction @ matrix_basis
+                joint_matrix = getBoneJointMatrix(bl_obj, bl_bone,
+                        exportSettings['bake_armature_actions'])
+                tmp_location, tmp_rotation, scale_data = decomposeTransformSwizzle(joint_matrix)
 
-                tmp_location, tmp_rotation, scale_data = decomposeTransformSwizzle(matrix)
-
-                exportSettings['joint_cache'][node_name][keys[keyframe_index]] = [tmp_location, tmp_rotation, scale_data]
+                exportSettings['joint_cache'][jointKey][keys[keyframe_index]] = [tmp_location, tmp_rotation, scale_data]
         else:
             channel_index = 0
             for bl_fcurve in scale:
@@ -523,9 +613,9 @@ def animateScale(exportSettings, scale, interpolation, node_type, node_name, mat
     return result, result_in_tangent, result_out_tangent
 
 
-def animateValue(exportSettings, value_parameter, interpolation, node_type, node_name, matrix_correction, matrix_basis):
+def animateValue(exportSettings, value_parameter, interpolation, node_type):
     """
-    Calculates/gathers the key value pairs for scalar anaimations.
+    Calculates/gathers the key value pairs for scalar animations.
     """
     keys = animateGatherKeys(exportSettings, value_parameter, interpolation)
 
@@ -653,13 +743,26 @@ def animateEnergy(exportSettings, energy, interpolation):
     return result, result_in_tangent, result_out_tangent
 
 def correctRotationQuat(rotation, node_type):
-    # apply additional rotation for lamps, cameras, fonts and their childs 
+    # apply additional rotation for lamps, cameras, fonts and their childs
 
     if node_type == 'NODE_X_90':
         rotation = rotation @ QUAT_X_270
     elif node_type == 'NODE_INV_X_90':
-        rotation = QUAT_X_90 @ rotation 
+        rotation = QUAT_X_90 @ rotation
     elif node_type == 'NODE_INV_X_90_X_90':
         rotation = QUAT_X_90 @ rotation @ QUAT_X_270
 
     return rotation
+
+def getBoneJointMatrix(bl_obj, bl_bone, is_baked):
+    correction_matrix_local = bl_bone.bone.matrix_local.copy()
+    if bl_bone.parent is not None:
+        correction_matrix_local = bl_bone.parent.bone.matrix_local.inverted() @ correction_matrix_local
+
+    matrix_basis = bl_bone.matrix_basis
+    if is_baked:
+        matrix_basis = bl_obj.convert_space(pose_bone=bl_bone,
+                matrix=bl_bone.matrix, from_space='POSE',
+                to_space='LOCAL')
+
+    return correction_matrix_local @ matrix_basis

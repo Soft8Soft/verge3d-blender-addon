@@ -1267,7 +1267,7 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['vectorType'] = bl_node.vector_type
 
         elif bl_node.type == 'MAP_RANGE':
-            # blender version > 3.0.0
+            # COMPAT: appeared in Blender version > 3.0.0
             if hasattr(bl_node, "data_type"):
                 node['dataType'] = bl_node.data_type
 
@@ -1278,6 +1278,18 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['operation'] = bl_node.operation
             node['useClamp'] = bl_node.use_clamp
 
+        elif bl_node.type == 'MIX':
+            node['dataType'] = bl_node.data_type
+            node['clampFactor'] = bl_node.clamp_factor
+
+            # Color
+            node['blendType'] = bl_node.blend_type
+            node['clampResult'] = bl_node.clamp_result
+
+            # Vector
+            node['factorMode'] = bl_node.factor_mode
+
+        # COMPAT: <Blender 3.5
         elif bl_node.type == 'MIX_RGB':
             node['blendType'] = bl_node.blend_type
             node['useClamp'] = bl_node.use_clamp
@@ -1365,6 +1377,9 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                 node['type'] = 'TEX_IMAGE_NONE_BL'
             else:
                 node['texture'] = index
+
+                alphaMode = getTexImage(bl_node).alpha_mode
+                node['alphaMode'] = alphaMode
 
             node['projection'] = bl_node.projection
             node['projectionBlend'] = bl_node.projection_blend
@@ -1942,7 +1957,7 @@ def extractImageBindata(bl_image, scene, exportSettings):
         elif fileFormat == 'HDR':
             data = imageSaveRender(bl_image, scene, 'HDR', 'RGB')
         else:
-            data = imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth=16, compression=90)
+            data = imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth='8', compression=90)
 
         if fileFormat == 'HDR':
             return pu.manager.AppManagerConn.compressLZMABuffer(data)
@@ -1959,7 +1974,7 @@ def extractImageBindata(bl_image, scene, exportSettings):
     elif fileFormat == 'HDR':
         return imageSaveRender(bl_image, scene, 'HDR', 'RGB')
     else:
-        return imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth=16, compression=90)
+        return imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth='8', compression=90)
 
 def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, compression=None,
                     quality=None):
@@ -1973,11 +1988,11 @@ def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, 
 
     img_set = scene.render.image_settings
 
-    file_format = img_set.file_format
-    color_mode = img_set.color_mode
-    color_depth = img_set.color_depth
-    compression = img_set.compression
-    quality = img_set.quality
+    file_format_save = img_set.file_format
+    color_mode_save = img_set.color_mode
+    color_depth_save = img_set.color_depth
+    compression_save = img_set.compression
+    quality_save = img_set.quality
 
     img_set.file_format = file_format
     img_set.color_mode = color_mode
@@ -1991,11 +2006,11 @@ def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, 
 
     bl_image.save_render(tmp_img.name, scene=scene)
 
-    img_set.file_format = file_format
-    img_set.color_mode = color_mode
-    img_set.color_depth = color_depth
-    img_set.compression = compression
-    img_set.quality = quality
+    img_set.file_format = file_format_save
+    img_set.color_mode = color_mode_save
+    img_set.color_depth = color_depth_save
+    img_set.compression = compression_save
+    img_set.quality = quality_save
 
     bindata = tmp_img.read()
 
