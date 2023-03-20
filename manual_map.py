@@ -1,7 +1,12 @@
 import bpy
+import re
+from pluginUtils.manager import AppManagerConn
 
 def add_verge3d_manual_map():
-    url_manual_prefix = 'https://www.soft8soft.com/docs/manual/en/'
+
+    manualURL = AppManagerConn.getManualURL()
+
+    url_manual_prefix = re.sub('index.html$', '', manualURL)
     url_manual_mapping = (
         # buttons
         ('bpy.ops.view3d.v3d_sneak_peek', 'blender/Beginners-Guide.html#Sneak_Peek'),
@@ -19,6 +24,7 @@ def add_verge3d_manual_map():
         ('bpy.types.v3dexportsettings.use_shadows', 'blender/Shadows.html#global_settings'),
         ('bpy.types.v3dexportsettings.shadow*', 'blender/Shadows.html#global_settings'),
         ('bpy.types.v3dexportsettings.esm*', 'blender/Shadows.html#global_settings'),
+        ('bpy.types.v3dexportsettings.use_oit', 'blender/Transparency.html#oit_rendering'),
         ('bpy.types.v3dexportsettings*', 'blender/Lighting-and-Rendering.html#global_rendering_properties_verge3d'),
         # outline settings
         ('bpy.types.v3doutlinesettings*', 'blender/Lighting-and-Rendering.html#outline_rendering'),

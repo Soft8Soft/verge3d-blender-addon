@@ -175,11 +175,7 @@ def findArmature(obj):
     return armature if armature is not None and armature.users > 0 else None
 
 def matHasBlendBackside(bl_mat):
-    return (matIsBlend(bl_mat) and
-        (hasattr(bl_mat, 'show_transparent_back') and bl_mat.show_transparent_back))
-
-def matIsBlend(bl_mat):
-    return bl_mat.blend_method in ['BLEND', 'MULTIPLY', 'ADD']
+    return (bl_mat.blend_method == 'BLEND' and bl_mat.show_transparent_back)
 
 def updateOrbitCameraView(cam_obj, scene):
 

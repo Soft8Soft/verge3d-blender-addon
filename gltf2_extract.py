@@ -1250,6 +1250,8 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
         elif bl_node.type == 'BUMP':
             node['invert'] = bl_node.invert
+        elif bl_node.type == 'CLAMP':
+            node['clampType'] = bl_node.clamp_type
         elif bl_node.type == 'COMBINE_COLOR':
             node['mode'] = bl_node.mode
         elif bl_node.type == 'CURVE_FLOAT':
@@ -1776,7 +1778,8 @@ def extractConstraints(glTF, bl_obj):
                     'usePointsTilt': splineAttrs['usePointsTilt'],
                     'pointsTilt': splineAttrs['pointsTilt'],
                     'fixedValue': bl_cons.offset_factor,
-                    'useClampValue': curveObj.data.use_path_clamp,
+                    # COMPAT: Blender < 2.93
+                    'useClampValue': curveObj.data.use_path_clamp if hasattr(curveObj.data, 'use_path_clamp') else False,
                     'useCyclic': splineAttrs['useCyclic'],
                     'influence': bl_cons.influence,
                     # Blender's specific params

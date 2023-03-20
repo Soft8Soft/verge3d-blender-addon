@@ -23,7 +23,7 @@ import webbrowser
 
 import pluginUtils
 from pluginUtils.log import printLog
-from pluginUtils.path import getAppManagerHost, getManualURL, getRoot, findExportedAssetPath
+from pluginUtils.path import getAppManagerHost, getRoot, findExportedAssetPath
 
 from . import utils
 
@@ -101,6 +101,9 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(v3d_export, 'use_hdr')
+
+        row = layout.row()
+        row.prop(v3d_export, 'use_oit')
 
         row = layout.row()
         row.prop(v3d_export, 'ibl_environment_mode')
@@ -720,7 +723,7 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         if blend_back:
             row = layout.row()
-            row.label(text='Overridden by the "Settings->Show Backface" option.', icon='INFO')
+            row.label(text='Overridden by Settings → Show Backface', icon='INFO')
 
         row = layout.row()
         row.prop(material.v3d, 'render_side')
@@ -913,13 +916,13 @@ class V3D_OT_reexport_all(bpy.types.Operator):
                     # use file utility to check .blend version
                     if sys.platform.startswith('linux'):
                         fileinfo = subprocess.check_output(['file', '--uncompress', blendpath]).decode()
-                        ver = re.search('\d\.\d\d', fileinfo).group(0)
-                        verMaj, verMin = [int(n) for n in ver.split('.')]
+                        verStr = re.search('\d\.\d\d', fileinfo).group(0)
+                        ver = tuple([int(n) for n in verStr.split('.')]) + (0,)
 
                         # ignore incompatible blender files
-
-                        if verMaj < 2 or (verMaj == 2 and verMin < 80):
-                            print('WARNING', f'Ignoring {blendpath}, made with {verMaj}.{verMin}')
+                        if ver < (2, 80, 0) or ver > bpy.app.version:
+                            blendRel = os.path.relpath(blendpath, apps)
+                            printLog('WARNING', f'Ignoring {blendRel}, saved in Blender {ver[0]}.{ver[1]}')
                             continue
 
                         IGNORE = []
@@ -951,7 +954,7 @@ def btnAppManager(self, context):
 def menuUserManual(self, context):
     if context.scene.render.engine in V3DPanel.COMPAT_ENGINES:
         self.layout.separator()
-        self.layout.operator('wm.url_open', text='Verge3D User Manual', icon='URL').url = getManualURL()
+        self.layout.operator('wm.url_open', text='Verge3D User Manual', icon='URL').url = AppManagerConn.getManualURL()
 
 def menuReexportAll(self, context):
     self.layout.separator()

@@ -226,7 +226,9 @@ def animateGatherKeys(exportSettings, fcurve_list, interpolation):
                 maxSegmentErrors = []
                 for errors in initApproxErrors:
                     q1, q3 = np.quantile(errors, [0.25, 0.75])
-                    maxSegmentErrors.append(q3 + 1.5 * (q3 - q1))
+                    maxErrWithoutOutliers = np.amax(errors, initial=0,
+                            where=errors<(q3 + 1.5 * (q3 - q1)))
+                    maxSegmentErrors.append(maxErrWithoutOutliers)
 
                 approxIndices = approximateCurveMulti(allKeys, allValues,
                         mandatoryIndicesMask, maxSegmentErrors)

@@ -113,6 +113,13 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    use_oit: bpy.props.BoolProperty(
+        name = 'Order-Indep. Transparency',
+        description = 'Enable Order-Independent Transparency rendering technique',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
     use_shadows: bpy.props.BoolProperty(
         name = 'Enable Shadows',
         description = 'Enable shadows, use lamp settings to confiure shadow params',
@@ -165,7 +172,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     )
 
     ibl_environment_mode: bpy.props.EnumProperty(
-        name='IBL Env. Mode',
+        name = 'IBL Env. Mode',
         description = 'Preferred method of rendering the scene environment',
         default = 'PMREM',
         items = [
@@ -173,14 +180,16 @@ class V3DExportSettings(bpy.types.PropertyGroup):
                 'Use PMREM (Prefiltered Mipmaped Radiance Environment map). '
                 'Slower, higher quality'
             )),
-            ('PROBE_CUBEMAP', 'Light Probe + Cubemap (medium)', (
-                'Use a light probe for the diffuse and a cubemap for the '
-                'specular component. Medium performance, medium quality'
-            )),
+            ('PROBE_CUBEMAP', 'Light Probe + Cubemap (deprecated)',
+                'Deprecated, will use PMREM instead'
+            ),
             ('PROBE', 'Light Probe (fast)', (
                 'Use a light probe for the diffuse component, no specular. '
                 'Faster, worse quality'
             )),
+            ('NONE', 'None (fastest)',
+                'Disable environment map. '
+            ),
         ],
         options = NO_ANIM_OPTS
     )

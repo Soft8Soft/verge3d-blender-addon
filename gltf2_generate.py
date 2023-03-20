@@ -84,14 +84,20 @@ def generateAnimChannel(glTF, blObject, samplerName, path, nodeName, samplers, c
     idx = getIndex(samplers, samplerName)
     if idx > -1:
         channel = gltf.createAnimChannel(idx, gltf.getNodeIndex(glTF, nodeName), path)
+
+        # HACK: avoid channel duplication (occurs when animating an armature object)
+        for ch in channels:
+            if ch['target'] == channel['target']:
+                return None
+
         # to resolve default animation params
         channel['bl_obj'] = blObject
 
         channels.append(channel)
 
         return channel
-    else:
-        return None
+
+    return None
 
 def generateAnimationsParameter(operator,
                   context,
@@ -1852,6 +1858,12 @@ def generateDuplicateMesh(operator, context, exportSettings, glTF, bl_obj):
 
     new_mesh['name'] = new_name
 
+    # remove unnecessary parameters
+    if findArmature(bl_obj) is None:
+        for prim in primitives:
+            if 'JOINTS_0' in prim['attributes']: del prim['attributes']['JOINTS_0']
+            if 'WEIGHTS_0' in prim['attributes']: del prim['attributes']['WEIGHTS_0']
+
     glTF['meshes'].append(new_mesh)
 
     return len(glTF['meshes']) - 1
@@ -1889,6 +1901,22 @@ def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
                 if bl_material_slot.link == 'OBJECT':
                     need_dublicate = True
                     break
+
+        # when two objects, and one of them is skinned, have the same mesh,
+        # duplicate the mesh (to have both skinned and unskinned variants)
+        if not need_dublicate and findArmature(bl_obj) is None:
+            idname = getPtr(bl_obj.data)
+            for meshData in glTF['meshes']:
+                key = 'id' if meshData.get('id') != None else 'name'
+                if meshData.get(key) == idname:
+                    need_dublicate = False
+                    for prim in meshData['primitives']:
+                        if 'JOINTS_0' in prim['attributes'] or 'WEIGHTS_0' in prim['attributes']:
+                            need_dublicate = True
+                            break
+
+                    if not need_dublicate:
+                        break
 
         if need_dublicate:
             mesh = generateDuplicateMesh(operator, context, exportSettings, glTF,
@@ -2949,8 +2977,9 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
             if matHasBlendBackside(bl_mat):
                 v3dExt['depthWrite'] = False
-                material['doubleSided'] = True
-                v3dExt['renderSide'] = 'DOUBLE'
+                backface = bl_mat.use_backface_culling
+                material['doubleSided'] = not backface
+                v3dExt['renderSide'] = 'FRONT' if backface else 'DOUBLE'
             else:
                 if bl_mat.v3d.render_side == 'DOUBLE':
                     material['doubleSided'] = True
@@ -2958,6 +2987,9 @@ def generateMaterials(operator, context, exportSettings, glTF):
                     v3dExt['renderSide'] = bl_mat.v3d.render_side
                 if bl_mat.blend_method != 'OPAQUE' and bl_mat.v3d.depth_write == False:
                     v3dExt['depthWrite'] = bl_mat.v3d.depth_write
+
+                if bl_mat.blend_method == 'BLEND':
+                    v3dExt['depthPrepass'] = True
 
             if bl_mat.v3d.depth_test == False:
                 v3dExt['depthTest'] = bl_mat.v3d.depth_test
@@ -2972,17 +3004,6 @@ def generateMaterials(operator, context, exportSettings, glTF):
                 v3dExt['nodeGraph'] = composeNodeGraph(bl_mat, exportSettings, glTF)
 
             v3dExt['materialIndex'] = bl_mat.pass_index
-
-            if matIsBlend(bl_mat):
-
-                if bl_mat.blend_method == 'ADD':
-                    blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE')
-                elif bl_mat.blend_method == 'BLEND':
-                    blendMode = gltf.createBlendMode('FUNC_ADD', 'ONE', 'ONE_MINUS_SRC_ALPHA')
-                elif bl_mat.blend_method == 'MULTIPLY':
-                    blendMode = gltf.createBlendMode('FUNC_ADD', 'DST_COLOR', 'ONE_MINUS_SRC_ALPHA')
-
-                v3dExt['blendMode'] = blendMode
 
             if bl_mat.blend_method == 'HASHED':
                 v3dExt['alphaToCoverage'] = True
@@ -3112,6 +3133,9 @@ def generateScenes(operator, context, exportSettings, glTF):
 
         if exportSettings['use_hdr']:
             v3dExt['useHDR'] = True
+
+        if exportSettings['use_oit']:
+            v3dExt['useOIT'] = True
 
         ppEffects = getPostprocessingEffects(bl_scene)
         if len(ppEffects):

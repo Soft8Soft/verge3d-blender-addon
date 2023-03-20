@@ -28,7 +28,7 @@ ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.append(join(ROOT_DIR, 'python'))
 
 PING_DELAY_FIRST = 5
-PING_DELAY = 1
+PING_DELAY = 2
 
 if 'bpy' in locals():
     import imp
@@ -60,7 +60,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 2, 0),
+    "version": (4, 3, 0),
     "blender": (2, 83, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -112,6 +112,7 @@ class V3D_OT_export():
         exportSettings['optimize_attrs'] = v3d_export.optimize_attrs
         exportSettings['aa_method'] = v3d_export.aa_method
         exportSettings['use_hdr'] = v3d_export.use_hdr
+        exportSettings['use_oit'] = v3d_export.use_oit
         exportSettings['animations'] = v3d_export.export_animations
         if v3d_export.export_animations:
             exportSettings['frame_range'] = v3d_export.export_frame_range
