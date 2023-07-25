@@ -18,7 +18,7 @@ import bpy
 import copy
 import mathutils
 import mathutils.geometry
-import math, io, os, re, tempfile
+import math, io, lzma, os, re, tempfile
 
 import pluginUtils
 import pluginUtils as pu
@@ -1381,6 +1381,11 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                 node['texture'] = index
 
                 alphaMode = getTexImage(bl_node).alpha_mode
+
+                # disabled alpha mode should be set to Straight
+                if getTexImage(bl_node).colorspace_settings.name in ['Non-Color', 'Raw']:
+                    alphaMode = 'STRAIGHT'
+
                 node['alphaMode'] = alphaMode
 
             node['projection'] = bl_node.projection
@@ -1963,7 +1968,7 @@ def extractImageBindata(bl_image, scene, exportSettings):
             data = imageSaveRender(bl_image, scene, 'PNG', 'RGBA', color_depth='8', compression=90)
 
         if fileFormat == 'HDR':
-            return pu.manager.AppManagerConn.compressLZMABuffer(data)
+            return lzma.compress(data)
         else:
             return pu.convert.compressKTX2(srcData=data, method=bl_image.v3d.compression_method)
 

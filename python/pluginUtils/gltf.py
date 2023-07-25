@@ -1,11 +1,4 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-
-from builtins import (ascii, bytes, chr, dict, filter, hex, input,
-                      int, map, next, oct, open, pow, range, round,
-                      str, super, zip)
-
-import mimetypes, struct, sys
+import math, mimetypes, struct, sys
 
 from .log import printLog
 
@@ -50,7 +43,8 @@ WEBGL_BLEND_FUNCS = {
     # 'ONE_MINUS_CONSTANT_ALPHA' : 32772
 }
 
-COMPAT_IMAGE_MIME = ['image/jpeg', 'image/bmp', 'image/png', 'image/x-png', 'image/vnd.radiance']
+# NOTE: some Windows systems use 'image/hdr' instead of 'image/vnd.radiance'
+COMPAT_IMAGE_MIME = ['image/jpeg', 'image/bmp', 'image/png', 'image/x-png', 'image/vnd.radiance', 'image/hdr']
 
 def appendEntity(gltf, name, entity):
 
@@ -257,7 +251,7 @@ def getLightIndex(gltf, idname):
     Return the light index in the gltf array.
     """
 
-    v3dExt = appendExtension(gltf, 'S8S_v3d_data', gltf)
+    v3dExt = appendExtension(gltf, 'S8S_v3d_lights', gltf)
 
     if v3dExt.get('lights') == None:
         return -1
@@ -274,12 +268,34 @@ def getLightIndex(gltf, idname):
 
     return -1
 
+def getLightProbeIndex(gltf, idname):
+    """
+    Return the light probe index in the gltf array.
+    """
+
+    v3dExt = appendExtension(gltf, 'S8S_v3d_light_probes', gltf)
+
+    if v3dExt.get('lightProbes') == None:
+        return -1
+
+    lightProbes = v3dExt['lightProbes']
+
+    index = 0
+    for probe in lightProbes:
+        key = 'id' if probe.get('id') != None else 'name'
+        if probe.get(key) == idname:
+            return index
+
+        index += 1
+
+    return -1
+
 def getCurveIndex(gltf, idname):
     """
     Return the curve index in the gltf array.
     """
 
-    v3dExt = appendExtension(gltf, 'S8S_v3d_data', gltf)
+    v3dExt = appendExtension(gltf, 'S8S_v3d_curves', gltf)
 
     if v3dExt.get('curves') == None:
         return -1
@@ -328,7 +344,7 @@ def getImageIndex(gltf, idname):
 
 def getFontIndex(gltf, idname):
 
-    v3dExt = appendExtension(gltf, 'S8S_v3d_data', gltf)
+    v3dExt = appendExtension(gltf, 'S8S_v3d_curves', gltf)
 
     if v3dExt.get('fonts') == None:
         return -1
@@ -345,6 +361,24 @@ def getFontIndex(gltf, idname):
 
     return -1
 
+def getClippingPlaneIndex(gltf, idname):
+
+    v3dExt = appendExtension(gltf, 'S8S_v3d_clipping_planes', gltf)
+
+    if v3dExt.get('clippingPlanes') == None:
+        return -1
+
+    clippingPlanes = v3dExt['clippingPlanes']
+
+    index = 0
+    for plane in clippingPlanes:
+        key = 'id' if plane.get('id') != None else 'name'
+        if plane.get(key) == idname:
+            return index
+
+        index += 1
+
+    return -1
 
 def generateBufferView(gltf, binary, data_buffer, target, alignment):
 
@@ -538,7 +572,7 @@ def mergeAnimations(gltf, animations):
 
             animMergeInfo[name][0].append(channel)
             animMergeInfo[name][1].append(sampler)
-            animMergeInfo[name][2] = getAssetExtension(anim, 'S8S_v3d_animation_data')
+            animMergeInfo[name][2] = getAssetExtension(anim, 'S8S_v3d_animation')
 
     for name, mergeInfoElem in animMergeInfo.items():
         anim = {
@@ -548,13 +582,18 @@ def mergeAnimations(gltf, animations):
         }
 
         if mergeInfoElem[2]:
-            appendExtension(gltf, 'S8S_v3d_animation_data', anim, mergeInfoElem[2])
+            appendExtension(gltf, 'S8S_v3d_animation', anim, mergeInfoElem[2])
 
         newAnimations.append(anim)
 
     return newAnimations
 
 def isCompatibleImagePath(path):
+
+    # NOTE: add missing HDR mime type to python database
+    if mimetypes.guess_type('somefile.hdr')[0] == None:
+        mimetypes.add_type('image/vnd.radiance', '.hdr')
+
     mime = mimetypes.guess_type(path)[0]
 
     if mime in COMPAT_IMAGE_MIME:
@@ -566,11 +605,12 @@ def isCompatibleImagePath(path):
 def imageMimeType(path):
 
     # NOTE: add missing HDR mime type to python database
-    if sys.version_info < (3, 0):
+    if mimetypes.guess_type('somefile.hdr')[0] == None:
         mimetypes.add_type('image/vnd.radiance', '.hdr')
 
     mime = mimetypes.guess_type(path)[0]
 
+    # NOTE: no image/x-png
     if mime in ['image/jpeg', 'image/bmp', 'image/vnd.radiance', 'image/png']:
         return mime
     else:
@@ -585,9 +625,9 @@ def flatten(arr):
         return arr
 
 def getNodeGraph(mat):
-    if ('extensions' in mat and 'S8S_v3d_material_data' in mat['extensions']
-            and 'nodeGraph' in mat['extensions']['S8S_v3d_material_data']):
-        return mat['extensions']['S8S_v3d_material_data']['nodeGraph']
+    if ('extensions' in mat and 'S8S_v3d_materials' in mat['extensions']
+            and 'nodeGraph' in mat['extensions']['S8S_v3d_materials']):
+        return mat['extensions']['S8S_v3d_materials']['nodeGraph']
     else:
         return None
 
@@ -600,3 +640,12 @@ def createBlendMode(equation, srcRGB, dstRGB):
     }
 
     return blendMode
+
+def processInfinity(value):
+    if math.isinf(value):
+        if value > 0:
+            return 'Infinity'
+        else:
+            return '-Infinity'
+    else:
+        return value
