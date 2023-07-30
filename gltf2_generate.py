@@ -1598,6 +1598,24 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 else:
                     process_texcoord = False
 
+            # swap UV coords, set active render UV as first (as TEXCOORD_0)
+            if len(bl_mesh.uv_layers) > 0 and not bl_mesh.uv_layers[0].active_render:
+                for texcoord_index in range(len(bl_mesh.uv_layers)):
+                    if bl_mesh.uv_layers[texcoord_index].active_render:
+                        texcoord_id = 'TEXCOORD_' + str(texcoord_index)
+
+                        texcoord_0 = attributes['TEXCOORD_0']
+                        attributes['TEXCOORD_0'] = attributes[texcoord_id]
+                        attributes[texcoord_id] = texcoord_0
+
+                        if internal_primitive['useNodeAttrs']:
+                            old_uv_layer_name = bl_mesh.uv_layers[0].name
+                            v3dExt['uvLayers'][old_uv_layer_name] = texcoord_id;
+
+                            new_uv_layer_name = bl_mesh.uv_layers[texcoord_index].name
+                            v3dExt['uvLayers'][new_uv_layer_name] = 'TEXCOORD_0';
+                        break
+
             # vertex colors
 
             v3dExt['colorLayers'] = {}
@@ -2577,7 +2595,7 @@ def createImage(bl_image, context, exportSettings, glTF):
 
             elif imgNeedsCompression(bl_image, exportSettings):
                 if bl_image.file_format == 'HDR':
-                    pu.manager.AppManagerConn.compressLZMA(old_path, dstPath=new_path)
+                    pu.convert.compressLZMA(old_path, dstPath=new_path)
                 else:
                     pu.convert.compressKTX2(old_path, dstPath=new_path, method=bl_image.v3d.compression_method)
             else:

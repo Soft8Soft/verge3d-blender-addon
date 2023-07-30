@@ -1,16 +1,12 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-
-from builtins import (ascii, bytes, chr, dict, filter, hex, input,
-                      int, map, next, oct, open, pow, range, round,
-                      str, super, zip)
-
-import os
+import os, platform
 
 def getRoot():
     baseDir = os.path.dirname(os.path.abspath(__file__))
+    # NOTE: not working in python2
+    #return (pathlib.Path(baseDir) / '..' / '..').resolve()
     return os.path.join(baseDir, '..', '..')
 
+# COMPAT: not in use since 4.3
 def getManualURL():
     return 'https://www.soft8soft.com/docs/manual/en/index.html'
 
@@ -18,7 +14,8 @@ def getAppManagerHost(includeScheme=True):
     if includeScheme:
         return 'http://localhost:8668/'
     else:
-        return 'localhost:8668'
+        # HACK: fixes slowdowns in WSL
+        return '127.0.0.1:8668'
 
 def findExportedAssetPath(srcPath):
 
@@ -37,3 +34,8 @@ def findExportedAssetPath(srcPath):
 
     return None
 
+def getPlatformBinDirName():
+    """
+    linux_x86_64, windows_amd64, darwin_arm64, etc...
+    """
+    return platform.system().lower() + '_' + platform.machine().lower()

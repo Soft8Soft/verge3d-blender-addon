@@ -1,0 +1,7 @@
+Generated from pip version of pypng 0.20220715.0
+
+pip install pypng --target pypng
+
+Modifications:
+  1) removed bin folder, cache, and dist info
+  2) created package with empty __init__.py

@@ -15,10 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import bpy
-import json
-import struct
-import os
+import json, struct, os
 
+import pluginUtils as pu
 from pluginUtils.log import *
 from pluginUtils.manager import AppManagerConn
 
@@ -80,7 +79,8 @@ def compressLZMA(path, settings):
     if not settings['lzma_enabled']:
         return
 
-    AppManagerConn.compressLZMA(path)
+    pu.convert.compressLZMA(path)
+
 
 def save(operator, context, exportSettings):
     """

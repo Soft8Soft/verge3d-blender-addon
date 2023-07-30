@@ -24,11 +24,13 @@ from bpy.app.handlers import persistent
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
+
 #ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
 sys.path.append(join(os.path.abspath(os.path.dirname(__file__)), 'python'))
 
 PING_DELAY_FIRST = 5
 PING_DELAY = 2
+ADDON_DISABLE_DELAY = 2
 
 if 'bpy' in locals():
     import imp
@@ -60,7 +62,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 3, 0),
+    "version": (4, 4, 0),
     "blender": (2, 83, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -75,6 +77,20 @@ from bpy.props import (CollectionProperty,
                        FloatProperty)
 
 from bpy_extras.io_utils import (ExportHelper)
+
+
+class V3D_AddonPreferences(bpy.types.AddonPreferences):
+    bl_idname = __package__
+
+    disable_builtin_gltf_addon: BoolProperty(
+        default = True,
+        description = 'Disable built-in import/export glTF 2.0 add-on (io_scene_gltf2)'
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        row = layout.row()
+        row.prop(self, 'disable_builtin_gltf_addon', text='Disable Built-in glTF Add-on')
 
 class V3D_OT_export():
 
@@ -182,9 +198,19 @@ def pingAppManager():
         AppManagerConn.start(getRoot(), 'BLENDER', True)
         return PING_DELAY_FIRST
 
+def disableBuiltInGLTFAddon():
+
+    import addon_utils
+
+    is_enabled, is_loaded = addon_utils.check('io_scene_gltf2')
+
+    if is_enabled:
+        addon_utils.disable('io_scene_gltf2')
+
 def register():
     from . import custom_props, custom_ui, manual_map
 
+    bpy.utils.register_class(V3D_AddonPreferences)
     bpy.utils.register_class(V3D_OT_export_gltf)
     bpy.utils.register_class(V3D_OT_export_glb)
 
@@ -201,9 +227,14 @@ def register():
     else:
         printLog('WARNING', 'Verge3D App Manager is not available!')
 
+    if bpy.context.preferences.addons['verge3d'].preferences.disable_builtin_gltf_addon:
+        bpy.app.timers.register(disableBuiltInGLTFAddon, first_interval=ADDON_DISABLE_DELAY, persistent=True)
+
+
 def unregister():
     from . import custom_props, custom_ui, manual_map
 
+    bpy.utils.unregister_class(V3D_AddonPreferences)
     bpy.utils.unregister_class(V3D_OT_export_gltf)
     bpy.utils.unregister_class(V3D_OT_export_glb)
 
