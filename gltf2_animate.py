@@ -748,7 +748,7 @@ def correctRotationQuat(rotation, node_type):
     # apply additional rotation for lamps, cameras, fonts and their childs
 
     if node_type == 'NODE_X_90':
-        rotation = rotation @ QUAT_X_270
+        rotation = rotation @ QUAT_X_270 # right-to-left means rotation around local X
     elif node_type == 'NODE_INV_X_90':
         rotation = QUAT_X_90 @ rotation
     elif node_type == 'NODE_INV_X_90_X_90':

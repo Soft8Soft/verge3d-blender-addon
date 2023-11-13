@@ -33,7 +33,7 @@ from .gltf2_extract import *
 from .gltf2_filter import *
 from .gltf2_get import *
 from .utils import *
-
+from profilehooks import profile
 
 # Blender default grey color
 PRIMITIVE_MODE_LINES = 1
@@ -1381,7 +1381,8 @@ def generateLightProbes(operator, context, exportSettings, glTF):
             'visibilityGroupInv': blProbe.invert_visibility_collection
         }
 
-        if blProbe.type == 'CUBEMAP':
+        # COMPAT: CUBEMAP used in Blender < 4.1
+        if blProbe.type == 'CUBEMAP' or blProbe.type == 'SPHERE':
             probe['influenceType'] = blProbe.influence_type
             probe['parallaxType'] = blProbe.parallax_type if blProbe.use_custom_parallax else blProbe.influence_type
             probe['parallaxDistance'] = blProbe.parallax_distance if blProbe.use_custom_parallax else blProbe.influence_distance
@@ -2948,23 +2949,40 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
                             material['occlusionTexture'] = occlusionTexture
 
+                    if bpy.app.version >= (4, 0, 0):
+                        index = getTextureIndexNode(exportSettings, glTF, 'Emission Color', bl_node)
+                        if index >= 0:
+                            emissiveTexture = {
+                                'index' : index
+                            }
 
-                    index = getTextureIndexNode(exportSettings, glTF, 'Emission', bl_node)
-                    if index >= 0:
-                        emissiveTexture = {
-                            'index' : index
-                        }
+                            texCoord = getTexcoordIndex(glTF, 'Emission Color', bl_node)
+                            if texCoord > 0:
+                                emissiveTexture['texCoord'] = texCoord
 
-                        texCoord = getTexcoordIndex(glTF, 'Emission', bl_node)
-                        if texCoord > 0:
-                            emissiveTexture['texCoord'] = texCoord
+                            material['emissiveTexture'] = emissiveTexture
+                            material['emissiveFactor'] = [1.0, 1.0, 1.0]
+                        else:
+                            emissiveFactor = getVec3(bl_node.inputs['Emission Color'].default_value, [0.0, 0.0, 0.0])
+                            if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
+                                material['emissiveFactor'] = emissiveFactor
+                    else: # COMPAT: Blender < 4.0
+                        index = getTextureIndexNode(exportSettings, glTF, 'Emission', bl_node)
+                        if index >= 0:
+                            emissiveTexture = {
+                                'index' : index
+                            }
 
-                        material['emissiveTexture'] = emissiveTexture
-                        material['emissiveFactor'] = [1.0, 1.0, 1.0]
-                    else:
-                        emissiveFactor = getVec3(bl_node.inputs['Emission'].default_value, [0.0, 0.0, 0.0])
-                        if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
-                            material['emissiveFactor'] = emissiveFactor
+                            texCoord = getTexcoordIndex(glTF, 'Emission', bl_node)
+                            if texCoord > 0:
+                                emissiveTexture['texCoord'] = texCoord
+
+                            material['emissiveTexture'] = emissiveTexture
+                            material['emissiveFactor'] = [1.0, 1.0, 1.0]
+                        else:
+                            emissiveFactor = getVec3(bl_node.inputs['Emission'].default_value, [0.0, 0.0, 0.0])
+                            if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
+                                material['emissiveFactor'] = emissiveFactor
 
 
                     index = getTextureIndexNode(exportSettings, glTF, 'Normal', bl_node)
@@ -3217,6 +3235,7 @@ def nodeGraphReplaceTexCoordObject(nGraph, glTF):
             matNode['object'] = (gltf.getNodeIndex(glTF, matNode['object'].name)
                     if matNode['object'] is not None else -1)
 
+# @profile(immediate=True)
 def generateGLTF(operator,
                   context,
                   exportSettings,

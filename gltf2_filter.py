@@ -477,7 +477,8 @@ def filterApply(exportSettings):
             continue
 
         # only "Reflection Cubemap" and "Reflection Plane" light probes are currently supported
-        if bl_probe.type != 'CUBEMAP' and bl_probe.type != 'PLANAR':
+        # COMPAT: CUBEMAP/PLANAR used in Blender < 4.1
+        if bl_probe.type != 'CUBEMAP' and bl_probe.type != 'SPHERE' and bl_probe.type != 'PLANAR' and bl_probe.type != 'PLANE':
             continue
 
         filtered_light_probes.append(bl_probe)

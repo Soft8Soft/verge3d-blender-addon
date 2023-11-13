@@ -36,7 +36,7 @@ class V3DPanel():
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
 
-    COMPAT_ENGINES = ['CYCLES', 'BLENDER_EEVEE']
+    COMPAT_ENGINES = ['CYCLES', 'BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT']
 
     @classmethod
     def poll(cls, context):
@@ -47,8 +47,9 @@ class V3DPanel():
 
         elif (cls.poll_datablock == 'lightprobe' and context.object
                 and context.object.type == 'LIGHT_PROBE' and context.object.data):
-            # as for now only CUBEMAP lightprobes have custom v3d settings
-            return context.object.data.type == 'CUBEMAP'
+            # as for now only spherical lightprobes have custom v3d settings
+            # COMPAT: CUBEMAP used in Blender < 4.1
+            return (context.object.data.type == 'CUBEMAP' or context.object.data.type == 'SPHERE')
 
         elif (hasattr(context, cls.poll_datablock) and
                 getattr(context, cls.poll_datablock) and
@@ -964,7 +965,6 @@ def menuReexportAll(self, context):
 class VIEW3D_MT_verge3d_add(bpy.types.Menu):
     bl_idname = 'VIEW3D_MT_verge3d_add'
     bl_label = 'Verge3D'
-    bl_options = {'INTERNAL'}
 
     def draw(self, context):
         self.layout.operator('object.add_clipping_plane', icon='AXIS_TOP')

@@ -2,6 +2,20 @@ import math, mimetypes, struct, sys
 
 from .log import printLog
 
+import importlib.util
+numpySpec = importlib.util.find_spec("numpy")
+useNumpy = numpySpec is not None
+if useNumpy:
+    import numpy as np
+    GLTF_TO_NP_DTYPE = {
+        "BYTE"          : np.int8,
+        "UNSIGNED_BYTE" : np.uint8,
+        "SHORT"         : np.int16,
+        "UNSIGNED_SHORT": np.uint16,
+        "UNSIGNED_INT"  : np.uint32,
+        "FLOAT"         : np.float32
+    }
+
 WEBGL_FILTERS = {
     'NEAREST'                : 9728,
     'LINEAR'                 : 9729,
@@ -428,7 +442,7 @@ def generateBufferView(gltf, binary, data_buffer, target, alignment):
     return len(bufferViews) - 1
 
 
-def generateAccessor(gltf, binary, data, componentType, count, type, target):
+def generateAccessor(gltf, binary, data, componentType, count, _type, target):
 
     if data is None:
         printLog('ERROR', 'No data')
@@ -454,11 +468,11 @@ def generateAccessor(gltf, binary, data, componentType, count, type, target):
     gltf_type_count = [1, 2, 3, 4, 4, 9, 16]
     gltf_type = [ "SCALAR", "VEC2", "VEC3", "VEC4", "MAT2", "MAT3", "MAT4" ]
 
-    if type not in gltf_type:
-        printLog('ERROR', 'Invalid type ' + type)
+    if _type not in gltf_type:
+        printLog('ERROR', 'Invalid type ' + _type)
         return -1
 
-    type_count = gltf_type_count[gltf_type.index(type)]
+    type_count = gltf_type_count[gltf_type.index(_type)]
 
 
     if gltf.get('accessors') is None:
@@ -470,26 +484,38 @@ def generateAccessor(gltf, binary, data, componentType, count, type, target):
     accessor = {
         'componentType' : componentTypeInteger,
         'count' : count,
-        'type' : type
+        'type' : _type
     }
 
 
-    minimum = []
-    maximum = []
+    if useNumpy:
+        if isinstance(data, list):
+            npData = np.array(data, dtype=GLTF_TO_NP_DTYPE[componentType])
+        else:
+            npData = data
+            data = npData.tolist()
 
-    for component_index in range(0, type_count):
-        for component in range(0, count):
-            element = data[component * type_count + component_index]
+        npData = npData.reshape(-1, type_count)
+        accessor['min'] = npData.min(axis=0).tolist()
+        accessor['max'] = npData.max(axis=0).tolist()
 
-            if component == 0:
-                minimum.append(element)
-                maximum.append(element)
-            else:
-                minimum[component_index] = min(minimum[component_index], element)
-                maximum[component_index] = max(maximum[component_index], element)
+    else:
+        minimum = []
+        maximum = []
 
-    accessor['min'] = minimum
-    accessor['max'] = maximum
+        for component_index in range(0, type_count):
+            for component in range(0, count):
+                element = data[component * type_count + component_index]
+
+                if component == 0:
+                    minimum.append(element)
+                    maximum.append(element)
+                else:
+                    minimum[component_index] = min(minimum[component_index], element)
+                    maximum[component_index] = max(maximum[component_index], element)
+
+        accessor['min'] = minimum
+        accessor['max'] = maximum
 
     convert_type = '<' + str(count * type_count) + convert_type
 

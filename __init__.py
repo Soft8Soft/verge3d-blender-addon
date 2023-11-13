@@ -61,7 +61,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 4, 0),
+    "version": (4, 5, 0),
     "blender": (2, 83, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -83,7 +83,7 @@ class V3D_AddonPreferences(bpy.types.AddonPreferences):
 
     disable_builtin_gltf_addon: BoolProperty(
         default = True,
-        description = 'Disable built-in import/export glTF 2.0 add-on (io_scene_gltf2)'
+        description = 'Disable built-in glTF 2.0 exporter (io_scene_gltf2)'
     )
 
     def draw(self, context):
@@ -204,7 +204,8 @@ def disableBuiltInGLTFAddon():
     is_enabled, is_loaded = addon_utils.check('io_scene_gltf2')
 
     if is_enabled:
-        addon_utils.disable('io_scene_gltf2')
+        import io_scene_gltf2
+        bpy.types.TOPBAR_MT_file_export.remove(io_scene_gltf2.menu_func_export)
 
 def register():
     from . import custom_props, custom_ui, manual_map
