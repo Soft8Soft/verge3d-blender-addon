@@ -22,8 +22,9 @@ import math, io, lzma, os, re, tempfile
 
 import pluginUtils
 import pluginUtils as pu
-from pluginUtils.log import *
 import pluginUtils.gltf as gltf
+
+log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_get import *
 from .utils import *
@@ -32,7 +33,7 @@ import pcpp, pyosl.oslparse, pyosl.glslgen
 import numpy as np
 from profilehooks import profile
 GLTF_MAX_COLORS = 8
-CURVE_DATA_SIZE = 256;
+CURVE_DATA_SIZE = 256
 
 
 def npConvertSwizzleLocation(array):
@@ -352,7 +353,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     Finally, triangles are also splitted up/dublicatted, if face normals are used instead of vertex normals.
     """
 
-    printLog('INFO', 'Extracting {} primitives'.format(bl_mesh.name))
+    log.info('Extracting {} primitives'.format(bl_mesh.name))
 
     use_normals = True
 
@@ -366,7 +367,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             bl_mesh.calc_tangents()
             use_tangents = True
         except:
-            printLog('WARNING', 'Could not calculate tangents. Please try to triangulate the mesh first.')
+            log.warning('Could not calculate tangents. Please try to triangulate the mesh first.')
 
     texcoord_max = 0
     if bl_mesh.uv_layers.active:
@@ -823,7 +824,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
                         result_primitives.append(current_primitive)
 
-                        printLog('DEBUG', 'Adding primitive with splitting. Indices: ' + str(len(current_primitive['indices'])) + ' Vertices: ' + str(len(current_primitive['attributes']['POSITION']) // 3))
+                        log.debug('Adding primitive with splitting. Indices: ' + str(len(current_primitive['indices'])) + ' Vertices: ' + str(len(current_primitive['attributes']['POSITION']) // 3))
 
                 # Process primitive faces having indices in several ranges.
                 if len(pending_indices) > 0:
@@ -831,15 +832,15 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
                     pending_attributes = pending_primitive['attributes']
 
-                    printLog('DEBUG', 'Creating temporary primitive for splitting')
+                    log.debug('Creating temporary primitive for splitting')
 
         else:
             # No splitting needed.
             result_primitives.append(primitive)
 
-            printLog('DEBUG', 'Adding primitive without splitting. Indices: ' + str(len(primitive['indices'])) + ' Vertices: ' + str(len(primitive['attributes']['POSITION']) // 3))
+            log.debug('Adding primitive without splitting. Indices: ' + str(len(primitive['indices'])) + ' Vertices: ' + str(len(primitive['attributes']['POSITION']) // 3))
 
-    printLog('DEBUG', 'Primitives created: ' + str(len(result_primitives)))
+    log.debug('Primitives created: ' + str(len(result_primitives)))
     return result_primitives
 
 
@@ -849,7 +850,7 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
     Furthermore, primitives are splitted up, if the indices range is exceeded.
     """
 
-    printLog('DEBUG', 'Extracting line primitive')
+    log.debug('Extracting line primitive')
 
     # material property currently isn't used for line meshes in the engine
     mat_name = (bl_mesh.materials[0].name if bl_mesh.materials
@@ -1137,6 +1138,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['falloffFactor'] = bl_node.v3d.falloff_factor
             node['dispersionFactor'] = bl_node.v3d.dispersion_factor
 
+            # COMPAT: Blender 4.1+
+            if hasattr(bl_node, 'noise_type'):
+                node['noiseType'] = bl_node.noise_type
+
         elif bl_node.type == 'TEX_SKY':
             node['skyType'] = bl_node.sky_type
             node['sunDirection'] = extractVec(bl_node.sun_direction)
@@ -1177,31 +1182,13 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['colorLayer'] = bl_node.layer_name
 
         node['inputs'] = []
-
-        for bl_input in bl_node.inputs:
-
-            # An input of type CUSTOM is usually the last input/output socket
-            # in the "Group Input"/"Group Output" nodes, should be safe to omit
-            if bl_input.type == 'CUSTOM':
-                continue
-
-            # Invisible Blender-specific input introduced in Blender 3.2
-            if bl_input.name == 'Weight' and bl_input.enabled == False:
-                continue
-
+        for bl_input in filterNodeInputs(bl_node):
             defval = getSocketDefvalCompat(bl_input, node['type'] == 'OSL_NODE',
                     node['type'] == 'OSL_NODE')
-
             node['inputs'].append(defval)
 
         node['outputs'] = []
-        for bl_output in bl_node.outputs:
-
-            # An input of type CUSTOM is usually the last input/output socket
-            # in the "Group Input"/"Group Output" nodes, should be safe to omit
-            if bl_output.type == 'CUSTOM':
-                continue
-
+        for bl_output in filterNodeOutputs(bl_node):
             defval = getSocketDefvalCompat(bl_output, node['type'] == 'OSL_NODE',
                     node['type'] == 'OSL_NODE')
             node['outputs'].append(defval)
@@ -1213,7 +1200,7 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
     for bl_link in node_tree.links:
         if not bl_link.is_valid:
-            printLog('ERROR', 'Invalid edge')
+            log.error('Invalid edge')
             continue
 
         # indices
@@ -1221,16 +1208,16 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
         to_node = bl_nodes.find(bl_link.to_node.name)
 
         if from_node < 0 or to_node < 0:
-            printLog('ERROR', 'Invalid edge connection')
+            log.error('Invalid edge connection')
             continue
 
         edge = {
             'fromNode' : from_node,
-            'fromOutput' : findNodeSocketNum(bl_nodes[from_node].outputs,
+            'fromOutput' : findNodeSocketNum(filterNodeOutputs(bl_nodes[from_node]),
                     bl_link.from_socket.identifier),
 
             'toNode' : to_node,
-            'toInput' : findNodeSocketNum(bl_nodes[to_node].inputs,
+            'toInput' : findNodeSocketNum(filterNodeInputs(bl_nodes[to_node]),
                     bl_link.to_socket.identifier)
         }
 
@@ -1238,6 +1225,36 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
     return { 'nodes' : nodes, 'edges' : edges }
 
+
+def filterNodeInputs(bl_node):
+    inputs = []
+
+    for bl_input in bl_node.inputs:
+        # An input of type CUSTOM is usually the last input/output socket
+        # in the "Group Input"/"Group Output" nodes, should be safe to omit
+        if bl_input.type == 'CUSTOM':
+            continue
+
+        # Invisible Blender-specific input introduced in Blender 3.2
+        if bl_input.name == 'Weight' and bl_input.enabled == False:
+            continue
+
+        inputs.append(bl_input)
+
+    return inputs
+
+def filterNodeOutputs(bl_node):
+    outputs = []
+
+    for bl_output in bl_node.outputs:
+        # An input of type CUSTOM is usually the last input/output socket
+        # in the "Group Input"/"Group Output" nodes, should be safe to omit
+        if bl_output.type == 'CUSTOM':
+            continue
+
+        outputs.append(bl_output)
+
+    return outputs
 
 def extractCurveMapping(mapping, x_range):
     """Extract curve points data from CurveMapping data"""
@@ -1350,33 +1367,38 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
         'is_active_output': True
     })
 
+    # from Blender 4.0
     appendNode(graph, {
         'name': 'Principled-Based',
         'type': 'BSDF_PRINCIPLED_BL',
         'inputs': [
             extractVec(bl_mat.diffuse_color),
-            0.0,
-            [1.0, 1.0, 1.0],
-            [0.0, 0.0, 0.0, 1.0],
             bl_mat.metallic,
-            bl_mat.specular_intensity,
-            0.0,
             bl_mat.roughness,
-            0.0, # Anisotropic
-            0.0,
-            0.0, # Sheen
-            0.0,
-            0.0, # Clearcoat
-            0.03,
-            1.45,
-            0.0, # Transmission
-            0.0,
-            [0.0, 0.0, 0.0, 1.0], # Emission
-            0,
-            1, # Alpha
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0]
+            1.45,               # IOR
+            1,                  # Alpha
+            [0.0, 0.0, 0.0],    # Normal
+            0.0,                # Subsurface Weight
+            [0.0, 0.0, 0.0],    # Subsurface Radius
+            0.0,                # Subsurface Scale
+            1.4,                # Subsurface IOR
+            0.0,                # Subsurface Anisotropy
+            bl_mat.specular_intensity,
+            [1.0, 1.0, 1.0, 1.0], # Specular Tint
+            0.0,                # Anisotropic
+            0.0,                # Anisotropic Rotation
+            [0.0, 0.0, 0.0],    # Tangent
+            0.0,                # Transmission Weight
+            0.0,                # Coat Weight
+            0.0,                # Coat Roughness
+            1.5,                # Coat IOR
+            [1.0, 1.0, 1.0, 1.0], # Coat Tint
+            [0.0, 0.0, 0.0],    # Coat Normal
+            0.0,                # Sheen Weight
+            0.0,                # Sheen Roughness
+            [1.0, 1.0, 1.0, 1.0], # Sheen Tint
+            [1.0, 1.0, 1.0, 1.0], # Emission Color
+            0.0,                # Emission Strength
         ],
         'outputs': [[0, 0, 0, 0]]
     }, 0)
@@ -1519,8 +1541,7 @@ def extractConstraints(glTF, bl_obj):
                     'usePointsTilt': splineAttrs['usePointsTilt'],
                     'pointsTilt': splineAttrs['pointsTilt'],
                     'fixedValue': bl_cons.offset_factor,
-                    # COMPAT: Blender < 2.93
-                    'useClampValue': curveObj.data.use_path_clamp if hasattr(curveObj.data, 'use_path_clamp') else False,
+                    'useClampValue': curveObj.data.use_path_clamp,
                     'useCyclic': splineAttrs['useCyclic'],
                     'influence': bl_cons.influence,
                     # Blender's specific params
@@ -1694,7 +1715,7 @@ def extractAxisParam(param, prefix, use_negative):
     elif param == '-Z':
         return '-Y'
     else:
-        printLog('ERROR', 'Incorrect axis param: ' + param)
+        log.error('Incorrect axis param: ' + param)
         return ''
 
 def extractImageBindata(bl_image, scene, exportSettings):

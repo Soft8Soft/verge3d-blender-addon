@@ -18,6 +18,9 @@ from string import Template
 
 import bpy
 
+import pluginUtils
+log = pluginUtils.log.getLogger('V3D-BL')
+
 from .gltf2_get import *
 from .gltf2_extract import *
 from .node_material_wrapper import NodeMaterialWrapper
@@ -70,9 +73,7 @@ def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
     # TRIANGULATE
     need_tangents = meshNeedTangentsForExport(obj_mods_applied.data, optimize_tangents)
     if not need_tangents:
-        printLog('DEBUG',
-                'Tangent attribute will not be exported for mesh "%s"'
-                % obj_original.data.name)
+        log.debug('Tangent attribute will not be exported for mesh "%s"' % obj_original.data.name)
     need_triangulation = need_tangents and meshHasNgons(obj_mods_applied.data)
 
     obj_triangulated = obj_mods_applied
@@ -116,7 +117,7 @@ def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
 
         success = objTransferShapeKeys(obj_original, obj_sk_transfered, dg)
         if not success:
-            printLog('WARNING', 'Could not generate shape keys because they '
+            log.warning('Could not generate shape keys because they '
                     + 'change vertex count. Object "' + obj_original.name + '".')
 
         generated_objs.append(obj_sk_transfered)

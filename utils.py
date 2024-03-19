@@ -42,13 +42,6 @@ def integerToBlSuffix(val):
 
     return suf
 
-def getLightCyclesStrength(bl_light):
-    return bl_light.energy
-
-def getLightCyclesColor(bl_light):
-    col = bl_light.color
-    return [col[0], col[1], col[2]]
-
 def setSelectedObject(bl_obj):
     """
     Select object for NLA baking

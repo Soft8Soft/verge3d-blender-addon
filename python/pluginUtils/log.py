@@ -1,38 +1,12 @@
-import sys, traceback
+import logging, sys
 
-outputFile = sys.stdout
-outputLevels = ['ERROR', 'WARNING', 'INFO', 'PROFILE', 'DEBUG', 'VERBOSE']
-outputLevel = 'INFO'
+LOG_LEVEL = logging.INFO
 
-def printLog(level, output):
-
-    global outputFile
-    global outputLevels
-    global outputLevel
-
-    if outputLevels.index(level) > outputLevels.index(outputLevel):
-        return
-
-    print('V3D-' + level + ': ' + output, file=outputFile)
-    if level == 'ERROR':
-        traceback.print_stack(file=outputFile)
-
-    if outputFile != sys.stdout:
-        outputFile.flush()
-
-def setOutputLevel(level):
-
-    global outputLevels
-    global outputLevel
-
-    if outputLevels.index(level) < 0:
-        return
-
-    outputLevel = level
-
-def setOutputFile(path):
-    global outputFile
-    if path:
-        outputFile = open(path, 'a')
-    else:
-        outputFile = sys.stdoutopen(path, 'a')
+def getLogger(name):
+    log = logging.getLogger(name)
+    log.setLevel(LOG_LEVEL)
+    if not log.hasHandlers():
+        logH = logging.StreamHandler(sys.stdout)
+        logH.setFormatter(logging.Formatter('%(name)s-%(levelname)s: %(message)s'))
+        log.addHandler(logH)
+    return log

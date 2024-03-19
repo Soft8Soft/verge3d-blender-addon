@@ -17,7 +17,6 @@
 import bpy
 import os
 
-from pluginUtils.log import printLog
 import pluginUtils.gltf as gltf
 
 from .utils import *

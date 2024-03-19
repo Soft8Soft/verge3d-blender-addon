@@ -20,7 +20,6 @@ import bpy
 import mathutils
 import numpy as np
 
-from pluginUtils.log import printLog
 from .gltf2_extract import *
 from .utils import *
 

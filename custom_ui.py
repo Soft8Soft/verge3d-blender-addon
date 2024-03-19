@@ -22,8 +22,9 @@ import subprocess
 import webbrowser
 
 import pluginUtils
-from pluginUtils.log import printLog
 from pluginUtils.path import getAppManagerHost, getRoot, findExportedAssetPath
+
+log = pluginUtils.log.getLogger('V3D-BL')
 
 from . import utils
 
@@ -235,6 +236,7 @@ class V3D_PT_RenderSettingsOutline(bpy.types.Panel, V3DPanel):
 class V3D_PT_RenderSettingsCollections(bpy.types.Panel, V3DPanel):
     bl_label = 'Export Collections'
     bl_parent_id = 'V3D_PT_RenderSettings'
+    bl_options = {'DEFAULT_CLOSED'}
 
     poll_datablock = 'scene'
 
@@ -546,6 +548,10 @@ class V3D_PT_LightSettingsShadow(bpy.types.Panel, V3DPanel):
         row.prop(shadow, 'radius', text='Blur Radius')
 
         row = layout.row()
+        row.active = context.light.type == 'SUN'
+        row.prop(shadow, 'csm_light_margin', text='Margin')
+
+        row = layout.row()
         row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
         row.prop(shadow, 'esm_exponent', text='ESM Bias')
 
@@ -837,16 +843,15 @@ class V3D_OT_sneak_peek(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        # always try to run server before sneak peek
-        # fixes several issues with closed Blender
-        AppManagerConn.start(getRoot(), 'BLENDER', True)
+        if not AppManagerConn.ping():
+            AppManagerConn.start()
 
         prevDir = AppManagerConn.getPreviewDir(True)
 
         bpy.ops.export_scene.v3d_gltf(filepath=join(prevDir, 'sneak_peek.gltf'),
                                 export_sneak_peek = True)
 
-        execBrowser(getAppManagerHost() +
+        execBrowser(getAppManagerHost('BLENDER') +
                 'player/player.html?load=/sneak_peek/sneak_peek.gltf')
 
         return {'FINISHED'}
@@ -858,14 +863,15 @@ class V3D_OT_app_manager(bpy.types.Operator):
     bl_options = {'INTERNAL'}
 
     def execute(self, context):
-        AppManagerConn.start(getRoot(), 'BLENDER', True)
-        execBrowser(getAppManagerHost())
+        if not AppManagerConn.ping():
+            AppManagerConn.start()
+        execBrowser(getAppManagerHost('BLENDER'))
         return {"FINISHED"}
 
 
 @persistent
 def loadHandler(dummy):
-    printLog('INFO', 'Reexporting ' + V3D_OT_reexport_all.currBlend)
+    log.info('Reexporting ' + V3D_OT_reexport_all.currBlend)
 
     exported = filepath=V3D_OT_reexport_all.currGLTF
 
@@ -874,7 +880,7 @@ def loadHandler(dummy):
     elif os.path.splitext(exported)[1] == '.glb':
         bpy.ops.export_scene.v3d_glb(filepath=exported)
     else:
-        printLog('ERROR', 'Invalid exported extension')
+        log.error('Invalid exported extension')
 
     V3D_OT_reexport_all.reexportNext()
 
@@ -923,7 +929,7 @@ class V3D_OT_reexport_all(bpy.types.Operator):
                         # ignore incompatible blender files
                         if ver < (2, 80, 0) or ver > bpy.app.version:
                             blendRel = os.path.relpath(blendpath, apps)
-                            printLog('WARNING', f'Ignoring {blendRel}, saved in Blender {ver[0]}.{ver[1]}')
+                            log.warning(f'Ignoring {blendRel}, saved in Blender {ver[0]}.{ver[1]}')
                             continue
 
                         IGNORE = []
@@ -1035,7 +1041,7 @@ def register():
 
     bpy.utils.register_class(COLLECTION_UL_export)
 
-    if AppManagerConn.isAvailable(getRoot()):
+    if AppManagerConn.isAvailable():
         bpy.utils.register_class(V3D_OT_sneak_peek)
         bpy.utils.register_class(V3D_OT_app_manager)
         bpy.types.VIEW3D_HT_header.append(btnSneakPeek)
@@ -1044,7 +1050,7 @@ def register():
 
 def unregister():
 
-    if AppManagerConn.isAvailable(getRoot()):
+    if AppManagerConn.isAvailable():
         bpy.types.VIEW3D_HT_header.remove(btnSneakPeek)
         bpy.types.VIEW3D_HT_header.remove(btnAppManager)
         bpy.utils.unregister_class(V3D_OT_sneak_peek)

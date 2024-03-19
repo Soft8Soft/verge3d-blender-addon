@@ -1,7 +1,9 @@
 import lzma, os, platform, subprocess, sys, tempfile
 
 from .path import getRoot, getPlatformBinDirName
-from .log import printLog
+from .log import getLogger
+
+log = getLogger('V3D-PU')
 
 COMPRESSION_THRESHOLD = 3
 
@@ -27,7 +29,7 @@ def compressLZMA(srcPath, dstPath=None):
 
     dstPath = dstPath if dstPath else srcPath + '.xz'
 
-    printLog('INFO', 'Compressing {} to LZMA'.format(os.path.basename(srcPath)))
+    log.info('Compressing {} to LZMA'.format(os.path.basename(srcPath)))
 
     with open(srcPath, 'rb') as fin:
         data = fin.read()
@@ -56,7 +58,7 @@ def removeICCChunk(srcPath):
         return dstPath
 
     except Exception as e:
-        printLog('WARNING', 'ICC chunk removal failed\n' + str(e))
+        log.warning('ICC chunk removal failed\n' + str(e))
         return None
 
 def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
@@ -88,7 +90,7 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
     params.append(dstPath)
     params.append(srcPath)
 
-    printLog('INFO', 'Compressing {0} to {1}'.format(os.path.basename(srcPath), params[2].upper()))
+    log.info('Compressing {0} to {1}'.format(os.path.basename(srcPath), params[2].upper()))
 
     app = runCMD(params)
 
@@ -96,7 +98,7 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
         msg = app.stderr.decode('utf-8').strip()
 
         if 'PNG file has an ICC profile chunk' in msg:
-            printLog('WARNING', 'PNG with ICC profile chunk detected, stripping the chunk')
+            log.warning('PNG with ICC profile chunk detected, stripping the chunk')
 
             srcPathRemICC = removeICCChunk(srcPath)
 
@@ -112,7 +114,7 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
 
                 os.unlink(srcPathRemICC)
 
-        printLog('WARNING', msg)
+        log.warning(msg)
 
         # allow non-critical warnings
         if app.returncode > 0:
@@ -135,7 +137,7 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
             dstSize = os.path.getsize(dstPath)
 
         if dstSize > COMPRESSION_THRESHOLD * srcSize:
-            printLog('WARNING', 'Compressed image is too large, keeping original file as is')
+            log.warning('Compressed image is too large, keeping original file as is')
 
             if dstPath != '-':
                 os.unlink(dstPath)

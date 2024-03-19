@@ -24,7 +24,7 @@ NO_ANIM_OPTS = set()
 class V3DExportSettings(bpy.types.PropertyGroup):
     bake_modifiers: bpy.props.BoolProperty(
         name = 'Bake Modifiers',
-        description = 'Apply mesh modifiers (except armature modifers) before export ',
+        description = 'Apply mesh modifiers (except armature modifers) before export',
         default = False,
         options = NO_ANIM_OPTS
     )
@@ -726,6 +726,17 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
                 '"Bilinear" shadow maps'),
         default = 1,
         min = 0,
+        options = NO_ANIM_OPTS
+    )
+
+    csm_light_margin: bpy.props.FloatProperty(
+        name = 'Margin',
+        description = ('Increases shadow coverage area along the light direction. '
+                'Should be set to high values for scenes with large or '
+                'tall shadow casters'),
+        default = 0,
+        min = 0,
+        max = 1000000,
         options = NO_ANIM_OPTS
     )
 

@@ -17,9 +17,10 @@
 import bpy
 import json, struct, os
 
-import pluginUtils as pu
-from pluginUtils.log import *
+import pluginUtils
 from pluginUtils.manager import AppManagerConn
+
+log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_filter import *
 from .gltf2_generate import *
@@ -79,7 +80,7 @@ def compressLZMA(path, settings):
     if not settings['lzma_enabled']:
         return
 
-    pu.convert.compressLZMA(path)
+    pluginUtils.convert.compressLZMA(path)
 
 
 def save(operator, context, exportSettings):
@@ -87,7 +88,7 @@ def save(operator, context, exportSettings):
     Starts the glTF 2.0 export and saves to content either to a .gltf or .glb file.
     """
 
-    printLog('INFO', 'Starting glTF 2.0 export')
+    log.info('Starting glTF 2.0 export')
     bpy.context.window_manager.progress_begin(0, 100)
     bpy.context.window_manager.progress_update(0)
 
@@ -177,8 +178,7 @@ def save(operator, context, exportSettings):
 
     finish(exportSettings)
 
-
-    printLog('INFO', 'Finished glTF 2.0 export')
+    log.info('Finished glTF 2.0 export')
     bpy.context.window_manager.progress_end()
 
     return {'FINISHED'}

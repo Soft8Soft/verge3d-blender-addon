@@ -24,15 +24,19 @@ import shutil
 join = os.path.join
 norm = os.path.normpath
 
-from pluginUtils.log import printLog
+import pluginUtils
 import pluginUtils.gltf as gltf
 import pluginUtils.rawdata
 
+log = pluginUtils.log.getLogger('V3D-BL')
+
+from . import bl_info
 from .gltf2_animate import *
 from .gltf2_extract import *
 from .gltf2_filter import *
 from .gltf2_get import *
 from .utils import *
+
 from profilehooks import profile
 
 # Blender default grey color
@@ -72,7 +76,7 @@ def generateAsset(operator, context, exportSettings, glTF):
     asset = {}
 
     asset['version'] = '2.0'
-    asset['generator'] = 'Verge3D for Blender'
+    asset['generator'] = 'Verge3D for Blender v{}'.format('.'.join(map(str, bl_info['version'])))
 
     if exportSettings['copyright'] != "":
         asset['copyright'] = exportSettings['copyright']
@@ -629,7 +633,7 @@ def generateAnimationsParameter(operator,
             count = len(final_keys)
 
             if count < 1:
-                printLog('WARNING', 'Follow path constraint supports only keyframe animation, constraint name: ' + constraint_name)
+                log.warning('Follow path constraint supports only keyframe animation, constraint name: ' + constraint_name)
                 return None
 
             sampler = {}
@@ -645,7 +649,7 @@ def generateAnimationsParameter(operator,
                     break
 
             if bl_follow_path_constraint is None:
-                printLog('WARNING', 'Can not export follow path animation, constraint name: ' + constraint_name)
+                log.warning('Can not export follow path animation, constraint name: ' + constraint_name)
                 return None
 
             bl_spline = bl_follow_path_constraint.target.data
@@ -735,6 +739,9 @@ def generateAnimationsParameter(operator,
 
         elif data_path == 'energy':
             path = 'intensity'
+            if bl_obj.type == 'LIGHT' and bl_obj.data.type in ['POINT', 'SPOT', 'AREA']:
+                path = 'power'
+
             if path in processed_paths:
                 continue
             processed_paths.append(path)
@@ -1187,7 +1194,7 @@ def generateCamera(bl_camera, glTF):
 
 def generateCameraFromView(aspectRatio):
 
-    printLog('INFO', 'Generating default camera')
+    log.info('Generating default camera')
 
     region3D = getView3DSpaceProp('region_3d')
     if region3D == None:
@@ -1275,8 +1282,7 @@ def generateLights(operator, context, exportSettings, glTF):
         else:
             continue
 
-        light['color'] = getLightCyclesColor(bl_light)
-        light['intensity'] = getLightCyclesStrength(bl_light)
+        light['color'] = [bl_light.color[0], bl_light.color[1], bl_light.color[2]]
 
         useShadows = exportSettings['use_shadows'] and bl_light.use_shadow
 
@@ -1316,11 +1322,15 @@ def generateLights(operator, context, exportSettings, glTF):
 
         if bl_light.type == 'SUN':
             light['shadow']['csm'] = {
-                'maxDistance': bl_light.shadow_cascade_max_distance
+                'count': bl_light.shadow_cascade_count,
+                'exponent': bl_light.shadow_cascade_exponent, # Distribution in UI
+                'fade': bl_light.shadow_cascade_fade,
+                'maxDistance': bl_light.shadow_cascade_max_distance,
+                'lightMargin': bl_light.v3d.shadow.csm_light_margin
             }
 
-
-        if bl_light.type == 'POINT' or bl_light.type == 'SPOT' or bl_light.type == 'AREA':
+        if bl_light.type in ['POINT', 'SPOT', 'AREA']:
+            light['power'] = bl_light.energy
 
             if bl_light.use_custom_distance:
                 dist = bl_light.cutoff_distance
@@ -1346,7 +1356,8 @@ def generateLights(operator, context, exportSettings, glTF):
                 width = max(width, 0.01)
                 height = max(height, 0.01)
 
-                light['intensity'] /= (width * height)
+                # TODO: need to export total power
+                light['power'] /= (width * height)
 
                 light['width'] = width
                 light['height'] = height
@@ -1354,6 +1365,11 @@ def generateLights(operator, context, exportSettings, glTF):
                 light['ltcMat1'] = pluginUtils.rawdata.ltcMat1
                 light['ltcMat2'] = pluginUtils.rawdata.ltcMat2
 
+            # COMPAT: <4.6, possible issues for new export, old engine
+            light['intensity'] = light['power']
+
+        else:
+            light['intensity'] = bl_light.energy
 
         lights.append(light)
 
@@ -1465,7 +1481,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 # the default one should 'register' the v3d material extension
                 gltf.appendExtension(glTF, 'S8S_v3d_materials')
             else:
-                printLog('WARNING', 'Material ' + internal_primitive['material'] + ' not found')
+                log.warning('Material ' + internal_primitive['material'] + ' not found')
             indices = internal_primitive['indices']
 
             componentType = "UNSIGNED_BYTE"
@@ -1481,7 +1497,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
             elif max_index < 4294967295:
                 componentType = "UNSIGNED_INT"
             else:
-                printLog('ERROR', 'Invalid max_index: ' + str(max_index))
+                log.error('Invalid max_index: ' + str(max_index))
                 continue
 
             if exportSettings['force_indices']:
@@ -1494,7 +1510,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
             indices_index = gltf.generateAccessor(glTF, exportSettings['binary'], indices, componentType, count, type, "ELEMENT_ARRAY_BUFFER")
 
             if indices_index < 0:
-                printLog('ERROR', 'Could not create accessor for indices')
+                log.error('Could not create accessor for indices')
                 continue
 
             primitive['indices'] = indices_index
@@ -1521,7 +1537,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
             position = gltf.generateAccessor(glTF, exportSettings['binary'], internal_position, componentType, count, type, "ARRAY_BUFFER")
 
             if position < 0:
-                printLog('ERROR', 'Could not create accessor for position')
+                log.error('Could not create accessor for position')
                 continue
 
             attributes['POSITION'] = position
@@ -1540,7 +1556,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                         internal_normal, componentType, count, type, "ARRAY_BUFFER")
 
                 if normal < 0:
-                    printLog('ERROR', 'Could not create accessor for normal')
+                    log.error('Could not create accessor for normal')
                     continue
 
                 attributes['NORMAL'] = normal
@@ -1559,7 +1575,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 tangent = gltf.generateAccessor(glTF, exportSettings['binary'], internal_tangent, componentType, count, type, "ARRAY_BUFFER")
 
                 if tangent < 0:
-                    printLog('ERROR', 'Could not create accessor for tangent')
+                    log.error('Could not create accessor for tangent')
                     continue
 
                 attributes['TANGENT'] = tangent
@@ -1586,7 +1602,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                     if texcoord < 0:
                         process_texcoord = False
-                        printLog('ERROR', 'Could not create accessor for ' + texcoord_id)
+                        log.error('Could not create accessor for ' + texcoord_id)
                         continue
 
                     if internal_primitive['useNodeAttrs']:
@@ -1643,7 +1659,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                     if color < 0:
                         process_color = False
-                        printLog('ERROR', 'Could not create accessor for ' + color_id)
+                        log.error('Could not create accessor for ' + color_id)
                         continue
 
                     if internal_primitive['useNodeAttrs']:
@@ -1680,7 +1696,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                         if joint < 0:
                             process_bone = False
-                            printLog('ERROR', 'Could not create accessor for ' + joint_id)
+                            log.error('Could not create accessor for ' + joint_id)
                             continue
 
                         attributes[joint_id] = joint
@@ -1700,7 +1716,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                         if weight < 0:
                             process_bone = False
-                            printLog('ERROR', 'Could not create accessor for ' + weight_id)
+                            log.error('Could not create accessor for ' + weight_id)
                             continue
 
                         attributes[weight_id] = weight
@@ -1738,7 +1754,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                 target_position = gltf.generateAccessor(glTF, exportSettings['binary'], internal_target_position, componentType, count, type, "")
 
                                 if target_position < 0:
-                                    printLog('ERROR', 'Could not create accessor for ' + target_position_id)
+                                    log.error('Could not create accessor for ' + target_position_id)
                                     continue
 
 
@@ -1762,7 +1778,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                     target_normal = gltf.generateAccessor(glTF, exportSettings['binary'], internal_target_normal, componentType, count, type, "")
 
                                     if target_normal < 0:
-                                        printLog('ERROR', 'Could not create accessor for ' + target_normal_id)
+                                        log.error('Could not create accessor for ' + target_normal_id)
                                         continue
 
                                     target['NORMAL'] = target_normal
@@ -1781,7 +1797,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                     target_tangent = gltf.generateAccessor(glTF, exportSettings['binary'], internal_target_tangent, componentType, count, type, "")
 
                                     if target_tangent < 0:
-                                        printLog('ERROR', 'Could not create accessor for ' + target_tangent_id)
+                                        log.error('Could not create accessor for ' + target_tangent_id)
                                         continue
 
                                     target['TANGENT'] = target_tangent
@@ -2077,7 +2093,7 @@ def inheritParentProps(node, nodeParent):
 
 
 def generateCameraNodeFromView(glTF):
-    printLog('INFO', 'Generating default camera node')
+    log.info('Generating default camera node')
 
     node = {}
 
@@ -2121,7 +2137,7 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
     parInvMats = list(filter(lambda mat: not mat4IsIdentity(mat),
             mat4ToTRSMatrices(bl_obj.matrix_parent_inverse)))
     if parInvMats:
-        printLog('WARNING', 'Object "' + bl_obj.name
+        log.warning('Object "' + bl_obj.name
                 + '" has a non-identity parent inverse matrix. Creating proxy nodes.')
 
     relBoneMats = []
@@ -2132,7 +2148,7 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
                 relBoneMats = list(filter(lambda mat: not mat4IsIdentity(mat),
                         mat4ToTRSMatrices(pose_bone.bone.matrix_local.inverted())))
                 if relBoneMats:
-                    printLog('WARNING', 'Object "' + bl_obj.name
+                    log.warning('Object "' + bl_obj.name
                             + '" has a non-identity parent bone relative matrix. '
                             + 'Creating proxy nodes.')
             else:
@@ -2664,7 +2680,7 @@ def generateTextures(operator, context, exportSettings, glTF):
                 v3dExt['anisotropy'] = anisotropy
 
         else:
-            printLog('ERROR', 'Unknown Blender texture type')
+            log.error('Unknown Blender texture type')
             return
 
         texture['sampler'] = gltf.createSampler(glTF, magFilter, wrap, wrap)
@@ -2812,7 +2828,7 @@ def generateCurves(operator, context, exportSettings, glTF):
                 curve['alignX'] = 'right'
             else:
                 # JUSTIFY,FLUSH
-                printLog('WARNING', 'Unsupported font alignment: ' + alignX)
+                log.warning('Unsupported font alignment: ' + alignX)
                 curve['alignX'] = 'left'
 
             alignY = bl_curve.align_y
@@ -2828,7 +2844,7 @@ def generateCurves(operator, context, exportSettings, glTF):
             elif alignY == 'BOTTOM_BASELINE':
                 curve['alignY'] = 'bottomBaseline'
             else:
-                printLog('WARNING', 'Unsupported font alignment: ' + alignY)
+                log.warning('Unsupported font alignment: ' + alignY)
                 curve['alignY'] = 'topBaseline'
 
             # optional
@@ -2838,7 +2854,7 @@ def generateCurves(operator, context, exportSettings, glTF):
                 if material >= 0:
                     curve['material'] = material
                 else:
-                    printLog('WARNING', 'Material ' + bl_curve.materials[0].name + ' not found')
+                    log.warning('Material ' + bl_curve.materials[0].name + ' not found')
 
         curves.append(curve)
 
@@ -2949,6 +2965,8 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
                             material['occlusionTexture'] = occlusionTexture
 
+                    emissiveScale = getScalar(bl_node.inputs['Emission Strength'].default_value, 1.0)
+
                     if bpy.app.version >= (4, 0, 0):
                         index = getTextureIndexNode(exportSettings, glTF, 'Emission Color', bl_node)
                         if index >= 0:
@@ -2961,11 +2979,14 @@ def generateMaterials(operator, context, exportSettings, glTF):
                                 emissiveTexture['texCoord'] = texCoord
 
                             material['emissiveTexture'] = emissiveTexture
-                            material['emissiveFactor'] = [1.0, 1.0, 1.0]
+                            material['emissiveFactor'] = [emissiveScale, emissiveScale, emissiveScale]
                         else:
                             emissiveFactor = getVec3(bl_node.inputs['Emission Color'].default_value, [0.0, 0.0, 0.0])
-                            if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
-                                material['emissiveFactor'] = emissiveFactor
+                            if (emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0) and emissiveScale != 0.0:
+                                material['emissiveFactor'] = [emissiveFactor[0] * emissiveScale,
+                                                              emissiveFactor[1] * emissiveScale,
+                                                              emissiveFactor[2] * emissiveScale]
+
                     else: # COMPAT: Blender < 4.0
                         index = getTextureIndexNode(exportSettings, glTF, 'Emission', bl_node)
                         if index >= 0:
@@ -2978,12 +2999,13 @@ def generateMaterials(operator, context, exportSettings, glTF):
                                 emissiveTexture['texCoord'] = texCoord
 
                             material['emissiveTexture'] = emissiveTexture
-                            material['emissiveFactor'] = [1.0, 1.0, 1.0]
+                            material['emissiveFactor'] = [emissiveScale, emissiveScale, emissiveScale]
                         else:
                             emissiveFactor = getVec3(bl_node.inputs['Emission'].default_value, [0.0, 0.0, 0.0])
-                            if emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0:
-                                material['emissiveFactor'] = emissiveFactor
-
+                            if (emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0) and emissiveScale != 0.0:
+                                material['emissiveFactor'] = [emissiveFactor[0] * emissiveScale,
+                                                              emissiveFactor[1] * emissiveScale,
+                                                              emissiveFactor[2] * emissiveScale]
 
                     index = getTextureIndexNode(exportSettings, glTF, 'Normal', bl_node)
                     if index >= 0:
@@ -3180,6 +3202,11 @@ def generateScenes(operator, context, exportSettings, glTF):
         if bl_scene.view_settings.view_transform == 'Filmic':
             v3dExt['toneMapping'] = {
                 'type': 'filmicBlender'
+            }
+        elif bl_scene.view_settings.view_transform == 'AgX':
+            v3dExt['toneMapping'] = {
+                'type': 'agxBlender',
+                'look': bl_scene.view_settings.look.upper().replace(' - ', '_').replace(' ', '_')
             }
 
         v3dExt['pmremMaxTileSize'] = clamp(int(bl_scene.eevee.gi_cubemap_resolution),

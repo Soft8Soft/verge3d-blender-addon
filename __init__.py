@@ -17,7 +17,6 @@
 import bpy
 import os
 import sys
-import threading
 
 from bpy.app.handlers import persistent
 
@@ -27,8 +26,6 @@ join = os.path.join
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(join(ROOT_DIR, 'python'))
 
-PING_DELAY_FIRST = 5
-PING_DELAY = 2
 ADDON_DISABLE_DELAY = 2
 
 if 'bpy' in locals():
@@ -53,15 +50,18 @@ if 'bpy' in locals():
     if 'utils' in locals():
         imp.reload(utils)
 
-from pluginUtils.log import printLog
+import pluginUtils
 from pluginUtils.manager import AppManagerConn
-from pluginUtils.path import getAppManagerHost, getRoot
+from pluginUtils.path import getRoot
+
+log = pluginUtils.log.getLogger('V3D-BL')
+
 
 bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 5, 0),
+    "version": (4, 6, 0),
     "blender": (2, 83, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -190,13 +190,6 @@ def menuExportGLTF(self, context):
 def menuExportGLB(self, context):
     self.layout.operator(V3D_OT_export_glb.bl_idname, text='Verge3D glTF Binary (.glb)')
 
-def pingAppManager():
-    if AppManagerConn.ping():
-        return PING_DELAY
-    else:
-        AppManagerConn.start(getRoot(), 'BLENDER', True)
-        return PING_DELAY_FIRST
-
 def disableBuiltInGLTFAddon():
 
     import addon_utils
@@ -210,6 +203,8 @@ def disableBuiltInGLTFAddon():
 def register():
     from . import custom_props, custom_ui, manual_map
 
+    AppManagerConn.init(getRoot(), 'BLENDER')
+
     bpy.utils.register_class(V3D_AddonPreferences)
     bpy.utils.register_class(V3D_OT_export_gltf)
     bpy.utils.register_class(V3D_OT_export_glb)
@@ -221,11 +216,11 @@ def register():
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLB)
 
-    if AppManagerConn.isAvailable(getRoot()):
-        AppManagerConn.start(getRoot(), 'BLENDER', True)
-        bpy.app.timers.register(pingAppManager, first_interval=PING_DELAY_FIRST, persistent=True)
+    if AppManagerConn.isAvailable():
+        if not AppManagerConn.ping():
+            AppManagerConn.start()
     else:
-        printLog('WARNING', 'Verge3D App Manager is not available!')
+        log.warning('App Manager is not available!')
 
     if bpy.context.preferences.addons['verge3d'].preferences.disable_builtin_gltf_addon:
         bpy.app.timers.register(disableBuiltInGLTFAddon, first_interval=ADDON_DISABLE_DELAY, persistent=True)
@@ -244,6 +239,3 @@ def unregister():
 
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLB)
-
-    if AppManagerConn.isAvailable(getRoot()):
-        bpy.app.timers.unregister(pingAppManager)

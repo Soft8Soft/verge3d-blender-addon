@@ -1,6 +1,7 @@
 import math, mimetypes, struct, sys
 
-from .log import printLog
+from .log import getLogger
+log = getLogger('V3D-PU')
 
 import importlib.util
 numpySpec = importlib.util.find_spec("numpy")
@@ -445,7 +446,7 @@ def generateBufferView(gltf, binary, data_buffer, target, alignment):
 def generateAccessor(gltf, binary, data, componentType, count, _type, target):
 
     if data is None:
-        printLog('ERROR', 'No data')
+        log.error('No data')
         return -1
 
     gltf_convert_type = [ "b", "B", "h", "H", "I", "f" ]
@@ -453,7 +454,7 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
     gltf_convert_type_size = [ 1, 1, 2, 2, 4, 4 ]
 
     if componentType not in gltf_enumNames:
-        printLog('ERROR', 'Invalid componentType ' + componentType)
+        log.error('Invalid componentType ' + componentType)
         return -1
 
     componentTypeInteger = [ 5120, 5121, 5122, 5123, 5125, 5126 ][gltf_enumNames.index(componentType)]
@@ -462,14 +463,14 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
     convert_type_size = gltf_convert_type_size[gltf_enumNames.index(componentType)]
 
     if count < 1:
-        printLog('ERROR', 'Invalid count ' + str(count))
+        log.error('Invalid count ' + str(count))
         return -1
 
     gltf_type_count = [1, 2, 3, 4, 4, 9, 16]
     gltf_type = [ "SCALAR", "VEC2", "VEC3", "VEC4", "MAT2", "MAT3", "MAT4" ]
 
     if _type not in gltf_type:
-        printLog('ERROR', 'Invalid type ' + _type)
+        log.error('Invalid type ' + _type)
         return -1
 
     type_count = gltf_type_count[gltf_type.index(_type)]
@@ -529,7 +530,7 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
     bufferView = generateBufferView(gltf, binary, data_buffer, target, convert_type_size)
 
     if bufferView < 0:
-        printLog('ERROR', 'Invalid buffer view')
+        log.error('Invalid buffer view')
         return -1
 
     accessor['bufferView'] = bufferView

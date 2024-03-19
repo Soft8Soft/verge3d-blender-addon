@@ -1,21 +1,23 @@
 import os, platform
 
+PORTS = {
+    'BLENDER': 8668,
+    'MAX': 8669,
+    'MAYA': 8670
+}
+
 def getRoot():
     baseDir = os.path.dirname(os.path.abspath(__file__))
     # NOTE: not working in python2
     #return (pathlib.Path(baseDir) / '..' / '..').resolve()
     return os.path.join(baseDir, '..', '..')
 
-# COMPAT: not in use since 4.3
-def getManualURL():
-    return 'https://www.soft8soft.com/docs/manual/en/index.html'
-
-def getAppManagerHost(includeScheme=True):
+def getAppManagerHost(modPackage, includeScheme=True):
     if includeScheme:
-        return 'http://localhost:8668/'
+        return 'http://localhost:{}/'.format(PORTS[modPackage])
     else:
         # HACK: fixes slowdowns in WSL
-        return '127.0.0.1:8668'
+        return '127.0.0.1:{}'.format(PORTS[modPackage])
 
 def findExportedAssetPath(srcPath):
 
