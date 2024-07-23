@@ -6,6 +6,8 @@ PORTS = {
     'MAYA': 8670
 }
 
+REEXPORT_ONLY = True
+
 def getRoot():
     baseDir = os.path.dirname(os.path.abspath(__file__))
     # NOTE: not working in python2
@@ -20,7 +22,6 @@ def getAppManagerHost(modPackage, includeScheme=True):
         return '127.0.0.1:{}'.format(PORTS[modPackage])
 
 def findExportedAssetPath(srcPath):
-
     dirname, basename = os.path.split(srcPath)
 
     for ext in ['.gltf', '.glb']:
@@ -33,6 +34,9 @@ def findExportedAssetPath(srcPath):
 
             if os.path.exists(path):
                 return path
+
+    if not REEXPORT_ONLY:
+        return os.path.splitext(srcPath)[0] + '.gltf'
 
     return None
 

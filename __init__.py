@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,8 +18,6 @@ import bpy
 import os
 import sys
 
-from bpy.app.handlers import persistent
-
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
@@ -29,26 +27,26 @@ sys.path.append(join(ROOT_DIR, 'python'))
 ADDON_DISABLE_DELAY = 2
 
 if 'bpy' in locals():
-    import imp
+    import importlib
     if 'gltf2_animate' in locals():
-        imp.reload(gltf2_animate)
+        importlib.reload(gltf2_animate)
     if 'gltf2_export' in locals():
-        imp.reload(gltf2_export)
+        importlib.reload(gltf2_export)
     if 'gltf2_extract' in locals():
-        imp.reload(gltf2_extract)
+        importlib.reload(gltf2_extract)
     if 'gltf2_filter' in locals():
-        imp.reload(gltf2_filter)
+        importlib.reload(gltf2_filter)
     if 'gltf2_generate' in locals():
-        imp.reload(gltf2_generate)
+        importlib.reload(gltf2_generate)
     if 'gltf2_get' in locals():
-        imp.reload(gltf2_get)
+        importlib.reload(gltf2_get)
 
     if 'curve_approx' in locals():
-        imp.reload(curve_approx)
+        importlib.reload(curve_approx)
     if 'node_material_wrapper' in locals():
-        imp.reload(node_material_wrapper)
+        importlib.reload(node_material_wrapper)
     if 'utils' in locals():
-        imp.reload(utils)
+        importlib.reload(utils)
 
 import pluginUtils
 from pluginUtils.manager import AppManagerConn
@@ -61,8 +59,8 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 6, 0),
-    "blender": (2, 83, 0),
+    "version": (4, 7, 0),
+    "blender": (3, 0, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
     "tracker_url": "https://www.soft8soft.com/forum/bug-reports-and-feature-requests/",
@@ -116,6 +114,8 @@ class V3D_OT_export():
         exportSettings['shadow_map_type'] = v3d_export.shadow_map_type
         exportSettings['shadow_map_side'] = v3d_export.shadow_map_side
         exportSettings['esm_distance_scale'] = v3d_export.esm_distance_scale
+        exportSettings['shadow_cube_size'] = v3d_export.shadow_cube_size
+        exportSettings['shadow_cascade_size'] = v3d_export.shadow_cascade_size
         exportSettings['ibl_environment_mode'] = v3d_export.ibl_environment_mode
         exportSettings['bake_modifiers'] = v3d_export.bake_modifiers
         exportSettings['bake_armature_actions'] = v3d_export.bake_armature_actions
@@ -222,7 +222,7 @@ def register():
     else:
         log.warning('App Manager is not available!')
 
-    if bpy.context.preferences.addons['verge3d'].preferences.disable_builtin_gltf_addon:
+    if bpy.context.preferences.addons[__package__].preferences.disable_builtin_gltf_addon:
         bpy.app.timers.register(disableBuiltInGLTFAddon, first_interval=ADDON_DISABLE_DELAY, persistent=True)
 
 

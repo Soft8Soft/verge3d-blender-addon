@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -1119,9 +1119,9 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
                 alphaMode = getTexImage(bl_node).alpha_mode
 
-                # disabled alpha mode should be set to Straight
-                if getTexImage(bl_node).colorspace_settings.name in ['Non-Color', 'Raw']:
-                    alphaMode = 'STRAIGHT'
+                # set Channel Packed for disabled alpha mode
+                if extractColorSpace(bl_node) in ['non-color', 'raw']:
+                    alphaMode = 'CHANNEL_PACKED'
 
                 node['alphaMode'] = alphaMode
 
@@ -1519,6 +1519,9 @@ def extractConstraints(glTF, bl_obj):
                 }))
 
         elif bl_cons.type == 'FOLLOW_PATH':
+            if target < 0:
+                continue
+
             curveObj = bl_cons.target
             spline = curveObj.data.splines.active
             if spline and spline.point_count_u > 0:
@@ -1659,6 +1662,85 @@ def extractConstraints(glTF, bl_obj):
                     'useRotation': bl_cons.use_rotation,
                 }))
 
+        elif bl_cons.type == 'TRANSFORM':
+            if target >= 0:
+                if bl_cons.map_from == 'LOCATION':
+                    fromMin = [bl_cons.from_min_x, bl_cons.from_min_z, -bl_cons.from_max_y]
+                    fromMax = [bl_cons.from_max_x, bl_cons.from_max_z, -bl_cons.from_min_y]
+                elif bl_cons.map_from == 'ROTATION':
+                    fromMin = [bl_cons.from_min_x_rot, bl_cons.from_min_z_rot, -bl_cons.from_max_y_rot]
+                    fromMax = [bl_cons.from_max_x_rot, bl_cons.from_max_z_rot, -bl_cons.from_min_y_rot]
+                elif bl_cons.map_from == 'SCALE':
+                    fromMin = [bl_cons.from_min_x_scale, bl_cons.from_min_z_scale, bl_cons.from_min_y_scale]
+                    fromMax = [bl_cons.from_max_x_scale, bl_cons.from_max_z_scale, bl_cons.from_max_y_scale]
+
+                if bl_cons.map_to == 'LOCATION':
+                    mixMode = bl_cons.mix_mode
+                    toMin = [bl_cons.to_min_x, bl_cons.to_min_z, -bl_cons.to_max_y]
+                    toMax = [bl_cons.to_max_x, bl_cons.to_max_z, -bl_cons.to_min_y]
+                elif bl_cons.map_to == 'ROTATION':
+                    mixMode = bl_cons.mix_mode_rot
+                    toMin = [bl_cons.to_min_x_rot, bl_cons.to_min_z_rot, -bl_cons.to_max_y_rot]
+                    toMax = [bl_cons.to_max_x_rot, bl_cons.to_max_z_rot, -bl_cons.to_min_y_rot]
+                elif bl_cons.map_to == 'SCALE':
+                    mixMode = bl_cons.mix_mode_scale
+                    toMin = [bl_cons.to_min_x_scale,bl_cons.to_min_z_scale, bl_cons.to_min_y_scale]
+                    toMax = [bl_cons.to_max_x_scale,bl_cons.to_max_z_scale, bl_cons.to_max_y_scale]
+
+                if bl_cons.map_to in ('LOCATION', 'ROTATION'):
+                    if bl_cons.map_from in ('LOCATION', 'ROTATION'):
+                        mapToAxisFromAxis = [
+                            {'X': 'X', 'Y': '-Z', 'Z': 'Y'}[bl_cons.map_to_x_from],
+                            {'X': 'X', 'Y': '-Z', 'Z': 'Y'}[bl_cons.map_to_z_from],
+                            {'X': '-X', 'Y': 'Z', 'Z': '-Y'}[bl_cons.map_to_y_from]
+                        ]
+                    elif bl_cons.map_from == 'SCALE':
+                        mapToAxisFromAxis = [
+                            {'X': 'X', 'Y': 'Z', 'Z': 'Y'}[bl_cons.map_to_x_from],
+                            {'X': 'X', 'Y': 'Z', 'Z': 'Y'}[bl_cons.map_to_z_from],
+                            {'X': '-X', 'Y': '-Z', 'Z': '-Y'}[bl_cons.map_to_y_from]
+                        ]
+                elif bl_cons.map_to == 'SCALE':
+                    if bl_cons.map_from in ('LOCATION', 'ROTATION'):
+                        mapToAxisFromAxis = [
+                            {'X': 'X', 'Y': '-Z', 'Z': 'Y'}[bl_cons.map_to_x_from],
+                            {'X': 'X', 'Y': '-Z', 'Z': 'Y'}[bl_cons.map_to_z_from],
+                            {'X': 'X', 'Y': '-Z', 'Z': 'Y'}[bl_cons.map_to_y_from]
+                        ]
+                    elif bl_cons.map_from == 'SCALE':
+                        mapToAxisFromAxis = [
+                            {'X': 'X', 'Y': 'Z', 'Z': 'Y'}[bl_cons.map_to_x_from],
+                            {'X': 'X', 'Y': 'Z', 'Z': 'Y'}[bl_cons.map_to_z_from],
+                            {'X': 'X', 'Y': 'Z', 'Z': 'Y'}[bl_cons.map_to_y_from]
+                        ]
+
+                if bl_cons.owner_space == 'CUSTOM':
+                    cons['ownerSpaceObj'] = (gltf.getNodeIndex(glTF, bl_cons.space_object.name)
+                            if getattr(bl_cons, 'space_object', None) is not None else -1)
+                if bl_cons.target_space == 'CUSTOM':
+                    cons['targetSpaceObj'] = (gltf.getNodeIndex(glTF, bl_cons.space_object.name)
+                            if getattr(bl_cons, 'space_object', None) is not None else -1)
+
+                blAxisToV3D = {'LOCATION':'POSITION', 'ROTATION':'ROTATION', 'SCALE':'SCALE'}
+
+                constraints.append(dict(cons, **{
+                    'type': 'transformation',
+                    'target': target,
+                    'fromMin': fromMin,
+                    'fromMax': fromMax,
+                    'toMin': toMin,
+                    'toMax': toMax,
+                    'mapToAxisFromAxis': mapToAxisFromAxis,
+                    'mapFrom': blAxisToV3D[bl_cons.map_from],
+                    'mapTo': blAxisToV3D[bl_cons.map_to],
+                    'ownerSpace': bl_cons.owner_space,
+                    'targetSpace': bl_cons.target_space,
+                    'useMotionExtrapolate': bl_cons.use_motion_extrapolate,
+                    'mixMode': mixMode,
+                    'influence': bl_cons.influence,
+                    'fixCameraLightRotation': True,
+                }))
+
     if objHasFixOrthoZoom(bl_obj):
         constraints.append({
             'name': 'Fix Ortho Zoom',
@@ -1791,16 +1873,7 @@ def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, 
     return bindata
 
 def extractColorSpace(bl_tex):
-    if (isinstance(bl_tex, (bpy.types.ShaderNodeTexImage,
-            bpy.types.ShaderNodeTexEnvironment))):
-
-        colorSpace = getTexImage(bl_tex).colorspace_settings.name.lower()
-    else:
-        # possible c/s values:
-        # 'Filmic Log', 'Linear', 'Linear ACES', 'Non-Color', 'Raw', 'sRGB', 'VD16', 'XYZ'
-        colorSpace = getTexImage(bl_tex.texture).colorspace_settings.name.lower()
-
-    return colorSpace
+    return getTexImage(bl_tex).colorspace_settings.name.lower()
 
 def getPtr(blEntity):
     return blEntity.as_pointer()

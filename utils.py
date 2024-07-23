@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -168,7 +168,41 @@ def findArmature(obj):
     return armature if armature is not None and armature.users > 0 else None
 
 def matHasBlendBackside(bl_mat):
-    return (bl_mat.blend_method == 'BLEND' and bl_mat.show_transparent_back)
+    if bpy.app.version < (4, 2, 0):
+        return (bl_mat.blend_method == 'BLEND' and bl_mat.show_transparent_back)
+    else:
+        return False
+
+def extractAlphaMode(bl_mat):
+    # COMPAT: Blender <4.2
+    blendMethod = bl_mat.v3d.blend_method if bpy.app.version >= (4, 2, 0) else bl_mat.blend_method
+
+    if blendMethod in ['OPAQUE', 'BLEND']:
+        return blendMethod
+    elif blendMethod == 'CLIP':
+        return 'MASK'
+    elif blendMethod == 'HASHED':
+        return 'BLEND'
+
+    # handle AUTO mode
+
+    if bl_mat and bl_mat.use_nodes and bl_mat.node_tree != None:
+        node_trees = extractMaterialNodeTrees(bl_mat.node_tree)
+        for node_tree in node_trees:
+            for bl_node in node_tree.nodes:
+                if isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled):
+                    if len(bl_node.inputs['Alpha'].links) > 1:
+                        return 'BLEND'
+                    elif bl_node.inputs['Alpha'].default_value < 1:
+                        return 'BLEND'
+                    elif len(bl_node.inputs['Transmission Weight'].links) > 1:
+                        return 'BLEND'
+                    elif bl_node.inputs['Transmission Weight'].default_value > 0:
+                        return 'BLEND'
+                elif isinstance(bl_node, bpy.types.ShaderNodeBsdfTransparent):
+                    return 'BLEND'
+
+    return 'OPAQUE'
 
 def updateOrbitCameraView(cam_obj, scene):
 
@@ -242,7 +276,9 @@ def obj_del_not_exported_modifiers(obj):
 def objAddTriModifier(obj):
     mod = obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
     mod.quad_method = 'FIXED'
-    mod.keep_custom_normals = True
+    # COMPAT: < Blender 4.2
+    if bpy.app.version < (4, 2, 0):
+        mod.keep_custom_normals = True
 
 def objApplyModifiers(obj):
     """
@@ -399,7 +435,6 @@ def extractMaterialNodeTrees(node_tree):
 
     return out
 
-
 def meshHasNgons(mesh):
     for poly in mesh.polygons:
         if poly.loop_total > 4:
@@ -518,3 +553,9 @@ def sceneFrameSetFloat(scene, value):
     frame = math.floor(value)
     subframe = value - frame
     scene.frame_set(frame, subframe=subframe)
+
+def isNewEEVEE():
+    """
+    Check if the current version of the rendering engine is EEVEE-Next.
+    """
+    return bpy.app.version >= (4, 2, 0) and bpy.context.scene.render.engine == 'BLENDER_EEVEE_NEXT'

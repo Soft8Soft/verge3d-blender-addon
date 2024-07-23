@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -46,11 +46,15 @@ class V3DPanel():
                 context.object.type == 'EMPTY' and context.object.v3d.clipping_plane):
             return True
 
-        elif (cls.poll_datablock == 'lightprobe' and context.object
+        elif (cls.poll_datablock == 'lightprobe_sphere' and context.object
                 and context.object.type == 'LIGHT_PROBE' and context.object.data):
-            # as for now only spherical lightprobes have custom v3d settings
             # COMPAT: CUBEMAP used in Blender < 4.1
             return (context.object.data.type == 'CUBEMAP' or context.object.data.type == 'SPHERE')
+
+        elif (cls.poll_datablock == 'lightprobe_plane' and context.object and
+              context.object.type == 'LIGHT_PROBE' and context.object.data and
+              context.object.data.type == 'PLANE'):
+            return True
 
         elif (hasattr(context, cls.poll_datablock) and
                 getattr(context, cls.poll_datablock) and
@@ -106,6 +110,10 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(v3d_export, 'use_oit')
+
+        if bpy.app.version >= (4, 2, 0):
+            row = layout.row()
+            row.prop(context.scene.eevee, 'gi_cubemap_resolution', text='Env. Map Size')
 
         row = layout.row()
         row.prop(v3d_export, 'ibl_environment_mode')
@@ -196,6 +204,13 @@ class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
         row.prop(v3d_export, 'esm_distance_scale')
         row.active = v3d_export.shadow_map_type == 'ESM'
 
+        if bpy.app.version >= (4, 2, 0):
+            row = layout.row()
+            row.prop(v3d_export, 'shadow_cube_size')
+
+            row = layout.row()
+            row.prop(v3d_export, 'shadow_cascade_size')
+
 
 class V3D_PT_RenderSettingsOutline(bpy.types.Panel, V3DPanel):
     bl_label = 'Outline Effect'
@@ -232,6 +247,35 @@ class V3D_PT_RenderSettingsOutline(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(outline, 'render_hidden_edge')
 
+class V3D_PT_RenderSettingsGTAO(bpy.types.Panel, V3DPanel):
+    bl_label = 'Ambient Occlusion'
+    bl_parent_id = 'V3D_PT_RenderSettings'
+    bl_options = {'DEFAULT_CLOSED'}
+
+    poll_datablock = 'scene'
+
+    def draw_header(self, context):
+        eevee = context.scene.eevee
+        self.layout.prop(eevee, 'use_gtao', text='')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        eevee = context.scene.eevee
+
+        layout.active = eevee.use_gtao
+
+        row = layout.row()
+        row.prop(eevee, 'gtao_distance')
+        row = layout.row()
+        row.prop(eevee, 'gtao_factor')
+        row = layout.row()
+        row.prop(eevee, 'gtao_quality')
+        row = layout.row()
+        row.prop(eevee, 'use_gtao_bent_normals')
+        row = layout.row()
+        row.prop(eevee, 'use_gtao_bounce')
 
 class V3D_PT_RenderSettingsCollections(bpy.types.Panel, V3DPanel):
     bl_label = 'Export Collections'
@@ -547,13 +591,53 @@ class V3D_PT_LightSettingsShadow(bpy.types.Panel, V3DPanel):
                 not in ['BASIC', 'BILINEAR'])
         row.prop(shadow, 'radius', text='Blur Radius')
 
-        row = layout.row()
-        row.active = context.light.type == 'SUN'
-        row.prop(shadow, 'csm_light_margin', text='Margin')
+        if bpy.app.version >= (4, 2, 0):
+            if context.light.type in ('POINT', 'SPOT', 'AREA'):
+                row = layout.row()
+                row.prop(shadow, 'buffer_clip_start', text='Clip Start')
+
+            row = layout.row()
+            row.prop(shadow, 'buffer_bias', text='Bias')
 
         row = layout.row()
         row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
         row.prop(shadow, 'esm_exponent', text='ESM Bias')
+
+
+class V3D_PT_LightSettingsShadowCSM(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Cascaded Shadow Map'
+    bl_parent_id = 'V3D_PT_LightSettingsShadow'
+
+    poll_datablock = 'light'
+
+    @classmethod
+    def poll(cls, context):
+        return (super().poll(context) and context.light.type == 'SUN')
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+
+        light = context.light
+        type = light.type
+        shadow = light.v3d.shadow
+
+        if bpy.app.version >= (4, 2, 0):
+            row = layout.row()
+            row.prop(shadow, 'cascade_count', text='Count')
+
+            row = layout.row()
+            row.prop(shadow, 'cascade_fade', text='Fade')
+
+            row = layout.row()
+            row.prop(shadow, 'cascade_max_distance', text='Max Distance')
+
+            row = layout.row()
+            row.prop(shadow, 'cascade_exponent', text='Distribution')
+
+        row = layout.row()
+        row.prop(shadow, 'csm_light_margin', text='Cascade Margin')
 
 
 class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
@@ -624,22 +708,32 @@ class V3D_PT_MeshSettingsLineRendering(bpy.types.Panel, V3DPanel):
         row.prop(v3d.line_rendering_settings, 'width')
 
 
-class V3D_PT_LightProbeSettings(bpy.types.Panel, V3DPanel):
+class V3D_PT_LightProbeSphereSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
 
-    poll_datablock = 'lightprobe'
+    poll_datablock = 'lightprobe_sphere'
 
     def draw(self, context):
-        pass
+        if bpy.app.version >= (4, 2, 0):
+            v3d = context.lightprobe.v3d
+            layout = self.layout
+            layout.use_property_split = True
 
+            row = layout.row(align=True)
+            row.prop(v3d, 'intensity')
 
-class V3D_PT_LightProbeSettingsCustomInfluence(bpy.types.Panel, V3DPanel):
+            if utils.isNewEEVEE():
+                row = layout.row(align=True)
+                row.prop(context.lightprobe, 'visibility_collection')
+                row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
+
+class V3D_PT_LightProbeSphereSettingsCustomInfluence(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
     bl_label = 'Custom Influence'
-    bl_parent_id = 'V3D_PT_LightProbeSettings'
+    bl_parent_id = 'V3D_PT_LightProbeSphereSettings'
 
-    poll_datablock = 'lightprobe'
+    poll_datablock = 'lightprobe_sphere'
 
     def draw_header(self, context):
         v3d = context.lightprobe.v3d
@@ -656,6 +750,25 @@ class V3D_PT_LightProbeSettingsCustomInfluence(bpy.types.Panel, V3DPanel):
         row.prop(v3d, 'influence_collection')
         row.prop(v3d, 'invert_influence_collection', text='', icon='ARROW_LEFTRIGHT')
 
+class V3D_PT_LightProbePlaneSettings(bpy.types.Panel, V3DPanel):
+    bl_context = 'data'
+    bl_label = 'Verge3D Settings'
+
+    poll_datablock = 'lightprobe_plane'
+
+    def draw(self, context):
+        if bpy.app.version >= (4, 2, 0):
+            v3d = context.lightprobe.v3d
+            layout = self.layout
+            layout.use_property_split = True
+
+            row = layout.row(align=True)
+            row.prop(v3d, 'falloff')
+
+            if utils.isNewEEVEE():
+                row = layout.row(align=True)
+                row.prop(context.lightprobe, 'visibility_collection')
+                row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
 
 class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -725,6 +838,18 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
         layout.use_property_split = True
 
         material = context.material
+
+        if bpy.app.version >= (4, 2, 0):
+            row = layout.row()
+            row.prop(material.v3d, 'blend_method')
+
+            row = layout.row()
+            row.prop(material, 'alpha_threshold')
+            row.active = material.v3d.blend_method == 'CLIP'
+
+            row = layout.row()
+            row.prop(material.v3d, 'transparency_hack')
+            row.active = material.v3d.blend_method == 'BLEND'
 
         blend_back = utils.matHasBlendBackside(material)
 
@@ -1012,6 +1137,9 @@ def register():
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderSettingsAnimation)
     bpy.utils.register_class(V3D_PT_RenderSettingsShadows)
+    # COMPAT: UI removed in Blender 4.2
+    if bpy.app.version >= (4, 2, 0):
+        bpy.utils.register_class(V3D_PT_RenderSettingsGTAO)
     bpy.utils.register_class(V3D_PT_RenderSettingsOutline)
     bpy.utils.register_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.register_class(V3D_PT_WorldSettings)
@@ -1025,6 +1153,7 @@ def register():
     bpy.utils.register_class(V3D_PT_CameraSettingsTarget)
     bpy.utils.register_class(V3D_PT_LightSettings)
     bpy.utils.register_class(V3D_PT_LightSettingsShadow)
+    bpy.utils.register_class(V3D_PT_LightSettingsShadowCSM)
     bpy.utils.register_class(V3D_PT_ClippingPlaneSettings)
     bpy.utils.register_class(V3D_PT_ClippingPlaneSettingsCrossSection)
     bpy.utils.register_class(V3D_PT_MaterialSettings)
@@ -1032,8 +1161,9 @@ def register():
     bpy.utils.register_class(V3D_PT_MeshSettings)
     bpy.utils.register_class(V3D_PT_MeshSettingsLineRendering)
     bpy.utils.register_class(V3D_PT_NodeSettings)
-    bpy.utils.register_class(V3D_PT_LightProbeSettings)
-    bpy.utils.register_class(V3D_PT_LightProbeSettingsCustomInfluence)
+    bpy.utils.register_class(V3D_PT_LightProbeSphereSettings)
+    bpy.utils.register_class(V3D_PT_LightProbeSphereSettingsCustomInfluence)
+    bpy.utils.register_class(V3D_PT_LightProbePlaneSettings)
 
     bpy.utils.register_class(V3D_OT_orbit_camera_target_from_cursor)
     bpy.utils.register_class(V3D_OT_orbit_camera_update_view)
@@ -1062,6 +1192,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_MaterialSettings)
     bpy.utils.unregister_class(V3D_PT_LightSettings)
     bpy.utils.unregister_class(V3D_PT_LightSettingsShadow)
+    bpy.utils.unregister_class(V3D_PT_LightSettingsShadowCSM)
     bpy.utils.unregister_class(V3D_PT_CurveSettings)
     bpy.utils.unregister_class(V3D_PT_CameraSettings)
     bpy.utils.unregister_class(V3D_PT_CameraSettingsTarget)
@@ -1075,12 +1206,16 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_RenderSettings)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsAnimation)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsShadows)
+    # COMPAT: UI removed in Blender 4.2
+    if bpy.app.version >= (4, 2, 0):
+        bpy.utils.unregister_class(V3D_PT_RenderSettingsGTAO)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsOutline)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.unregister_class(V3D_PT_MeshSettings)
     bpy.utils.unregister_class(V3D_PT_MeshSettingsLineRendering)
-    bpy.utils.unregister_class(V3D_PT_LightProbeSettings)
-    bpy.utils.unregister_class(V3D_PT_LightProbeSettingsCustomInfluence)
+    bpy.utils.unregister_class(V3D_PT_LightProbeSphereSettings)
+    bpy.utils.unregister_class(V3D_PT_LightProbeSphereSettingsCustomInfluence)
+    bpy.utils.unregister_class(V3D_PT_LightProbePlaneSettings)
 
     bpy.utils.unregister_class(V3D_OT_reexport_all)
     bpy.utils.unregister_class(V3D_OT_orbit_camera_target_from_cursor)

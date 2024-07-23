@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Modifications Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,7 +30,6 @@ import pluginUtils.rawdata
 
 log = pluginUtils.log.getLogger('V3D-BL')
 
-from . import bl_info
 from .gltf2_animate import *
 from .gltf2_extract import *
 from .gltf2_filter import *
@@ -38,6 +37,8 @@ from .gltf2_get import *
 from .utils import *
 
 from profilehooks import profile
+
+VERSION = '4.7.0'
 
 # Blender default grey color
 PRIMITIVE_MODE_LINES = 1
@@ -76,7 +77,7 @@ def generateAsset(operator, context, exportSettings, glTF):
     asset = {}
 
     asset['version'] = '2.0'
-    asset['generator'] = 'Verge3D for Blender v{}'.format('.'.join(map(str, bl_info['version'])))
+    asset['generator'] = 'Verge3D for Blender v{}'.format(VERSION)
 
     if exportSettings['copyright'] != "":
         asset['copyright'] = exportSettings['copyright']
@@ -1288,6 +1289,17 @@ def generateLights(operator, context, exportSettings, glTF):
 
         eeveeCtx = context.scene.eevee
 
+        if bpy.app.version >= (4, 2, 0):
+            shadowCubeSize = int(exportSettings['shadow_cube_size'])
+            shadowCascadeSize = int(exportSettings['shadow_cascade_size'])
+            shadowBufferClipStart = bl_light.v3d.shadow.buffer_clip_start
+            shadowBufferBias = bl_light.v3d.shadow.buffer_bias
+        else:
+            shadowCubeSize = int(eeveeCtx.shadow_cube_size)
+            shadowCascadeSize = int(eeveeCtx.shadow_cascade_size)
+            shadowBufferClipStart = bl_light.shadow_buffer_clip_start
+            shadowBufferBias = bl_light.shadow_buffer_bias
+
         if bl_light.type == 'SUN':
             # NOTE: the following values are not relevant because the engine
             # calculates near/far dynamically for directional shadows
@@ -1295,7 +1307,7 @@ def generateLights(operator, context, exportSettings, glTF):
             cameraFar = SUN_DEFAULT_FAR
 
         else:
-            cameraNear = max(bl_light.shadow_buffer_clip_start,
+            cameraNear = max(shadowBufferClipStart,
                     SPOT_SHADOW_MIN_NEAR) # usability improvement
 
             # should bl_light.cutoff_distance affect this?
@@ -1305,29 +1317,39 @@ def generateLights(operator, context, exportSettings, glTF):
 
         light['shadow'] = {
             'enabled': useShadows,
-            'mapSize': int(eeveeCtx.shadow_cascade_size
-                    if bl_light.type == 'SUN' else eeveeCtx.shadow_cube_size),
-
+            'mapSize': shadowCascadeSize if bl_light.type == 'SUN' else shadowCubeSize,
             'cameraFov': bl_light.spot_size if bl_light.type == 'SPOT' else 0,
             'cameraNear': cameraNear,
             'cameraFar': cameraFar,
             'radius': bl_light.v3d.shadow.radius,
             # NOTE: negate bias since the negative is more appropriate in most cases
             # but keeping it positive in the UI is more user-friendly
-            'bias': -bl_light.shadow_buffer_bias * 0.0018,
+            'bias': -shadowBufferBias * 0.0018,
             # empirical value that gives good results
             'slopeScaledBias': 2.5,
             'expBias': bl_light.v3d.shadow.esm_exponent,
         }
 
         if bl_light.type == 'SUN':
-            light['shadow']['csm'] = {
-                'count': bl_light.shadow_cascade_count,
-                'exponent': bl_light.shadow_cascade_exponent, # Distribution in UI
-                'fade': bl_light.shadow_cascade_fade,
-                'maxDistance': bl_light.shadow_cascade_max_distance,
+            csmConfig = {
                 'lightMargin': bl_light.v3d.shadow.csm_light_margin
             }
+
+            if bpy.app.version >= (4, 2, 0):
+                csmConfig.update({
+                    'count': bl_light.v3d.shadow.cascade_count,
+                    'exponent': bl_light.v3d.shadow.cascade_exponent, # Distribution in UI
+                    'fade': bl_light.v3d.shadow.cascade_fade,
+                    'maxDistance': bl_light.v3d.shadow.cascade_max_distance,
+                })
+            else:
+                csmConfig.update({
+                    'count': bl_light.shadow_cascade_count,
+                    'exponent': bl_light.shadow_cascade_exponent, # Distribution in UI
+                    'fade': bl_light.shadow_cascade_fade,
+                    'maxDistance': bl_light.shadow_cascade_max_distance,
+                })
+            light['shadow']['csm'] = csmConfig
 
         if bl_light.type in ['POINT', 'SPOT', 'AREA']:
             light['power'] = bl_light.energy
@@ -1402,14 +1424,16 @@ def generateLightProbes(operator, context, exportSettings, glTF):
             probe['influenceType'] = blProbe.influence_type
             probe['parallaxType'] = blProbe.parallax_type if blProbe.use_custom_parallax else blProbe.influence_type
             probe['parallaxDistance'] = blProbe.parallax_distance if blProbe.use_custom_parallax else blProbe.influence_distance
-            probe['intensity'] = blProbe.intensity
+            # COMPAT: native intensity prop removed in Blender 4.2
+            probe['intensity'] = blProbe.intensity if bpy.app.version < (4, 2, 0) else blProbe.v3d.intensity
             probe['clipEnd'] = blProbe.clip_end
             probe['influenceGroup'] = (blProbe.v3d.influence_collection.name
                     if blProbe.v3d.use_custom_influence
                     and blProbe.v3d.influence_collection is not None else None)
             probe['influenceGroupInv'] = blProbe.v3d.invert_influence_collection
         else:
-            probe['falloff'] = blProbe.falloff
+            # COMPAT: native falloff prop removed in Blender 4.2
+            probe['falloff'] = blProbe.falloff if bpy.app.version < (4, 2, 0) else blProbe.v3d.falloff
 
         probes.append(probe)
 
@@ -2374,6 +2398,10 @@ def generateNodes(operator, context, exportSettings, glTF):
                        bl_obj.v3d.canvas_break_enabled):
             v3dExt['constraints'] = extractConstraints(glTF, bl_obj)
 
+        # COMPAT: taking this param from object in Blender 4.2+
+        if v3dExt and bpy.app.version >= (4, 2, 0):
+            v3dExt['useCastShadows'] = bl_obj.visible_shadow
+
         # first-person camera link to collision material
 
         if (bl_obj.type == 'CAMERA' and
@@ -2680,7 +2708,7 @@ def generateTextures(operator, context, exportSettings, glTF):
                 v3dExt['anisotropy'] = anisotropy
 
         else:
-            log.error('Unknown Blender texture type')
+            log.critical('Unknown Blender texture type')
             return
 
         texture['sampler'] = gltf.createSampler(glTF, magFilter, wrap, wrap)
@@ -2875,6 +2903,7 @@ def generateMaterials(operator, context, exportSettings, glTF):
         material = {}
 
         mat_type = getMaterialType(bl_mat)
+        alphaMode = extractAlphaMode(bl_mat)
 
         # PBR Materials
 
@@ -3033,6 +3062,7 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
             v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_materials', material)
 
+            # COMPAT: Blender <4.2
             if matHasBlendBackside(bl_mat):
                 v3dExt['depthWrite'] = False
                 backface = bl_mat.use_backface_culling
@@ -3043,11 +3073,20 @@ def generateMaterials(operator, context, exportSettings, glTF):
                     material['doubleSided'] = True
                 if bl_mat.v3d.render_side != 'FRONT':
                     v3dExt['renderSide'] = bl_mat.v3d.render_side
-                if bl_mat.blend_method != 'OPAQUE' and bl_mat.v3d.depth_write == False:
+
+                if alphaMode != 'OPAQUE' and bl_mat.v3d.depth_write == False:
                     v3dExt['depthWrite'] = bl_mat.v3d.depth_write
 
-                if bl_mat.blend_method == 'BLEND':
-                    v3dExt['depthPrepass'] = True
+                # COMPAT: Blender <4.2
+                if bpy.app.version < (4, 2, 0):
+                    if bl_mat.blend_method == 'BLEND':
+                        v3dExt['depthPrepass'] = True
+                else:
+                    if bl_mat.v3d.blend_method == 'BLEND':
+                        if bl_mat.v3d.transparency_hack == 'NEAREST_LAYER':
+                            v3dExt['depthPrepass'] = True
+                        elif bl_mat.v3d.transparency_hack == 'TWO_PASS' and bl_mat.v3d.render_side == 'DOUBLE':
+                            v3dExt['renderSide'] = 'TWO_PASS_DOUBLE';
 
             if bl_mat.v3d.depth_test == False:
                 v3dExt['depthTest'] = bl_mat.v3d.depth_test
@@ -3063,28 +3102,28 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
             v3dExt['materialIndex'] = bl_mat.pass_index
 
-            if bl_mat.blend_method == 'HASHED':
+            # COMPAT: Blender <4.2
+            if bpy.app.version < (4, 2, 0) and bl_mat.blend_method == 'HASHED':
+                v3dExt['alphaToCoverage'] = True
+            elif bpy.app.version >= (4, 2, 0) and bl_mat.v3d.blend_method == 'HASHED':
                 v3dExt['alphaToCoverage'] = True
 
             # disable GTAO for BLEND materials due to implementation issues
-            v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
+            # COMPAT: Blender <4.2
+            if bpy.app.version < (4, 2, 0):
+                v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
+            else:
+                v3dExt['gtaoVisible'] = bl_mat.v3d.blend_method != 'BLEND'
 
             # receive
             if exportSettings['use_shadows']:
                 # useShadows is assigned on objects not materials
-                v3dExt['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
+                if bpy.app.version < (4, 2, 0):
+                    v3dExt['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
 
-
-        alphaMode = 'OPAQUE'
-
-        if bl_mat.blend_method == 'CLIP':
-            alphaMode = 'MASK'
+        material['alphaMode'] = alphaMode
+        if alphaMode == 'MASK':
             material['alphaCutoff'] = bl_mat.alpha_threshold + ALPHA_CUTOFF_EPS
-        elif bl_mat.blend_method != 'OPAQUE':
-            alphaMode = 'BLEND'
-
-        if alphaMode != 'OPAQUE':
-            material['alphaMode'] = alphaMode
 
         material['name'] = bl_mat.name
 

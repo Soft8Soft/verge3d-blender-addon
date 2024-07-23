@@ -1,3 +1,18 @@
+# Copyright (c) 2017-2024 Soft8Soft
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import bpy
 import re
 from pluginUtils.manager import AppManagerConn
@@ -48,11 +63,9 @@ def add_verge3d_manual_map():
         # mesh,curve settings
         ('bpy.types.v3dlinerenderingsettings*', 'blender/Lighting-and-Rendering.html#line_rendering'),
         # material settings
-        ('bpy.types.v3dmaterialsettings.render_side', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
         ('bpy.types.v3dmaterialsettings.depth_write', 'blender/Transparency.html#alpha_add'),
-        ('bpy.types.v3dmaterialsettings.depth_test', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
-        ('bpy.types.v3dmaterialsettings.dithering', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
         ('bpy.types.v3dmaterialsettings.gltf_compat', 'blender/GLTF-Materials.html'),
+        ('bpy.types.v3dmaterialsettings*', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
         # light settings
         ('bpy.types.v3dshadowsettings*', 'blender/Shadows.html#per_light_settings'),
         # texture settings

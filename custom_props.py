@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2019 Soft8Soft LLC
+# Copyright (c) 2017-2024 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,8 +16,12 @@
 import math
 
 import bpy
+from bpy.app.handlers import persistent
 
 from . import utils
+
+import pluginUtils
+log = pluginUtils.log.getLogger('V3D-BL')
 
 NO_ANIM_OPTS = set()
 
@@ -25,7 +29,7 @@ class V3DExportSettings(bpy.types.PropertyGroup):
     bake_modifiers: bpy.props.BoolProperty(
         name = 'Bake Modifiers',
         description = 'Apply mesh modifiers (except armature modifers) before export',
-        default = False,
+        default = True,
         options = NO_ANIM_OPTS
     )
 
@@ -132,16 +136,10 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         description = 'Shadow Filtering Mode',
         default = 'PCFPOISSON',
         items = [
-            ('BASIC', 'Basic', 'No filtering'),
-            ('BILINEAR', 'Bilinear', 'Bilinear Filtering'),
-            ('PCF', 'PCF', 'Percentage Closer Filtering'),
-            ('PCFSOFT', 'PCF (Bilinear)', (
-                'Percentage Closer Filtering with Bilinear Interpolation. For '
-                'POINT and wide (>90°) SPOT lights it is no different than '
-                'simple PCF'
-            )),
-            ('PCFPOISSON', 'PCF (Poisson Disk)', 'Percentage Closer Filtering with Poisson Disk Sampling'),
-            ('ESM', 'ESM', 'Exponential Shadow Maps'),
+            ('BASIC', 'Basic', 'Basic shadows with no filtering', 0),
+            ('BILINEAR', 'Bilinear', 'Bilinear filtering', 1),
+            ('PCFPOISSON', 'PCF', 'Percentage closer filtering with Poisson disk sampling', 4),
+            ('ESM', 'ESM', 'Exponential shadow maps', 5)
         ],
         options = NO_ANIM_OPTS
     )
@@ -171,25 +169,48 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    shadow_cube_size: bpy.props.EnumProperty(
+        name='Cube Size',
+        description = 'Size of point and area light shadow maps',
+        default = '512',
+        items = [
+            ('64', '64 px', ''),
+            ('128', '128 px', ''),
+            ('256', '256 px', ''),
+            ('512', '512 px', ''),
+            ('1024', '1024 px', ''),
+            ('2048', '2048 px', ''),
+            ('4096', '4096 px', ''),
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    shadow_cascade_size: bpy.props.EnumProperty(
+        name='Cascade Size',
+        description = 'Size of sun light shadow maps',
+        default = '1024',
+        items = [
+            ('64', '64 px', ''),
+            ('128', '128 px', ''),
+            ('256', '256 px', ''),
+            ('512', '512 px', ''),
+            ('1024', '1024 px', ''),
+            ('2048', '2048 px', ''),
+            ('4096', '4096 px', ''),
+        ],
+        options = NO_ANIM_OPTS
+    )
+
     ibl_environment_mode: bpy.props.EnumProperty(
         name = 'IBL Env. Mode',
         description = 'Preferred method of rendering the scene environment',
         default = 'PMREM',
         items = [
-            ('PMREM', 'PMREM (slow)', (
-                'Use PMREM (Prefiltered Mipmaped Radiance Environment map). '
-                'Slower, higher quality'
-            )),
-            ('PROBE_CUBEMAP', 'Light Probe + Cubemap (deprecated)',
-                'Deprecated, will use PMREM instead'
-            ),
-            ('PROBE', 'Light Probe (fast)', (
-                'Use a light probe for the diffuse component, no specular. '
-                'Faster, worse quality'
-            )),
-            ('NONE', 'None (fastest)',
-                'Disable environment map. '
-            ),
+            ('PMREM', 'PMREM (best)',
+                'Use PMREM (Prefiltered Mipmaped Radiance Environment map). Slower, higher quality', 0),
+            ('PROBE', 'Light Probe (fast)',
+                'Use a light probe for the diffuse component, no specular. Faster, worse quality', 2),
+            ('NONE', 'None (fastest)', 'Disable environment map', 3),
         ],
         options = NO_ANIM_OPTS
     )
@@ -729,17 +750,6 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    csm_light_margin: bpy.props.FloatProperty(
-        name = 'Margin',
-        description = ('Increases shadow coverage area along the light direction. '
-                'Should be set to high values for scenes with large or '
-                'tall shadow casters'),
-        default = 0,
-        min = 0,
-        max = 1000000,
-        options = NO_ANIM_OPTS
-    )
-
     esm_exponent: bpy.props.FloatProperty(
         name = 'Exponent',
         description = ('Exponential Shadow Map bias. Helps reducing light '
@@ -750,6 +760,81 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    buffer_clip_start: bpy.props.FloatProperty(
+        name = 'Shadow Buffer Clip Start',
+        description = 'Shadow map clip start, below which objects will not generate shadows',
+        default = 0.05,
+        min = 0.001,
+        max = 1000000,
+        options = NO_ANIM_OPTS,
+        unit = 'LENGTH'
+    )
+
+    buffer_bias: bpy.props.FloatProperty(
+        name = 'Shadow Buffer Bias',
+        description = 'Bias for reducing self shadowing',
+        default = 1,
+        min = 0.001,
+        max = 5,
+        options = NO_ANIM_OPTS
+    )
+
+    cascade_count: bpy.props.IntProperty(
+        name = 'Count',
+        description = 'Number of render buffers used by cascaded shadow maps',
+        default = 4,
+        min = 1,
+        max = 4,
+        options = NO_ANIM_OPTS
+    )
+
+    cascade_fade: bpy.props.FloatProperty(
+        name = 'Fade',
+        description = 'How smooth is the transition between each cascade',
+        default = 0.1,
+        min = 0,
+        max = 1,
+        precision = 3,
+        step = 0.1,
+        subtype = 'FACTOR',
+        options = NO_ANIM_OPTS
+    )
+
+    cascade_max_distance: bpy.props.FloatProperty(
+        name = 'Max Distance',
+        description = 'End distance of cascaded shadow map (only in perspective view)',
+        default = 1000,
+        min = 0,
+        max = 1000000,
+        options = NO_ANIM_OPTS,
+        unit = 'LENGTH'
+    )
+
+    cascade_exponent: bpy.props.FloatProperty(
+        name = 'Distribution',
+        description = 'Higher value increases resolution toward the viewpoint',
+        default = 0.8,
+        min = 0,
+        max = 1,
+        precision = 3,
+        step = 0.1,
+        subtype = 'FACTOR',
+        options = NO_ANIM_OPTS
+    )
+
+    csm_light_margin: bpy.props.FloatProperty(
+        name = 'Cascade Margin',
+        description = ('Increases shadow coverage area along the light direction. '
+                'Should be set to high values for scenes with large or '
+                'tall shadow casters'),
+        default = 0,
+        min = 0,
+        max = 1000000,
+        options = NO_ANIM_OPTS,
+        unit = 'LENGTH'
+    )
+
+
 class V3DLightSettings(bpy.types.PropertyGroup):
     shadow: bpy.props.PointerProperty(
         name = 'Shadow Settings',
@@ -758,8 +843,35 @@ class V3DLightSettings(bpy.types.PropertyGroup):
 
 class V3DMaterialSettings(bpy.types.PropertyGroup):
 
+    # NOTE: returning back feature removed in Blender 4.2
+    blend_method: bpy.props.EnumProperty(
+        name = 'Blend Mode',
+        description = 'Preferred method to render transparency',
+        default = 'AUTO',
+        items = [
+            ('AUTO', 'Auto', 'Use Opaque or Alpha Blend depending on the material features'),
+            ('OPAQUE', 'Opaque', 'Render material without transparency'),
+            ('CLIP', 'Alpha Clip', 'Use the alpha threshold to clip the visibility (binary visibility)'),
+            ('HASHED', 'Alpha Hashed', 'Use noise to dither the binary visibility (requires MSAA anti-aliasing)'),
+            ('BLEND', 'Alpha Blend', 'Transparency based on alpha channel')
+        ],
+        options = NO_ANIM_OPTS
+    )
+
+    transparency_hack: bpy.props.EnumProperty(
+        name = 'Transparency Hack',
+        description = 'Special rendering method for transparency',
+        default = 'NONE',
+        items = [
+            ('NONE', 'None', 'Render as usual, might cause various transparency artefacts'),
+            ('NEAREST_LAYER', 'Nearest Layer', 'Render nearest layer only'),
+            ('TWO_PASS', 'Two-Pass', 'Render front and back sides of the double-sided geometry in separate layers')
+        ],
+        options = NO_ANIM_OPTS
+    )
+
     render_side: bpy.props.EnumProperty(
-        name='Render Side',
+        name = 'Render Side',
         description = 'Which side of geometry will be rendered',
         default = 'FRONT',
         items = [
@@ -925,6 +1037,42 @@ class V3DLightProbeSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+    # NOTE: returning back feature removed in Blender 4.2
+    intensity: bpy.props.FloatProperty(
+        name = 'Intensity',
+        description = 'Modify the intensity of the lighting captured by this probe',
+        min = 0,
+        soft_max = 3,
+        default = 1,
+        precision = 3,
+        step = 0.01,
+        options = NO_ANIM_OPTS
+    )
+
+    # NOTE: returning back feature removed in Blender 4.2
+    falloff: bpy.props.FloatProperty(
+        name = 'Falloff',
+        description = 'Controls how fast the probe influence decreases',
+        min = 0,
+        max = 1,
+        default = 0.5,
+        precision = 3,
+        subtype = 'FACTOR',
+        options = NO_ANIM_OPTS
+    )
+
+
+@persistent
+def refactorProps(_):
+    for bl_scene in bpy.data.scenes:
+        if bl_scene.v3d_export.ibl_environment_mode in ['PROBE_CUBEMAP', '']:
+            log.info('Cubemap IBL environement mode is no longer supported, setting to PMREM.')
+            bl_scene.v3d_export.ibl_environment_mode = 'PMREM'
+
+        if bl_scene.v3d_export.shadow_map_type in ['PCF', 'PCFSOFT', '']:
+            log.info('Poisson disk is the only supported PCF method, fixing the property.')
+            bl_scene.v3d_export.shadow_map_type = 'PCFPOISSON'
+
 def register():
     bpy.utils.register_class(V3DCollectionSettings)
     bpy.utils.register_class(V3DExportSettings)
@@ -1014,6 +1162,7 @@ def register():
         type = V3DLightProbeSettings
     )
 
+    bpy.app.handlers.load_post.append(refactorProps)
 
 def unregister():
     bpy.utils.unregister_class(V3DImageSettings)
@@ -1045,3 +1194,5 @@ def unregister():
     del bpy.types.World.v3d
     del bpy.types.Collection.v3d
     del bpy.types.LightProbe.v3d
+
+    bpy.app.handlers.load_post.remove(refactorProps)

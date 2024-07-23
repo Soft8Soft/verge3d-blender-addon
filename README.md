@@ -7,7 +7,7 @@ This add-on is an open-sourced part of complete Verge3D for Blender toolkit.
 
 On its own it can create glTF 2.0 compliant assets (.gltf/.bin + .glb) to be used in various software and services such as:
 
-* Blender 2.83+
+* Blender 3.0+
 * Microsoft Paint 3D
 * Facebook
 * Sketchfab
@@ -23,17 +23,17 @@ Just clone and copy the repo to one the following directories (considering you h
 
 ### Linux
 ```
-/home/$user/.config/blender/2.83/scripts/addons/
+/home/$user/.config/blender/3.0/scripts/addons/
 ```
 
 ### Windows 7+
 ```
-C:\Users\%username%\AppData\Roaming\Blender Foundation\Blender\2.83\scripts\addons\
+C:\Users\%username%\AppData\Roaming\Blender Foundation\Blender\3.0\scripts\addons\
 ```
 
 ### macOS
 ```
-/Users/$USER/Library/Application Support/Blender/2.83/scripts/addons/
+/Users/$USER/Library/Application Support/Blender/3.0/scripts/addons/
 ```
 
 ## Support
