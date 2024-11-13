@@ -315,6 +315,26 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
 
 
 class V3DSceneSettings(bpy.types.PropertyGroup):
+    # NOTE: add missing AO props (removed in Blender 4.3)
+    gtao_factor: bpy.props.FloatProperty(
+        name = 'Factor',
+        description = 'Factor for ambient occlusion blending',
+        subtype = 'FACTOR',
+        min = 0,
+        soft_max = 1,
+        default = 1,
+        precision = 2,
+        step = 0.01,
+        options = NO_ANIM_OPTS
+    )
+
+    use_gtao_bent_normals: bpy.props.BoolProperty(
+        name = 'Bent Normals',
+        description = 'Compute main non-occluded direction to sample the environment',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
     outline: bpy.props.PointerProperty(
         name = 'Outline settings',
         type = V3DOutlineSettings

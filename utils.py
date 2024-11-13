@@ -21,7 +21,10 @@ import mathutils
 
 import pyosl.glslgen
 
+import pluginUtils
 import pluginUtils as pu
+
+log = pluginUtils.log.getLogger('V3D-BL')
 
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
@@ -191,11 +194,11 @@ def extractAlphaMode(bl_mat):
         for node_tree in node_trees:
             for bl_node in node_tree.nodes:
                 if isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled):
-                    if len(bl_node.inputs['Alpha'].links) > 1:
+                    if len(bl_node.inputs['Alpha'].links) > 0:
                         return 'BLEND'
                     elif bl_node.inputs['Alpha'].default_value < 1:
                         return 'BLEND'
-                    elif len(bl_node.inputs['Transmission Weight'].links) > 1:
+                    elif len(bl_node.inputs['Transmission Weight'].links) > 0:
                         return 'BLEND'
                     elif bl_node.inputs['Transmission Weight'].default_value > 0:
                         return 'BLEND'
@@ -264,7 +267,7 @@ def objHasExportedModifiers(obj):
 
     return any([modifierNeedsExport(mod) for mod in obj.modifiers])
 
-def obj_del_not_exported_modifiers(obj):
+def objDelNotExportedModifiers(obj):
     """
     Remove modifiers that shouldn't be applied before export from an object.
     """
@@ -423,6 +426,35 @@ def matNodeUseTangents(bl_node):
                 return True
 
     return False
+
+def meshPreferredTangentsUvMap(mesh):
+    uvMaps = []
+
+    for mat in mesh.materials:
+        if mat and mat.use_nodes and mat.node_tree != None:
+            nodeTrees = extractMaterialNodeTrees(mat.node_tree)
+            for nodeTree in nodeTrees:
+                for node in nodeTree.nodes:
+                    if ((isinstance(node, bpy.types.ShaderNodeNormalMap) or
+                            (isinstance(node, bpy.types.ShaderNodeTangent) and node.direction_type == 'UV_MAP'))
+                            and node.uv_map):
+                        uvMaps.append(node.uv_map)
+
+    if len(uvMaps) == 1 and uvMaps[0] in mesh.uv_layers:
+        return uvMaps[0]
+    else:
+        # allow 0 or multiple, report multiple
+
+        if len(uvMaps) > 1:
+            log.warning('More than 1 UV map is used to calculate tangents in material(s) ' +
+                        'assigned on mesh {}, expect incorrect normal mapping'.format(mesh.name))
+
+        for uvLayer in mesh.uv_layers:
+            if uvLayer.active_render:
+                return uvLayer.name
+
+    log.error('Tangents UV map not found')
+    return ''
 
 def extractMaterialNodeTrees(node_tree):
     """NOTE: located here since it's needed for meshMaterialsUseTangents()"""

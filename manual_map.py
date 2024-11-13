@@ -40,9 +40,14 @@ def add_verge3d_manual_map():
         ('bpy.types.v3dexportsettings.shadow*', 'blender/Shadows.html#global_settings'),
         ('bpy.types.v3dexportsettings.esm*', 'blender/Shadows.html#global_settings'),
         ('bpy.types.v3dexportsettings.use_oit', 'blender/Transparency.html#oit_rendering'),
-        ('bpy.types.v3dexportsettings*', 'blender/Lighting-and-Rendering.html#global_rendering_properties_verge3d'),
-        # outline settings
+        ('bpy.types.v3dscenesettings.use_gtao*', 'blender/Lighting-and-Rendering.html#ambient_occlusion'),
+        ('bpy.types.v3dscenesettings.gtao*', 'blender/Lighting-and-Rendering.html#ambient_occlusion'),
+        ('bpy.types.sceneeevee.use_gtao*', 'blender/Lighting-and-Rendering.html#ambient_occlusion'),
+        ('bpy.types.sceneeevee.gtao*', 'blender/Lighting-and-Rendering.html#ambient_occlusion'),
         ('bpy.types.v3doutlinesettings*', 'blender/Lighting-and-Rendering.html#outline_rendering'),
+        ('bpy.types.v3dexportsettings*', 'blender/Lighting-and-Rendering.html#global_rendering_properties_verge3d'),
+        # world settings
+        ('bpy.types.v3dworldsettings*', 'blender/Lighting-and-Rendering.html#world_rendering_properties'),
         # object settings
         ('bpy.types.v3dobjectsettings.anim*', 'blender/Animation.html#Verge3D_Per_Object_Settings'),
         ('bpy.types.v3dobjectsettings.render_order', 'blender/Lighting-and-Rendering.html#per_object_rendering_properties'),
@@ -63,6 +68,9 @@ def add_verge3d_manual_map():
         # mesh,curve settings
         ('bpy.types.v3dlinerenderingsettings*', 'blender/Lighting-and-Rendering.html#line_rendering'),
         # material settings
+        ('bpy.types.v3dmaterialsettings.blend_method', 'blender/Transparency.html#setting_up_in_blender'),
+        ('bpy.types.material.alpha_threshold', 'blender/Transparency.html#setting_up_in_blender'),
+        ('bpy.types.v3dmaterialsettings.transparency_hack', 'blender/Transparency.html#setting_up_in_blender'),
         ('bpy.types.v3dmaterialsettings.depth_write', 'blender/Transparency.html#alpha_add'),
         ('bpy.types.v3dmaterialsettings.gltf_compat', 'blender/GLTF-Materials.html'),
         ('bpy.types.v3dmaterialsettings*', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
@@ -74,6 +82,7 @@ def add_verge3d_manual_map():
         ('bpy.types.v3dtexturenoisesettings*', 'blender/Shader-Nodes-Reference.html#Noise_Texture'),
         # light probe settings
         ('bpy.types.v3dlightprobesettings*', 'blender/Lighting-and-Rendering.html#light_probes'),
+        ('bpy.types.lightprobe.visibility_collection', 'blender/Lighting-and-Rendering.html#light_probes'),
         # clipping plane settings
         ('bpy.types.v3dobjectsettings.clipping_plane*', 'blender/Lighting-and-Rendering.html#clipping_planes'),
         ('bpy.ops.object.add_clipping_plane', 'blender/Lighting-and-Rendering.html#clipping_planes'),

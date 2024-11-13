@@ -73,7 +73,12 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
         tmpImg.close()
         srcPath = tmpImg.name
 
-    params = [os.path.join(getRoot(), 'ktx', getPlatformBinDirName(), 'toktx')]
+    platformBinDir = getPlatformBinDirName()
+    # HACK: workaround for missing Windows ARM converter
+    # TODO: support Windows ARM
+    if platformBinDir == 'windows_arm64':
+        platformBinDir = 'windows_amd64'
+    params = [os.path.join(getRoot(), 'ktx', platformBinDir, 'toktx')]
 
     params.append('--encode')
     if method == 'UASTC' or method == 'AUTO':

@@ -184,15 +184,20 @@ class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
     poll_datablock = 'scene'
 
     def draw_header(self, context):
-        v3d_export = bpy.data.scenes[0].v3d_export
-        self.layout.prop(v3d_export, 'use_shadows', text='')
+        # COMPAT: using native shadow checker starting from Blender 4.2
+        if bpy.app.version < (4, 2, 0):
+            v3d_export = bpy.data.scenes[0].v3d_export
+            self.layout.prop(v3d_export, 'use_shadows', text='')
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
 
-        v3d_export = bpy.data.scenes[0].v3d_export
-        layout.active = v3d_export.use_shadows
+        scene0 = bpy.data.scenes[0]
+        v3d_export = scene0.v3d_export
+
+        # COMPAT: using native shadow checker starting from Blender 4.2
+        layout.active = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
 
         row = layout.row()
         row.prop(v3d_export, 'shadow_map_type')
@@ -269,13 +274,19 @@ class V3D_PT_RenderSettingsGTAO(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(eevee, 'gtao_distance')
         row = layout.row()
-        row.prop(eevee, 'gtao_factor')
+        # COMPAT: prop removed in Blender 4.3
+        if bpy.app.version < (4, 3, 0):
+            row.prop(eevee, 'gtao_factor')
+        else:
+            row.prop(context.scene.v3d, 'gtao_factor')
         row = layout.row()
         row.prop(eevee, 'gtao_quality')
         row = layout.row()
-        row.prop(eevee, 'use_gtao_bent_normals')
-        row = layout.row()
-        row.prop(eevee, 'use_gtao_bounce')
+        # COMPAT: prop removed in Blender 4.3
+        if bpy.app.version < (4, 3, 0):
+            row.prop(eevee, 'use_gtao_bent_normals')
+        else:
+            row.prop(context.scene.v3d, 'use_gtao_bent_normals')
 
 class V3D_PT_RenderSettingsCollections(bpy.types.Panel, V3DPanel):
     bl_label = 'Export Collections'

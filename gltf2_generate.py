@@ -38,7 +38,7 @@ from .utils import *
 
 from profilehooks import profile
 
-VERSION = '4.7.0'
+VERSION = '4.8.0'
 
 # Blender default grey color
 PRIMITIVE_MODE_LINES = 1
@@ -3148,10 +3148,10 @@ def getPostprocessingEffects(bl_scene):
         ppEffects.append({
             'type': 'gtao',
             'distance': bl_scene.eevee.gtao_distance,
-            'factor': bl_scene.eevee.gtao_factor,
+            # COMPAT: native factor and bent normals props removed in Blender 4.3
+            'factor': bl_scene.eevee.gtao_factor if bpy.app.version < (4, 3, 0) else bl_scene.v3d.gtao_factor,
             'precision': bl_scene.eevee.gtao_quality,
-            'bentNormals': bl_scene.eevee.use_gtao_bent_normals,
-            'bounceApprox': bl_scene.eevee.use_gtao_bounce,
+            'bentNormals': bl_scene.eevee.use_gtao_bent_normals if bpy.app.version < (4, 3, 0) else bl_scene.v3d.use_gtao_bent_normals
         })
 
     outline = bl_scene.v3d.outline

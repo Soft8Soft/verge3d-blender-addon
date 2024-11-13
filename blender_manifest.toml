@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "verge3d"
 name = "Verge3D"
-version = "4.7.0"
+version = "4.8.0"
 type = "add-on"
 blender_version_min = "4.2.0"
 maintainer = "Soft8Soft"

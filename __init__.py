@@ -54,12 +54,12 @@ from pluginUtils.path import getRoot
 
 log = pluginUtils.log.getLogger('V3D-BL')
 
-
+# COMPAT: Blender <4.2
 bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 7, 0),
+    "version": (4, 8, 0),
     "blender": (3, 0, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
@@ -100,7 +100,8 @@ class V3D_OT_export():
     def execute(self, context):
         from . import gltf2_export
 
-        v3d_export = bpy.data.scenes[0].v3d_export
+        scene0 = bpy.data.scenes[0]
+        v3d_export = scene0.v3d_export
 
         # All custom export settings are stored in this container.
         exportSettings = {}
@@ -110,7 +111,8 @@ class V3D_OT_export():
 
         exportSettings['format'] = self.export_format
         exportSettings['copyright'] = v3d_export.copyright
-        exportSettings['use_shadows'] = v3d_export.use_shadows
+        # COMPAT: using native shadow checker starting from Blender 4.2
+        exportSettings['use_shadows'] = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
         exportSettings['shadow_map_type'] = v3d_export.shadow_map_type
         exportSettings['shadow_map_side'] = v3d_export.shadow_map_side
         exportSettings['esm_distance_scale'] = v3d_export.esm_distance_scale

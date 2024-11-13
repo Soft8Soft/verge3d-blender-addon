@@ -63,7 +63,7 @@ def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
     obj_mods_applied = obj_original
     if need_apply_mods:
         obj_mods_applied = obj_original.copy()
-        obj_del_not_exported_modifiers(obj_mods_applied)
+        objDelNotExportedModifiers(obj_mods_applied)
         objApplyModifiers(obj_mods_applied)
 
         generated_objs.append(obj_mods_applied)
@@ -79,7 +79,7 @@ def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
     obj_triangulated = obj_mods_applied
     if need_triangulation:
         obj_triangulated = obj_mods_applied.copy()
-        obj_del_not_exported_modifiers(obj_triangulated)
+        objDelNotExportedModifiers(obj_triangulated)
         objAddTriModifier(obj_triangulated)
 
         # Triangulation modifier doesn't affect vertices, therefore this operation

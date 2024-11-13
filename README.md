@@ -26,7 +26,7 @@ Just clone and copy the repo to one the following directories (considering you h
 /home/$user/.config/blender/3.0/scripts/addons/
 ```
 
-### Windows 7+
+### Windows 10+
 ```
 C:\Users\%username%\AppData\Roaming\Blender Foundation\Blender\3.0\scripts\addons\
 ```
@@ -41,5 +41,4 @@ Please report any issues found in this add-on on [Verge3D forums](https://www.so
 
 ## License
 
-This add-on is based on the Khronos [Blender glTF 2.0 Exporter](https://github.com/KhronosGroup/glTF-Blender-Exporter)
-and is licensed under GNU General Public License Version 3.
+This add-on is licensed under GNU General Public License Version 3.

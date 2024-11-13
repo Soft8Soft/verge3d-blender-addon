@@ -2,7 +2,7 @@
 
 import binascii, collections, inspect, os, re, sys
 
-from pyosl.ast import Node
+from pyosl.oslast import Node
 
 variables = {}
 functions = {}
@@ -859,25 +859,30 @@ def replace_global_functions(ast):
                 name = 'oslTransform'
 
         else:
-            name = name.replace('atan2', 'atan')
-            name = name.replace('blackbody', 'oslBlackbody')
-            name = name.replace('distance', 'oslDistance')
-            name = name.replace('endswith', 'oslEndsWith')
-            name = name.replace('fabs', 'abs')
-            name = name.replace('fmod', 'mod')
-            name = name.replace('format', 'oslFormat')
-            name = name.replace('getattribute', 'oslGetAttribute')
-            name = name.replace('gettextureinfo', 'oslGetTextureInfo')
-            name = name.replace('hypot', 'oslHypot')
-            name = name.replace('luminance', 'oslLuminance')
-            name = name.replace('pow', 'oslPow')
-            name = name.replace('raytype', 'oslRayType')
-            name = name.replace('rotate', 'oslRotate')
-            name = name.replace('startswith', 'oslStartsWith')
-            name = name.replace('strlen', 'oslStrLen')
-            name = name.replace('substr', 'oslSubStr')
-            name = name.replace('transformc', 'oslTransformC')
-            name = name.replace('wavelength_color', 'oslWaveLengthColor')
+            replacements = {
+                'atan2': 'atan',
+                'blackbody': 'oslBlackbody',
+                'distance': 'oslDistance',
+                'endswith': 'oslEndsWith',
+                'fabs': 'abs',
+                'fmod': 'mod',
+                'format': 'oslFormat',
+                'getattribute': 'oslGetAttribute',
+                'gettextureinfo': 'oslGetTextureInfo',
+                'hypot': 'oslHypot',
+                'luminance': 'oslLuminance',
+                'pow': 'oslPow',
+                'raytype': 'oslRayType',
+                'rotate': 'oslRotate',
+                'startswith': 'oslStartsWith',
+                'strlen': 'oslStrLen',
+                'substr': 'oslSubStr',
+                'transformc': 'oslTransformC',
+                'wavelength_color': 'oslWaveLengthColor'
+            }
+
+            for n in replacements:
+                name = re.sub(r'\b' + n + r'\b', replacements[n], name)
 
         node.set_child(0, name)
 
@@ -938,6 +943,10 @@ def resolve_expr_type(node):
         else:
             return resolve_expr_type(node.get_child(0))
 
+    elif type == 'expression-list':
+        for i in range(node.num_childs()):
+            resolve_expr_type(node.get_child(i))
+        # return None as type
 
     elif type == 'floating-point':
         return 'float'

@@ -1,13 +1,10 @@
 # OSL Parser
 
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
-
 import re, os, sys
 
 from . import osllex
 
-from .ast import Node
+from .oslast import Node
 
 import ply.yacc as yacc
 

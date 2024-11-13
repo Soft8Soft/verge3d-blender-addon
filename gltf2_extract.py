@@ -364,7 +364,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     use_tangents = False
     if meshNeedTangentsForExport(bl_mesh, exportSettings['optimize_attrs']):
         try:
-            bl_mesh.calc_tangents()
+            bl_mesh.calc_tangents(uvmap=meshPreferredTangentsUvMap(bl_mesh))
             use_tangents = True
         except:
             log.warning('Could not calculate tangents. Please try to triangulate the mesh first.')
@@ -386,8 +386,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             for key_block in bl_mesh.shape_keys.key_blocks
             if not (key_block == key_block.relative_key or key_block.mute or key_block == bl_mesh.shape_keys.reference_key)
         ]
-
-    # material_vertex_map = [{} for prim in material_primitives]
 
     vertex_colors = {}
     # COMPAT: < Blender 3.2
@@ -982,6 +980,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             # rename for uniformity with GEOMETRY node
             node['colorLayer'] = bl_node.attribute_name
 
+        elif bl_node.type == 'BSDF_METALLIC':
+            node['distribution'] = bl_node.distribution
+            node['fresnelType'] = bl_node.fresnel_type
+
         elif bl_node.type == 'BSDF_REFRACTION':
             node['distribution'] = bl_node.distribution
 
@@ -1108,6 +1110,9 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                 node['texture'] = index
 
             node['projection'] = bl_node.projection;
+
+        elif bl_node.type == 'TEX_GABOR':
+            node['gaborType'] = bl_node.gabor_type
 
         elif bl_node.type == 'TEX_IMAGE':
             index = gltf.getTextureIndex(glTF, getTextureName(bl_node)) if getTexImage(bl_node) else -1
