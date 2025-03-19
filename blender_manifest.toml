@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "verge3d"
 name = "Verge3D"
-version = "4.8.0"
+version = "4.9.0"
 type = "add-on"
 blender_version_min = "4.2.0"
 maintainer = "Soft8Soft"
@@ -10,6 +10,6 @@ license = ["SPDX:GPL-2.0-or-later"]
 tagline = "Artist-friendly toolkit for creating 3D web experiences"
 
 permissions = ["files", "network"]
-copyright = ["2024 Soft8Soft"]
+copyright = ["2017-2025 Soft8Soft"]
 website = "https://www.soft8soft.com/docs/manual/en/index.html"
 tags = ["Import-Export", "Render"]

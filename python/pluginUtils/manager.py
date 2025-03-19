@@ -1,7 +1,7 @@
-import os, platform, shutil, subprocess, sys, time
+import os, pathlib, platform, shutil, subprocess, sys, time
 
 from .log import getLogger
-from .path import getAppManagerHost
+from .path import getRoot, getAppManagerHost
 
 log = getLogger('V3D-PU')
 
@@ -59,6 +59,7 @@ class AppManagerConn():
         except ConnectionRefusedError:
             log.warning('App Manager connection error, wait a bit')
             time.sleep(0.3)
+            # NOTE: repeated error will cause crash
             conn = HTTPConnection(getAppManagerHost(cls.modPackage, False))
             conn.request('GET', '/get_preview_dir')
 
@@ -77,6 +78,27 @@ class AppManagerConn():
         log.info('Performing export to preview dir: {}'.format(path))
 
         return path
+
+    @classmethod
+    def getEnginePath(cls):
+        conn = HTTPConnection(getAppManagerHost(cls.modPackage, False))
+
+        # decent fallback in case of connection errors
+        enginePathDefault = getRoot(True) / 'build' / 'v3d.js'
+
+        try:
+            conn.request('GET', '/get_engine_path')
+        except ConnectionRefusedError:
+            log.error('App Manager connection refused, using fallback engine path')
+            return enginePathDefault
+
+        response = conn.getresponse()
+
+        if response.status != 200:
+            log.error('App Manager connection error, using fallback engine path: ' + response.reason)
+            return enginePathDefault
+
+        return pathlib.Path(response.read().decode('utf-8'))
 
     @classmethod
     def getManualURL(cls):

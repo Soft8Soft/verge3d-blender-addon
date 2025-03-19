@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -114,7 +114,7 @@ def imgNeedsCompression(bl_image, exportSettings):
     if bl_image.get('compression_error_status') == 1:
         return False
     # only JPEG/PNG (ktx2) or HDR (xz/ktx2) compression supported
-    elif (exportSettings['compress_textures'] and method != 'DISABLE' and
+    elif (exportSettings['compressTextures'] and method != 'DISABLE' and
             bl_image.file_format in ['JPEG', 'PNG', 'HDR'] and
             pu.isPowerOfTwo(bl_image.size[0]) and pu.isPowerOfTwo(bl_image.size[1])):
         return True

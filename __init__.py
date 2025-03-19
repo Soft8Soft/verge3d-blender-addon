@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -59,8 +59,8 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 8, 0),
-    "blender": (3, 0, 0),
+    "version": (4, 9, 0),
+    "blender": (3, 4, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
     "tracker_url": "https://www.soft8soft.com/forum/bug-reports-and-feature-requests/",
@@ -112,59 +112,69 @@ class V3D_OT_export():
         exportSettings['format'] = self.export_format
         exportSettings['copyright'] = v3d_export.copyright
         # COMPAT: using native shadow checker starting from Blender 4.2
-        exportSettings['use_shadows'] = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
-        exportSettings['shadow_map_type'] = v3d_export.shadow_map_type
-        exportSettings['shadow_map_side'] = v3d_export.shadow_map_side
-        exportSettings['esm_distance_scale'] = v3d_export.esm_distance_scale
-        exportSettings['shadow_cube_size'] = v3d_export.shadow_cube_size
-        exportSettings['shadow_cascade_size'] = v3d_export.shadow_cascade_size
-        exportSettings['ibl_environment_mode'] = v3d_export.ibl_environment_mode
-        exportSettings['bake_modifiers'] = v3d_export.bake_modifiers
-        exportSettings['bake_armature_actions'] = v3d_export.bake_armature_actions
-        exportSettings['bake_text'] = v3d_export.bake_text
-        exportSettings['export_constraints'] = v3d_export.export_constraints
-        exportSettings['custom_props'] = v3d_export.export_custom_props
-        exportSettings['lzma_enabled'] = v3d_export.lzma_enabled
-        exportSettings['compress_textures'] = v3d_export.compress_textures
-        exportSettings['optimize_attrs'] = v3d_export.optimize_attrs
-        exportSettings['aa_method'] = v3d_export.aa_method
-        exportSettings['use_hdr'] = v3d_export.use_hdr
-        exportSettings['use_oit'] = v3d_export.use_oit
-        exportSettings['animations'] = v3d_export.export_animations
+        exportSettings['useShadows'] = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
+        exportSettings['shadowMapType'] = v3d_export.shadow_map_type
+        exportSettings['shadowMapSide'] = v3d_export.shadow_map_side
+        exportSettings['esmDistanceScale'] = v3d_export.esm_distance_scale
+        exportSettings['shadowCubeSize'] = v3d_export.shadow_cube_size
+        exportSettings['shadowCascadeSize'] = v3d_export.shadow_cascade_size
+        exportSettings['iblEnvironmentMode'] = v3d_export.ibl_environment_mode
+        exportSettings['bakeModifiers'] = v3d_export.bake_modifiers
+        exportSettings['bakeArmatureActions'] = v3d_export.bake_armature_actions
+        # opentype module is not available for HTML export
+        exportSettings['bakeText'] = v3d_export.bake_text if self.export_format != 'HTML' else True
+        exportSettings['exportConstraints'] = v3d_export.export_constraints
+        exportSettings['exportCustomProps'] = v3d_export.export_custom_props
+        exportSettings['lzmaEnabled'] = v3d_export.lzma_enabled
+        # basic transcoder module is not available for HTML export
+        exportSettings['compressTextures'] = v3d_export.compress_textures if self.export_format != 'HTML' else False
+        exportSettings['optimizeAttrs'] = v3d_export.optimize_attrs
+        exportSettings['aaMethod'] = v3d_export.aa_method
+        exportSettings['useHDR'] = v3d_export.use_hdr
+        exportSettings['useOIT'] = v3d_export.use_oit
+        exportSettings['exportAnimations'] = v3d_export.export_animations
         if v3d_export.export_animations:
-            exportSettings['frame_range'] = v3d_export.export_frame_range
-            exportSettings['move_keyframes'] = v3d_export.export_move_keyframes
+            exportSettings['exportFrameRange'] = v3d_export.export_frame_range
+            exportSettings['moveKeyframes'] = v3d_export.export_move_keyframes
         else:
-            exportSettings['frame_range'] = False
-            exportSettings['move_keyframes'] = False
+            exportSettings['exportFrameRange'] = False
+            exportSettings['moveKeyframes'] = False
 
-        exportSettings['uri_cache'] = { 'uri': [], 'bl_datablocks': [] }
+        exportSettings['uriCache'] = { 'uri': [], 'blDatablocks': [] }
         exportSettings['binary'] = bytearray()
         exportSettings['binaryfilename'] = os.path.splitext(os.path.basename(self.filepath))[0] + '.bin'
 
-        exportSettings['sneak_peek'] = self.export_sneak_peek
+        exportSettings['sneakPeek'] = self.export_sneak_peek
 
-        exportSettings['temporary_meshes'] = None
-        exportSettings['temporary_materials'] = None
+        exportSettings['temporaryMeshes'] = None
+        exportSettings['temporaryMaterials'] = None
 
         exportSettings['strip'] = True
 
         # valid values are: 'UNSIGNED_INT', 'UNSIGNED_SHORT', 'UNSIGNED_BYTE'
         exportSettings['indices'] = 'UNSIGNED_INT'
-        exportSettings['force_indices'] = False
+        exportSettings['forceIndices'] = False
 
-        exportSettings['force_sampling'] = False
+        exportSettings['forceSampling'] = False
         exportSettings['skins'] = True
         exportSettings['morph'] = True
-        exportSettings['morph_normal'] = True
-        exportSettings['morph_tangent'] = True
-
-        exportSettings['displacement'] = False
+        exportSettings['morphNormal'] = True
+        exportSettings['morphTangent'] = True
 
         return gltf2_export.save(self, context, exportSettings)
 
     def draw(self, context):
         pass
+
+class V3D_OT_export_html(bpy.types.Operator, ExportHelper, V3D_OT_export):
+    '''Export scene to HTML'''
+    bl_idname = 'export_scene.v3d_html'
+    bl_label = 'Export HTML'
+
+    filename_ext = '.html'
+    filter_glob: StringProperty(default='*.html', options={'HIDDEN'})
+
+    export_format = 'HTML'
 
 class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
     '''Export scene to glTF 2.0 format'''
@@ -185,6 +195,9 @@ class V3D_OT_export_glb(bpy.types.Operator, ExportHelper, V3D_OT_export):
     filter_glob: StringProperty(default='*.glb', options={'HIDDEN'})
 
     export_format = 'BINARY'
+
+def menuExportHTML(self, context):
+    self.layout.operator(V3D_OT_export_html.bl_idname, text='HTML (.html)')
 
 def menuExportGLTF(self, context):
     self.layout.operator(V3D_OT_export_gltf.bl_idname, text='Verge3D glTF (.gltf)')
@@ -208,6 +221,10 @@ def register():
     AppManagerConn.init(getRoot(), 'BLENDER')
 
     bpy.utils.register_class(V3D_AddonPreferences)
+
+    if AppManagerConn.isAvailable():
+        bpy.utils.register_class(V3D_OT_export_html)
+        bpy.types.TOPBAR_MT_file_export.append(menuExportHTML)
     bpy.utils.register_class(V3D_OT_export_gltf)
     bpy.utils.register_class(V3D_OT_export_glb)
 
@@ -232,6 +249,10 @@ def unregister():
     from . import custom_props, custom_ui, manual_map
 
     bpy.utils.unregister_class(V3D_AddonPreferences)
+
+    if AppManagerConn.isAvailable():
+        bpy.utils.unregister_class(V3D_OT_export_html)
+        bpy.types.TOPBAR_MT_file_export.remove(menuExportHTML)
     bpy.utils.unregister_class(V3D_OT_export_gltf)
     bpy.utils.unregister_class(V3D_OT_export_glb)
 

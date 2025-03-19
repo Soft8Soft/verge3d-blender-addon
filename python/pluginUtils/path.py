@@ -1,4 +1,4 @@
-import os, platform
+import os, pathlib, platform
 
 PORTS = {
     'BLENDER': 8668,
@@ -8,11 +8,12 @@ PORTS = {
 
 REEXPORT_ONLY = True
 
-def getRoot():
+def getRoot(usePathLib=False):
     baseDir = os.path.dirname(os.path.abspath(__file__))
-    # NOTE: not working in python2
-    #return (pathlib.Path(baseDir) / '..' / '..').resolve()
-    return os.path.join(baseDir, '..', '..')
+    if usePathLib:
+        return (pathlib.Path(baseDir) / '..' / '..').resolve()
+    else:
+        return os.path.join(baseDir, '..', '..')
 
 def getAppManagerHost(modPackage, includeScheme=True):
     if includeScheme:

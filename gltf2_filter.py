@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -141,26 +141,27 @@ def filterApply(exportSettings):
     Also filters out invalid, deleted and not exportable elements.
     """
 
-    filtered_objects_shallow = set()
-    filtered_objects_with_dg = set()
+    filteredObjectsShallow = set()
+    filteredObjectsWithIC = set()
     for bl_scene in bpy.data.scenes:
-        filtered_objects_shallow.update(bl_scene.objects)
-        flattenCollectionUnique(bl_scene.collection, filtered_objects_with_dg)
+        filteredObjectsShallow.update(bl_scene.objects)
+        flattenCollectionUnique(bl_scene.collection, filteredObjectsWithIC)
 
     def collExpFilter(obj):
         return all(coll.v3d.enable_export for coll in getObjectAllCollections(obj))
 
-    filtered_objects_shallow = list(filter(collExpFilter, filtered_objects_shallow))
-    filtered_objects_with_dg = list(filter(collExpFilter, filtered_objects_with_dg))
+    filteredObjectsShallow = list(filter(collExpFilter, filteredObjectsShallow))
+    filteredObjectsWithIC = list(filter(collExpFilter, filteredObjectsWithIC))
 
-    exportSettings['filtered_objects_shallow'] = filtered_objects_shallow
-    exportSettings['filtered_objects_with_dg'] = filtered_objects_with_dg
+    exportSettings['filteredObjectsShallow'] = filteredObjectsShallow
+    exportSettings['filteredObjectsWithIC'] = filteredObjectsWithIC
 
-    # Meshes
 
-    filtered_meshes = []
-    filtered_vertex_groups = {}
-    temporary_meshes = []
+    # meshes
+
+    filteredMeshes = []
+    filteredVertexGroups = {}
+    temporaryMeshes = []
 
     for bl_mesh in bpy.data.meshes:
 
@@ -173,7 +174,7 @@ def filterApply(exportSettings):
 
         skip = True
 
-        for bl_obj in filtered_objects_with_dg:
+        for bl_obj in filteredObjectsWithIC:
 
             current_bl_object = bl_obj
 
@@ -184,15 +185,13 @@ def filterApply(exportSettings):
 
                 skip = False
 
-                mesh_for_export = meshObjGetExportData(
-                        current_bl_object,
-                        exportSettings['bake_modifiers'],
-                        exportSettings['optimize_attrs'])
+                mesh_for_export = meshObjGetExportData(current_bl_object,
+                        exportSettings['bakeModifiers'], exportSettings['optimizeAttrs'])
 
                 if mesh_for_export != current_bl_mesh:
                     # a new mesh was generated
                     mesh_for_export[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_object
-                    temporary_meshes.append(mesh_for_export)
+                    temporaryMeshes.append(mesh_for_export)
                     current_bl_mesh = mesh_for_export
 
                 break
@@ -200,11 +199,13 @@ def filterApply(exportSettings):
         if skip:
             continue
 
-        filtered_meshes.append(current_bl_mesh)
-        filtered_vertex_groups[getPtr(bl_mesh)] = current_bl_object.vertex_groups
+        filteredMeshes.append(current_bl_mesh)
+        filteredVertexGroups[getPtr(bl_mesh)] = current_bl_object.vertex_groups
 
-    # CURVES (as well as surfaces and texts)
-    filtered_curves = []
+
+    # curves (as well as surfaces and texts)
+
+    filteredCurves = []
 
     for bl_curve in bpy.data.curves:
 
@@ -212,8 +213,8 @@ def filterApply(exportSettings):
             continue
 
         # supported curve
-        if isinstance(bl_curve, bpy.types.TextCurve) and not exportSettings['bake_text']:
-            filtered_curves.append(bl_curve)
+        if isinstance(bl_curve, bpy.types.TextCurve) and not exportSettings['bakeText']:
+            filteredCurves.append(bl_curve)
 
         # convert to mesh
         else:
@@ -223,7 +224,7 @@ def filterApply(exportSettings):
 
             skip = True
 
-            for bl_obj in filtered_objects_with_dg:
+            for bl_obj in filteredObjectsWithIC:
 
                 current_bl_object = bl_obj
 
@@ -236,7 +237,7 @@ def filterApply(exportSettings):
 
                     copy_obj = current_bl_object.copy()
 
-                    if not exportSettings['bake_modifiers']:
+                    if not exportSettings['bakeModifiers']:
                         copy_obj.modifiers.clear()
 
                     dg = bpy.context.evaluated_depsgraph_get()
@@ -253,7 +254,7 @@ def filterApply(exportSettings):
                     if current_bl_mesh is not None:
                         current_bl_mesh.name = bl_curve.name
                         current_bl_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_object
-                        temporary_meshes.append(current_bl_mesh)
+                        temporaryMeshes.append(current_bl_mesh)
                     else:
                         skip = True
 
@@ -264,19 +265,19 @@ def filterApply(exportSettings):
             if skip:
                 continue
 
-            filtered_meshes.append(current_bl_mesh)
-            filtered_vertex_groups[getPtr(bl_curve)] = current_bl_object.vertex_groups
+            filteredMeshes.append(current_bl_mesh)
+            filteredVertexGroups[getPtr(bl_curve)] = current_bl_object.vertex_groups
 
 
     # fonts
 
-    filtered_fonts = []
+    filteredFonts = []
 
-    for bl_curve in filtered_curves:
+    for bl_curve in filteredCurves:
 
         font = bl_curve.font if isinstance(bl_curve, bpy.types.TextCurve) else None
-        if font is not None and font not in filtered_fonts and font.users != 0:
-            filtered_fonts.append(font)
+        if font is not None and font not in filteredFonts and font.users != 0:
+            filteredFonts.append(font)
 
 
     # metaballs
@@ -292,7 +293,7 @@ def filterApply(exportSettings):
 
         skip = True
 
-        for bl_obj in filtered_objects_with_dg:
+        for bl_obj in filteredObjectsWithIC:
 
             current_bl_obj = bl_obj
 
@@ -307,7 +308,7 @@ def filterApply(exportSettings):
                 if current_bl_mesh is not None:
                     current_bl_mesh.name = bl_meta.name
                     current_bl_mesh[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_obj
-                    temporary_meshes.append(current_bl_mesh)
+                    temporaryMeshes.append(current_bl_mesh)
                 else:
                     skip = True
 
@@ -316,46 +317,46 @@ def filterApply(exportSettings):
         if skip:
             continue
 
-        filtered_meshes.append(current_bl_mesh)
-        filtered_vertex_groups[getPtr(bl_meta)] = current_bl_obj.vertex_groups
+        filteredMeshes.append(current_bl_mesh)
+        filteredVertexGroups[getPtr(bl_meta)] = current_bl_obj.vertex_groups
 
 
-    exportSettings['filtered_curves'] = filtered_curves
-    exportSettings['filtered_fonts'] = filtered_fonts
-    exportSettings['filtered_meshes'] = filtered_meshes
-    exportSettings['filtered_vertex_groups'] = filtered_vertex_groups
-    exportSettings['temporary_meshes'] = temporary_meshes
+    exportSettings['filteredCurves'] = filteredCurves
+    exportSettings['filteredFonts'] = filteredFonts
+    exportSettings['filteredMeshes'] = filteredMeshes
+    exportSettings['filteredVertexGroups'] = filteredVertexGroups
+    exportSettings['temporaryMeshes'] = temporaryMeshes
 
 
-    # MATERIALS
+    # materials
 
-    filtered_materials = []
-    temporary_materials = []
+    filteredMaterials = []
+    temporaryMaterials = []
 
     for bl_mat in getUsedMaterials():
 
         if bl_mat.users == 0:
             continue
 
-        for bl_mesh in filtered_meshes:
+        for bl_mesh in filteredMeshes:
             for mat in bl_mesh.materials:
-                if mat == bl_mat and mat not in filtered_materials:
-                    filtered_materials.append(mat)
+                if mat == bl_mat and mat not in filteredMaterials:
+                    filteredMaterials.append(mat)
 
-        for bl_obj in filtered_objects_with_dg:
+        for bl_obj in filteredObjectsWithIC:
             if bl_obj.material_slots:
                 for bl_material_slot in bl_obj.material_slots:
                     if bl_material_slot.link == 'DATA':
                         continue
 
                     mat = bl_material_slot.material
-                    if mat == bl_mat and mat not in filtered_materials:
-                        filtered_materials.append(mat)
+                    if mat == bl_mat and mat not in filteredMaterials:
+                        filteredMaterials.append(mat)
 
-        for bl_curve in filtered_curves:
+        for bl_curve in filteredCurves:
             for mat in bl_curve.materials:
-                if mat == bl_mat and mat not in filtered_materials:
-                    filtered_materials.append(mat)
+                if mat == bl_mat and mat not in filteredMaterials:
+                    filteredMaterials.append(mat)
 
     curr_world = bpy.context.scene.world
     if curr_world is not None:
@@ -387,31 +388,31 @@ def filterApply(exportSettings):
 
         world_mat_wrapper.node_tree = mat_node_tree
 
-        temporary_materials.append(world_mat)
-        filtered_materials.append(world_mat_wrapper)
+        temporaryMaterials.append(world_mat)
+        filteredMaterials.append(world_mat_wrapper)
 
-    exportSettings['filtered_materials'] = filtered_materials
-    exportSettings['temporary_materials'] = temporary_materials
+    exportSettings['filteredMaterials'] = filteredMaterials
+    exportSettings['temporaryMaterials'] = temporaryMaterials
 
-    filtered_node_groups = []
+    filteredNodeGroups = []
     for group in bpy.data.node_groups:
         if group.users == 0:
             continue
 
         # only groups used by 'EEVEE' materials
-        for bl_mat in filtered_materials:
+        for bl_mat in filteredMaterials:
             mat_type = getMaterialType(bl_mat)
             if mat_type == 'EEVEE':
-                if (group not in filtered_node_groups and
+                if (group not in filteredNodeGroups and
                         group in extractMaterialNodeTrees(bl_mat.node_tree)):
-                    filtered_node_groups.append(group)
+                    filteredNodeGroups.append(group)
 
-    exportSettings['filtered_node_groups'] = filtered_node_groups
+    exportSettings['filteredNodeGroups'] = filteredNodeGroups
 
 
-    filtered_textures = []
+    filteredTextures = []
 
-    for bl_mat in filtered_materials:
+    for bl_mat in filteredMaterials:
         if bl_mat.node_tree and bl_mat.use_nodes:
             for bl_node in bl_mat.node_tree.nodes:
                 if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and
@@ -419,58 +420,58 @@ def filterApply(exportSettings):
                         getTexImage(bl_node).users != 0 and
                         getTexImage(bl_node).size[0] > 0 and
                         getTexImage(bl_node).size[1] > 0 and
-                        bl_node not in filtered_textures):
-                    filtered_textures.append(bl_node)
+                        bl_node not in filteredTextures):
+                    filteredTextures.append(bl_node)
 
-    for node_group in filtered_node_groups:
+    for node_group in filteredNodeGroups:
         for bl_node in node_group.nodes:
             if (isinstance(bl_node, (bpy.types.ShaderNodeTexImage, bpy.types.ShaderNodeTexEnvironment)) and
                     getTexImage(bl_node) is not None and
                     getTexImage(bl_node).users != 0 and
                     getTexImage(bl_node).size[0] > 0 and
                     getTexImage(bl_node).size[1] > 0 and
-                    bl_node not in filtered_textures):
-                filtered_textures.append(bl_node)
+                    bl_node not in filteredTextures):
+                filteredTextures.append(bl_node)
 
-    exportSettings['filtered_textures'] = filtered_textures
+    exportSettings['filteredTextures'] = filteredTextures
 
 
-    filtered_images = []
+    filteredImages = []
 
-    for bl_texture in filtered_textures:
+    for bl_texture in filteredTextures:
         img = getTexImage(bl_texture)
-        if img not in filtered_images:
+        if img not in filteredImages:
             img['compression_error_status'] = 0 # no error
-            filtered_images.append(img)
+            filteredImages.append(img)
 
-    exportSettings['filtered_images'] = filtered_images
+    exportSettings['filteredImages'] = filteredImages
 
 
-    filtered_cameras = []
+    filteredCameras = []
 
     for bl_camera in bpy.data.cameras:
 
         if bl_camera.users == 0:
             continue
 
-        filtered_cameras.append(bl_camera)
+        filteredCameras.append(bl_camera)
 
-    exportSettings['filtered_cameras'] = filtered_cameras
+    exportSettings['filteredCameras'] = filteredCameras
 
 
-    filtered_lights = []
+    filteredLights = []
 
     for bl_light in bpy.data.lights:
 
         if bl_light.users == 0:
             continue
 
-        filtered_lights.append(bl_light)
+        filteredLights.append(bl_light)
 
-    exportSettings['filtered_lights'] = filtered_lights
+    exportSettings['filteredLights'] = filteredLights
 
 
-    filtered_light_probes = []
+    filteredLightProbes = []
 
     for bl_probe in bpy.data.lightprobes:
 
@@ -482,15 +483,15 @@ def filterApply(exportSettings):
         if bl_probe.type != 'CUBEMAP' and bl_probe.type != 'SPHERE' and bl_probe.type != 'PLANAR' and bl_probe.type != 'PLANE':
             continue
 
-        filtered_light_probes.append(bl_probe)
+        filteredLightProbes.append(bl_probe)
 
-    exportSettings['filtered_light_probes'] = filtered_light_probes
+    exportSettings['filteredLightProbes'] = filteredLightProbes
 
 
-    joint_indices = {}
+    jointIndices = {}
 
     if exportSettings['skins']:
-        for bl_obj in filtered_objects_with_dg:
+        for bl_obj in filteredObjectsWithIC:
 
             if bl_obj.type != 'MESH':
                 continue
@@ -499,20 +500,19 @@ def filterApply(exportSettings):
             if armature_object is None or len(armature_object.pose.bones) == 0:
                 continue
 
-            grp = joint_indices[bl_obj.data.name] = {}
+            grp = jointIndices[bl_obj.data.name] = {}
 
             for bl_bone in armature_object.pose.bones:
                 grp[bl_bone.name] = len(grp)
 
-    exportSettings['joint_indices'] = joint_indices
+    exportSettings['jointIndices'] = jointIndices
 
 
-    filtered_clipping_planes = []
+    filteredClippingPlanes = []
 
     for bl_obj in bpy.data.objects:
         if bl_obj.type == 'EMPTY' and bl_obj.v3d.clipping_plane:
-            filtered_clipping_planes.append(bl_obj)
+            filteredClippingPlanes.append(bl_obj)
 
-    exportSettings['filtered_clipping_planes'] = filtered_clipping_planes
-
+    exportSettings['filteredClippingPlanes'] = filteredClippingPlanes
 

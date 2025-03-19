@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import bpy
-import json, struct, os
+import json, struct, os, tempfile
 
 import pluginUtils
 from pluginUtils.manager import AppManagerConn
@@ -35,32 +35,29 @@ def prepare(exportSettings):
 
     filterApply(exportSettings)
 
-    exportSettings['original_frame'] = bpy.context.scene.frame_current
+    exportSettings['originalFrame'] = bpy.context.scene.frame_current
+    exportSettings['jointCache'] = {}
 
-    exportSettings['use_no_color'] = []
-
-    exportSettings['joint_cache'] = {}
-
-    if exportSettings['animations']:
+    if exportSettings['exportAnimations']:
         bpy.context.scene.frame_set(0)
 
 def finish(exportSettings):
     """
     Brings back Blender into its original state before export and cleans up temporary objects.
     """
-    if exportSettings['temporary_meshes'] is not None:
-        for temporary_mesh in exportSettings['temporary_meshes']:
-            bpy.data.meshes.remove(temporary_mesh)
+    if exportSettings['temporaryMeshes'] is not None:
+        for tempMesh in exportSettings['temporaryMeshes']:
+            bpy.data.meshes.remove(tempMesh)
 
-    if exportSettings['temporary_materials'] is not None:
-        for temporary_mat in exportSettings['temporary_materials']:
+    if exportSettings['temporaryMaterials'] is not None:
+        for temporary_mat in exportSettings['temporaryMaterials']:
             bpy.data.materials.remove(temporary_mat)
 
-    for bl_image in exportSettings['filtered_images']:
+    for bl_image in exportSettings['filteredImages']:
         del bl_image['compression_error_status']
 
-    del exportSettings['uri_cache']['uri'][:]
-    del exportSettings['uri_cache']['bl_datablocks'][:]
+    del exportSettings['uriCache']['uri'][:]
+    del exportSettings['uriCache']['blDatablocks'][:]
 
     # HACK: fix user count for materials, which can be 0 in case of copying objects
     # for bpy.data.meshes.new_from_object operation
@@ -70,14 +67,14 @@ def finish(exportSettings):
             for i in range(len(mats)):
                 mats[i] = mats[i]
 
-    bpy.context.scene.frame_set(exportSettings['original_frame'])
+    bpy.context.scene.frame_set(exportSettings['originalFrame'])
 
 def compressLZMA(path, settings):
 
-    if settings['sneak_peek']:
+    if settings['sneakPeek']:
         return
 
-    if not settings['lzma_enabled']:
+    if not settings['lzmaEnabled']:
         return
 
     pluginUtils.convert.compressLZMA(path)
@@ -90,7 +87,7 @@ def save(operator, context, exportSettings):
 
     log.info('Starting glTF 2.0 export')
     bpy.context.window_manager.progress_begin(0, 100)
-    bpy.context.window_manager.progress_update(0)
+    bpy.context.window_manager.progress_update(1)
 
 
     prepare(exportSettings)
@@ -105,9 +102,11 @@ def save(operator, context, exportSettings):
     indent = None
     separators = separators=(',', ':')
 
-    jsonStrip = exportSettings['strip'] and not exportSettings['sneak_peek']
+    jsonStrip = exportSettings['strip'] and not exportSettings['sneakPeek']
 
-    if exportSettings['format'] == 'ASCII' and not jsonStrip:
+    exportFormat = exportSettings['format']
+
+    if exportFormat == 'ASCII' and not jsonStrip:
         indent = 4
         separators = separators=(', ', ' : ')
 
@@ -115,7 +114,7 @@ def save(operator, context, exportSettings):
             sort_keys=True, ensure_ascii=False)
 
 
-    if exportSettings['format'] == 'ASCII':
+    if exportFormat  == 'ASCII':
         file = open(exportSettings['filepath'], 'w', encoding='utf8', newline='\n')
         file.write(glTF_encoded)
         file.write('\n')
@@ -134,7 +133,10 @@ def save(operator, context, exportSettings):
             compressLZMA(bin_path, exportSettings)
 
     else:
-        file = open(exportSettings['filepath'], 'wb')
+        if exportFormat == 'BINARY':
+            file = open(exportSettings['filepath'], 'wb')
+        else: # HTML
+            file = tempfile.NamedTemporaryFile(delete=False)
 
         glTF_data = glTF_encoded.encode()
         binary = exportSettings['binary']
@@ -173,8 +175,15 @@ def save(operator, context, exportSettings):
 
         file.close()
 
-        compressLZMA(exportSettings['filepath'], exportSettings)
-
+        if exportFormat == 'BINARY':
+            compressLZMA(exportSettings['filepath'], exportSettings)
+        else: # HTML
+            blendname = os.path.splitext(bpy.path.basename(bpy.context.blend_data.filepath))[0]
+            title = blendname.replace('_', ' ').title() or 'Blender scene exported to HTML'
+            if exportSettings['copyright']:
+                title += ' (Copyright {})'.format(exportSettings['copyright'])
+            pluginUtils.convert.composeSingleHTML(exportSettings['filepath'], file.name, title)
+            os.unlink(file.name)
 
     finish(exportSettings)
 

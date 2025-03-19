@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -40,11 +40,11 @@ def getImageIndex(exportSettings, uri):
     Return the image index in the glTF array.
     """
 
-    if exportSettings['uri_cache'] is None:
+    if exportSettings['uriCache'] is None:
         return -1
 
-    if uri in exportSettings['uri_cache']['uri']:
-        return exportSettings['uri_cache']['uri'].index(uri)
+    if uri in exportSettings['uriCache']['uri']:
+        return exportSettings['uriCache']['uri'].index(uri)
 
     return -1
 
@@ -56,7 +56,7 @@ def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
     the same name but with different images.
     """
 
-    if (exportSettings['uri_cache'] is None or glTF.get('textures') is None
+    if (exportSettings['uriCache'] is None or glTF.get('textures') is None
             or bl_texture is None):
         return -1
 
@@ -65,7 +65,7 @@ def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
         return -1
 
     uri = getImageExportedURI(exportSettings, bl_image)
-    image_uri = exportSettings['uri_cache']['uri']
+    image_uri = exportSettings['uriCache']['uri']
     tex_name = getTextureName(bl_texture)
 
     index = 0
@@ -119,26 +119,18 @@ def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
         else:
             return -1
 
-    # COMPAT: Blender < 3.3, checking for type
-    if hasattr(bpy.types, 'ShaderNodeSeparateColor') and isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
         if len(fromNode.inputs['Color'].links) > 0:
             fromNode = fromNode.inputs['Color'].links[0].from_node
         else:
             return -1
 
-    # COMPAT: Blender < 3.3
-    if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
-        if len(fromNode.inputs['Image'].links) > 0:
-            fromNode = fromNode.inputs['Image'].links[0].from_node
-        else:
-            return -1
-
     # color factor
-    if isinstance(fromNode, bpy.types.ShaderNodeMixRGB) and fromNode.blend_type == 'MULTIPLY':
-        if len(fromNode.inputs['Color1'].links) > 0:
-            fromNode = fromNode.inputs['Color1'].links[0].from_node
-        elif len(fromNode.inputs['Color2'].links) > 0:
-            fromNode = fromNode.inputs['Color2'].links[0].from_node
+    if isinstance(fromNode, bpy.types.ShaderNodeMix) and fromNode.data_type == 'RGBA' and fromNode.blend_type == 'MULTIPLY':
+        if len(fromNode.inputs['A'].links) > 0:
+            fromNode = fromNode.inputs['A'].links[0].from_node
+        elif len(fromNode.inputs['B'].links) > 0:
+            fromNode = fromNode.inputs['B'].links[0].from_node
         else:
             return -1
 
@@ -175,19 +167,14 @@ def getTexcoordIndex(glTF, name, shaderNode):
     if isinstance(fromNode, bpy.types.ShaderNodeNormalMap):
         fromNode = fromNode.inputs['Color'].links[0].from_node
 
-    # COMPAT: Blender < 3.3, checking for type
-    if hasattr(bpy.types, 'ShaderNodeSeparateColor') and isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
+    if isinstance(fromNode, bpy.types.ShaderNodeSeparateColor):
         fromNode = fromNode.inputs['Color'].links[0].from_node
 
-    # COMPAT: Blender < 3.3
-    if isinstance(fromNode, bpy.types.ShaderNodeSeparateRGB):
-        fromNode = fromNode.inputs['Image'].links[0].from_node
-
-    if isinstance(fromNode, bpy.types.ShaderNodeMixRGB) and fromNode.blend_type == 'MULTIPLY':
-        if len(fromNode.inputs['Color1'].links) > 0:
-            fromNode = fromNode.inputs['Color1'].links[0].from_node
-        elif len(fromNode.inputs['Color2'].links) > 0:
-            fromNode = fromNode.inputs['Color2'].links[0].from_node
+    if isinstance(fromNode, bpy.types.ShaderNodeMix) and fromNode.data_type == 'RGBA' and fromNode.blend_type == 'MULTIPLY':
+        if len(fromNode.inputs['A'].links) > 0:
+            fromNode = fromNode.inputs['A'].links[0].from_node
+        elif len(fromNode.inputs['B'].links) > 0:
+            fromNode = fromNode.inputs['B'].links[0].from_node
 
     if not isinstance(fromNode, bpy.types.ShaderNodeTexImage):
         return 0
@@ -331,19 +318,19 @@ def getImageExportedURI(exportSettings, bl_image):
     else:
         ext = '.png'
 
-    unique_uri = name + ext
-    uri_cache = exportSettings['uri_cache']
+    uniqueURI = name + ext
+    uriCache = exportSettings['uriCache']
 
     i = 0
-    while unique_uri in uri_cache['uri']:
-        index = uri_cache['uri'].index(unique_uri)
-        if uri_cache['bl_datablocks'][index] == bl_image:
+    while uniqueURI in uriCache['uri']:
+        index = uriCache['uri'].index(uniqueURI)
+        if uriCache['blDatablocks'][index] == bl_image:
             break
 
         i += 1
-        unique_uri = name + '_' + integerToBlSuffix(i) + ext
+        uniqueURI = name + '_' + integerToBlSuffix(i) + ext
 
-    return unique_uri
+    return uniqueURI
 
 def getImageExportedMimeType(bl_image, exportSettings):
 
@@ -362,49 +349,6 @@ def getImageExportedMimeType(bl_image, exportSettings):
         return 'image/vnd.radiance'
     else:
         return 'image/png'
-
-def getNameInBrackets(data_path):
-    """
-    Return Blender node on a given Blender data path.
-    """
-
-    if data_path is None:
-        return None
-
-    index = data_path.find("[\"")
-    if (index == -1):
-        return None
-
-    node_name = data_path[(index + 2):]
-
-    index = node_name.find("\"")
-    if (index == -1):
-        return None
-
-    return node_name[:(index)]
-
-def getAnimParamDim(fcurves, node_name):
-    dim = 0
-
-    for fcurve in fcurves:
-        if getNameInBrackets(fcurve.data_path) == node_name:
-            dim = max(dim, fcurve.array_index+1)
-
-    return dim
-
-def getAnimParam(data_path):
-    """
-    return animated param in data path:
-    nodes['name'].outputs[0].default_value -> default_value
-    """
-
-    index = data_path.rfind('.')
-
-    if index == -1:
-        return data_path
-
-    return data_path[(index + 1):]
-
 
 def getScalar(default_value, init_value = 0.0):
     """
@@ -550,6 +494,7 @@ def createDefaultMaterial():
                             "outputs" : [
                                 [ 0, 0, 0, 0 ]
                             ],
+                            # COMPAT: used in Blender < 4.4, should be replaced to DIFFUSE_BSDF_BL
                             "type" : "BSDF_DIFFUSE_BL"
                         }
                     ]

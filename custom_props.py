@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -535,7 +535,6 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         name = 'Fit Offset',
         description = ('Canvas fit offset'),
         default = 0,
-        min = 0,
         precision = 2,
         options = NO_ANIM_OPTS
     )

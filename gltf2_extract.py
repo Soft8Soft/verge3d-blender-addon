@@ -1,5 +1,5 @@
 # Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2024 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -362,7 +362,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         bl_mesh.calc_normals_split()
 
     use_tangents = False
-    if meshNeedTangentsForExport(bl_mesh, exportSettings['optimize_attrs']):
+    if meshNeedTangentsForExport(bl_mesh, exportSettings['optimizeAttrs']):
         try:
             bl_mesh.calc_tangents(uvmap=meshPreferredTangentsUvMap(bl_mesh))
             use_tangents = True
@@ -388,12 +388,9 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         ]
 
     vertex_colors = {}
-    # COMPAT: < Blender 3.2
-    bl_vertex_colors = bl_mesh.color_attributes if bpy.app.version >= (3, 2, 0) else bl_mesh.vertex_colors
-
     color_max = 0
     color_index = 0
-    for vertex_color in bl_vertex_colors:
+    for vertex_color in bl_mesh.color_attributes:
         vertex_color_name = 'COLOR_' + str(color_index)
         vertex_colors[vertex_color_name] = vertex_color
 
@@ -668,8 +665,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             primitive['material'] = bl_mesh.materials[material_idx].name
 
 
-        export_color = primitive['material'] not in exportSettings['use_no_color']
-
         # Now just move all the data for prim_dots into attribute arrays
 
         blender_idxs = prim_dots['vertex_index']
@@ -721,14 +716,13 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             uvs[:, 1] = prim_dots['uv%dy' % tex_coord_i]
             attributes['TEXCOORD_%d' % tex_coord_i] = uvs.reshape(-1)
 
-        if export_color:
-            for color_i in range(color_max):
-                colors = np.empty((len(prim_dots), 4), dtype=np.float32)
-                colors[:, 0] = prim_dots['color%dr' % color_i]
-                colors[:, 1] = prim_dots['color%dg' % color_i]
-                colors[:, 2] = prim_dots['color%db' % color_i]
-                colors[:, 3] = prim_dots['color%da' % color_i]
-                attributes['COLOR_%d' % color_i] = colors.reshape(-1)
+        for color_i in range(color_max):
+            colors = np.empty((len(prim_dots), 4), dtype=np.float32)
+            colors[:, 0] = prim_dots['color%dr' % color_i]
+            colors[:, 1] = prim_dots['color%dg' % color_i]
+            colors[:, 2] = prim_dots['color%db' % color_i]
+            colors[:, 3] = prim_dots['color%da' % color_i]
+            attributes['COLOR_%d' % color_i] = colors.reshape(-1)
 
         if need_skin_attributes:
             joints = [[] for _ in range(num_joint_sets)]
@@ -1008,10 +1002,7 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['vectorType'] = bl_node.vector_type
 
         elif bl_node.type == 'MAP_RANGE':
-            # COMPAT: appeared in Blender version > 3.0.0
-            if hasattr(bl_node, "data_type"):
-                node['dataType'] = bl_node.data_type
-
+            node['dataType'] = bl_node.data_type
             node['clamp'] = bl_node.clamp
             node['interpolationType'] = bl_node.interpolation_type
 
@@ -1029,11 +1020,6 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
             # Vector
             node['factorMode'] = bl_node.factor_mode
-
-        # COMPAT: <Blender 3.5
-        elif bl_node.type == 'MIX_RGB':
-            node['blendType'] = bl_node.blend_type
-            node['useClamp'] = bl_node.use_clamp
 
         elif bl_node.type == 'NORMAL_MAP' or bl_node.type == 'UVMAP':
             # rename for uniformity with GEOMETRY node

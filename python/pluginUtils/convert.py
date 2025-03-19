@@ -1,4 +1,4 @@
-import lzma, os, platform, subprocess, sys, tempfile
+import base64, lzma, os, platform, subprocess, sys, tempfile
 
 from .path import getRoot, getPlatformBinDirName
 from .log import getLogger
@@ -150,3 +150,49 @@ def compressKTX2(srcPath='', srcData=None, dstPath='-', method='AUTO'):
             raise CompressionFailed
 
     return app.stdout
+
+def fileToDataURI(path, mime):
+    with open(path, 'rb') as file:
+        content = file.read()
+        return 'data:' + mime + ';base64,' + base64.b64encode(content).decode('utf-8')
+
+
+def composeSingleHTML(htmlPath, glbPath, title):
+    # NOTE: fixes crash with missing class state in Maya
+    from .manager import AppManagerConn
+
+    glb = fileToDataURI(glbPath, 'model/gltf-binary')
+
+    v3d = ''
+    with open(AppManagerConn.getEnginePath()) as v3dFile:
+        v3d = v3dFile.read()
+
+    html = ''
+    with open(getRoot(True) / 'player' / 'embed.html') as htmlFile:
+        html = htmlFile.read()
+
+    css = ''
+    with open(getRoot(True) / 'player' / 'player.css') as cssFile:
+        css = cssFile.read()
+
+    svgOpen = fileToDataURI(getRoot(True) / 'player' / 'media' / 'fullscreen_open.svg', 'image/svg+xml')
+    svgClose = fileToDataURI(getRoot(True) / 'player' / 'media' / 'fullscreen_close.svg', 'image/svg+xml')
+
+    css = css.replace('media/fullscreen_open.svg', svgOpen)
+    css = css.replace('media/fullscreen_close.svg', svgClose)
+
+    js = ''
+    with open(getRoot(True) / 'player' / 'player.js') as jsFile:
+        js = jsFile.read()
+    js = js.replace('params.load', 'params.load || \'{}\''.format(glb))
+
+    favicon = fileToDataURI(getRoot(True) / 'player' / 'media' / 'favicon-48x48.png', 'image/png')
+
+    html = html.replace('%TITLE%', title)
+    html = html.replace('%FAVICON%', favicon)
+    html = html.replace('%V3D%', v3d)
+    html = html.replace('%CSS%', css)
+    html = html.replace('%JS%', js)
+
+    with open(htmlPath, 'w') as htmlFile:
+        htmlFile.write(html)
