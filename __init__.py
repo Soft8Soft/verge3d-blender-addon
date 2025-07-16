@@ -41,8 +41,6 @@ if 'bpy' in locals():
     if 'gltf2_get' in locals():
         importlib.reload(gltf2_get)
 
-    if 'curve_approx' in locals():
-        importlib.reload(curve_approx)
     if 'node_material_wrapper' in locals():
         importlib.reload(node_material_wrapper)
     if 'utils' in locals():
@@ -59,7 +57,7 @@ bl_info = {
     "name": "Verge3D",
     "description": "Artist-friendly toolkit for creating 3D web experiences",
     "author": "Soft8Soft",
-    "version": (4, 9, 0),
+    "version": (4, 10, 0),
     "blender": (3, 4, 0),
     "location": "File > Import-Export",
     "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",

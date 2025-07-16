@@ -38,7 +38,7 @@ from .utils import *
 
 from profilehooks import profile
 
-VERSION = '4.9.0'
+VERSION = '4.10.0'
 
 # Blender default grey color
 PRIMITIVE_MODE_LINES = 1
@@ -1190,6 +1190,11 @@ def generateLights(operator, context, exportSettings, glTF):
             continue
 
         light['color'] = [bl_light.color[0], bl_light.color[1], bl_light.color[2]]
+        if bpy.app.version >= (4, 5, 0):
+            temperatureColor = bl_light.temperature_color
+            light['color'][0] *= temperatureColor[0]
+            light['color'][1] *= temperatureColor[1]
+            light['color'][2] *= temperatureColor[2]
 
         useShadows = exportSettings['useShadows'] and bl_light.use_shadow
 
@@ -1259,6 +1264,8 @@ def generateLights(operator, context, exportSettings, glTF):
 
         if bl_light.type in ['POINT', 'SPOT', 'AREA']:
             light['power'] = bl_light.energy
+            if bpy.app.version >= (4, 5, 0):
+                light['power'] *= math.pow(2.0, bl_light.exposure)
 
             if bl_light.use_custom_distance:
                 dist = bl_light.cutoff_distance
@@ -1285,7 +1292,10 @@ def generateLights(operator, context, exportSettings, glTF):
                 height = max(height, 0.01)
 
                 # TODO: need to export total power
-                light['power'] /= (width * height)
+                if bpy.app.version < (4, 5, 0):
+                    light['power'] /= (width * height)
+                elif bl_light.normalize:
+                    light['power'] /= (width * height)
 
                 light['width'] = width
                 light['height'] = height
@@ -1298,6 +1308,8 @@ def generateLights(operator, context, exportSettings, glTF):
 
         else:
             light['intensity'] = bl_light.energy
+            if bpy.app.version >= (4, 5, 0):
+                light['intensity'] *= math.pow(2.0, bl_light.exposure)
 
         lights.append(light)
 
@@ -1507,7 +1519,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             # texture coords
 
-            v3dExt['uvLayers'] = {}
+            v3dExt.setdefault('uvLayers', {})
 
             texcoord_index = 0
             process_texcoord = True
@@ -1560,7 +1572,7 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             # vertex colors
 
-            v3dExt['colorLayers'] = {}
+            v3dExt.setdefault('colorLayers', {})
 
             color_index = 0
             process_color = True
@@ -1655,7 +1667,8 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                     morph_index = 0
                     for bl_shape_key in bl_mesh.shape_keys.key_blocks:
-                        if bl_shape_key != bl_shape_key.relative_key and bl_shape_key != bl_mesh.shape_keys.reference_key:
+                        if (bl_shape_key != bl_shape_key.relative_key and not bl_shape_key.mute and
+                                bl_shape_key != bl_mesh.shape_keys.reference_key):
 
                             target_position_id = 'MORPH_POSITION_' + str(morph_index)
                             target_normal_id = 'MORPH_NORMAL_' + str(morph_index)
@@ -1675,7 +1688,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                 if target_position < 0:
                                     log.error('Could not create accessor for ' + target_position_id)
                                     continue
-
 
 
                                 target = {
@@ -1721,8 +1733,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                     target['TANGENT'] = target_tangent
 
 
-
-
                                 targets.append(target)
 
                                 morph_index += 1
@@ -1744,10 +1754,10 @@ def generateMeshes(operator, context, exportSettings, glTF):
                     targetNames = []
 
                     for bl_shape_key in bl_mesh.shape_keys.key_blocks:
-                        if bl_shape_key != bl_shape_key.relative_key and bl_shape_key != bl_mesh.shape_keys.reference_key:
+                        if (bl_shape_key != bl_shape_key.relative_key and not bl_shape_key.mute and
+                                bl_shape_key != bl_mesh.shape_keys.reference_key):
                             weights.append(bl_shape_key.value)
                             targetNames.append(bl_shape_key.name)
-
 
                     mesh['weights'] = weights
 
@@ -2798,7 +2808,9 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         if mat_type == 'PBR':
             for bl_node in bl_mat.node_tree.nodes:
-                if isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled):
+                if (isinstance(bl_node, bpy.types.ShaderNodeBsdfPrincipled) and (
+                        nodeIsConnectedTo(bl_node, 'BSDF', bpy.types.ShaderNodeOutputMaterial) or
+                        nodeIsConnectedTo(bl_node, 'BSDF', bpy.types.ShaderNodeMixShader))):
                     material['pbrMetallicRoughness'] = {}
                     pbrMetallicRoughness = material['pbrMetallicRoughness']
 

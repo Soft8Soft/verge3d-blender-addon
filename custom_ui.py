@@ -472,6 +472,10 @@ class V3D_PT_ObjectSettingsFitCameraEdge(bpy.types.Panel, V3DPanel):
         layout.prop(v3d, 'canvas_fit_shape')
         layout.prop(v3d, 'canvas_fit_offset')
 
+        if ((v3d.canvas_fit_x != 'NONE' or v3d.canvas_fit_y != 'NONE') and
+                not utils.mat4IsIdentity(context.object.matrix_parent_inverse)):
+            layout.label(text='Clear parent inverse for correct positioning', icon='ERROR')
+
 
 class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'

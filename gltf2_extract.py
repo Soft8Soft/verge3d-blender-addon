@@ -379,7 +379,7 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     use_morph_tangents = exportSettings['morph'] and use_tangents
     bl_shape_keys = []
 
-    # Shape Keys can't be retrieve when using Apply Modifiers (Blender/bpy limitation)
+    # shape keys can't be retrieved when using Apply Modifiers (Blender/bpy limitation)
     if bl_mesh.shape_keys:
         bl_shape_keys = [
             key_block

@@ -122,7 +122,8 @@ def imgNeedsCompression(bl_image, exportSettings):
         return False
 
 def mat4IsIdentity(mat4):
-    return mat4 == mathutils.Matrix.Identity(4)
+    # e.g. "Keep Transform Without Inverse" might create semi-identity parent inverse matrix
+    return np.all(np.isclose(mat4, mathutils.Matrix.Identity(4), atol=1e-6))
 
 def mat4IsTRSDecomposable(mat4):
     # don't use mathutils.Matrix.is_orthogonal_axis_vectors property, because it
@@ -323,65 +324,62 @@ def objApplyModifiers(obj):
     if need_showing:
         obj.hide_viewport = True
 
-def objTransferShapeKeys(obj_from, obj_to, depsgraph):
-    """
-    Transfer shape keys from one object to another if it's possible:
-        - obj_from should be in the current view layer to be evaluated by depsgraph
-        - obj_to should not have shape keys
-        - obj_from (after evaluating) and obj_to should have the same amount of vertices
 
-    Returns a boolean flag indicating successful transfer.
-    """
+def applyShapeKey(obj, index):
+    shapekeys = obj.data.shape_keys.key_blocks
 
-    if obj_from.data.shape_keys is None:
-        return True
+    if index < 0 or index > len(shapekeys):
+        return
 
-    key_blocks_from = obj_from.data.shape_keys.key_blocks
-    keys_from = [key for key in key_blocks_from if key != key.relative_key
-            and key != obj_from.data.shape_keys.reference_key]
+    for i in reversed(range(0, len(shapekeys))):
+        if i != index:
+            obj.shape_key_remove(shapekeys[i])
 
-    key_names = [key.name for key in keys_from]
-    key_values = [key.value for key in keys_from]
+    # bake
+    obj.shape_key_remove(shapekeys[0])
 
-    key_positions = []
-    for key in keys_from:
-        key.value = 0
 
-    same_vertex_count = True
-    for key in keys_from:
+def objTransferShapeKeys(objFrom, objTo, generatedObjs, generatedMeshes, generatedShapeKeys):
+    names = [shkey.name for shkey in objFrom.data.shape_keys.key_blocks]
+    weights = [shkey.value for shkey in objFrom.data.shape_keys.key_blocks]
 
-        key.value = 1
-        obj_from.update_tag()
-        bpy.context.view_layer.update()
+    log.debug('Transferring {} shapekeys on {}'.format(len(names) - 1, objFrom.name))
 
-        verts = obj_from.evaluated_get(depsgraph).data.vertices
-        if len(verts) != len(obj_to.data.vertices):
-            same_vertex_count = False
-            break
+    for index in range(1, len(objFrom.data.shape_keys.key_blocks)):
+        log.debug('Transferring shapekey {} with name {}'.format(index, names[index]))
 
-        key_pos = [0] * 3 * len(verts)
-        verts.foreach_get('co', key_pos)
-        key_positions.append(key_pos)
-        key.value = 0
+        objShapeKey = objFrom.copy()
+        tmpMesh = objShapeKey.data.copy()
+        generatedShapeKeys.append(tmpMesh.shape_keys)
+        objShapeKey.data = tmpMesh
 
-    if same_vertex_count:
-        # basis shape key
-        obj_to.shape_key_add(name=obj_from.data.shape_keys.reference_key.name)
+        bpy.context.collection.objects.link(objShapeKey)
 
-        vert_co = [0] * 3 * len(obj_to.data.vertices)
-        for i in range(len(key_names)):
+        applyShapeKey(objShapeKey, index)
+        objApplyModifiers(objShapeKey)
 
-            key_block = obj_to.shape_key_add(name=key_names[i])
-            key_block.value = key_values[i]
-            key_block.data.foreach_set('co', key_positions[i])
-    else:
-        # don't create nothing if vertex count isn't constant
-        pass
+        generatedObjs.append(objShapeKey)
+        generatedMeshes.append(tmpMesh)
+        generatedMeshes.append(objShapeKey.data)
 
-    for i in range(len(keys_from)):
-        keys_from[i].value = key_values[i]
+        for obj in bpy.context.scene.objects:
+            obj.select_set(False)
 
-    return same_vertex_count
+        objShapeKey.select_set(True)
+        bpy.context.view_layer.objects.active = objTo
+        bpy.ops.object.join_shapes()
+
+        if objTo.data.shape_keys is None:
+            return False
+
+        numTransferredKeys = len(objTo.data.shape_keys.key_blocks) - 1
+        if numTransferredKeys != index:
+            return False
+
+        objTo.data.shape_keys.key_blocks[index].name = names[index]
+        objTo.data.shape_keys.key_blocks[index].value = weights[index]
+
+    return True
 
 def meshNeedTangentsForExport(mesh, optimize_tangents):
     """
@@ -591,3 +589,9 @@ def isNewEEVEE():
     Check if the current version of the rendering engine is EEVEE-Next.
     """
     return bpy.app.version >= (4, 2, 0) and bpy.context.scene.render.engine == 'BLENDER_EEVEE_NEXT'
+
+def nodeIsConnectedTo(blNode, fromOutput, toType):
+    for link in blNode.outputs[fromOutput].links:
+        if link.is_valid and isinstance(link.to_node, toType):
+            return True
+    return False

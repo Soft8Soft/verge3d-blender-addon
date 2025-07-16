@@ -44,7 +44,7 @@ def flattenCollectionUnique(collection, dest_set):
                 flattenCollectionUnique(bl_obj.instance_collection, dest_set)
 
 
-def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
+def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
     """
     Prepare the data of the given MESH object before export by making such
     operations as:
@@ -53,86 +53,86 @@ def meshObjGetExportData(obj_original, bake_modifiers, optimize_tangents):
         - restore shape keys after the previous operations if it's possible or needed
     """
 
-    generated_objs = []
-    generated_meshes = []
-
+    generatedObjs = []
+    generatedMeshes = []
+    generatedShapeKeys = []
 
     # APPLY MODIFIERS
-    need_apply_mods = bake_modifiers is True and objHasExportedModifiers(obj_original)
+    needApplyMods = bakeModifiers is True and objHasExportedModifiers(objOriginal)
 
-    obj_mods_applied = obj_original
-    if need_apply_mods:
-        obj_mods_applied = obj_original.copy()
-        objDelNotExportedModifiers(obj_mods_applied)
-        objApplyModifiers(obj_mods_applied)
+    objModsApplied = objOriginal
+    if needApplyMods:
+        objModsApplied = objOriginal.copy()
+        objDelNotExportedModifiers(objModsApplied)
 
-        generated_objs.append(obj_mods_applied)
-        generated_meshes.append(obj_mods_applied.data)
+        tmpMesh = objModsApplied.data.copy()
+        objModsApplied.data = tmpMesh
+        if tmpMesh.shape_keys:
+            generatedShapeKeys.append(tmpMesh.shape_keys)
+            objModsApplied.shape_key_clear()
+
+        objApplyModifiers(objModsApplied)
+
+        generatedObjs.append(objModsApplied)
+        generatedMeshes.append(tmpMesh)
+        generatedMeshes.append(objModsApplied.data)
 
 
     # TRIANGULATE
-    need_tangents = meshNeedTangentsForExport(obj_mods_applied.data, optimize_tangents)
-    if not need_tangents:
-        log.debug('Tangent attribute will not be exported for mesh "%s"' % obj_original.data.name)
-    need_triangulation = need_tangents and meshHasNgons(obj_mods_applied.data)
+    needTangents = meshNeedTangentsForExport(objModsApplied.data, optimizeTangents)
+    if not needTangents:
+        log.debug('Tangent attribute will not be exported for mesh "%s"' % objOriginal.data.name)
+    needTriangulation = needTangents and meshHasNgons(objModsApplied.data)
 
-    obj_triangulated = obj_mods_applied
-    if need_triangulation:
-        obj_triangulated = obj_mods_applied.copy()
-        objDelNotExportedModifiers(obj_triangulated)
-        objAddTriModifier(obj_triangulated)
+    objTriangulated = objModsApplied
+    if needTriangulation:
+        objTriangulated = objModsApplied.copy()
+        objDelNotExportedModifiers(objTriangulated)
+        objAddTriModifier(objTriangulated)
 
-        # Triangulation modifier doesn't affect vertices, therefore this operation
-        # can preserve shape keys. To do this we need to remove shape keys to not
-        # bake them into the new mesh.
-
-        # NOTE: need to copy object data before changes because it's shared with
+        # need to copy object data before changes because it's shared with
         # the object coming from the previous operation (due to .copy() not
         # creating a new mesh datablock)
-        tmp_data = obj_triangulated.data.copy()
-        obj_triangulated.data = tmp_data
-        obj_triangulated.shape_key_clear()
+        tmpMesh = objTriangulated.data.copy()
+        objTriangulated.data = tmpMesh
+        if tmpMesh.shape_keys:
+            generatedShapeKeys.append(tmpMesh.shape_keys)
+            objTriangulated.shape_key_clear()
 
-        objApplyModifiers(obj_triangulated)
+        objApplyModifiers(objTriangulated)
 
-        generated_objs.append(obj_triangulated)
-        generated_meshes.append(tmp_data)
-        generated_meshes.append(obj_triangulated.data)
-
+        generatedObjs.append(objTriangulated)
+        generatedMeshes.append(tmpMesh)
+        generatedMeshes.append(objTriangulated.data)
 
     # TRANSFER SHAPE KEYS
 
-    # transfer shape keys to the new object only if:
-    #   - shape keys were removed during mesh processing
-    #   - shape keys were not baked into the mesh geometry (always baked during
-    #     the APPLY MODIFIERS operation; TRIANGULATION doesn't bake them)
-    shape_keys_removed = (obj_original.data.shape_keys is not None
-            and obj_triangulated.data.shape_keys is None)
-    need_transfer_sk = shape_keys_removed and not need_apply_mods
+    needTransferShapeKeys = (objOriginal.data.shape_keys is not None and objTriangulated.data.shape_keys is None)
 
-    obj_sk_transfered = obj_triangulated
-    if need_transfer_sk:
-        obj_sk_transfered = obj_triangulated.copy()
-        dg = bpy.context.evaluated_depsgraph_get()
+    objShapeKeyTransfered = objTriangulated
+    if needTransferShapeKeys:
+        objShapeKeyTransfered = objTriangulated.copy()
+        bpy.context.collection.objects.link(objShapeKeyTransfered)
 
-        success = objTransferShapeKeys(obj_original, obj_sk_transfered, dg)
+        success = objTransferShapeKeys(objOriginal, objShapeKeyTransfered, generatedObjs, generatedMeshes, generatedShapeKeys)
         if not success:
             log.warning('Could not generate shape keys because they '
-                    + 'change vertex count. Object "' + obj_original.name + '".')
+                    + 'change vertex count. Object "' + objOriginal.name + '".')
 
-        generated_objs.append(obj_sk_transfered)
+        generatedObjs.append(objShapeKeyTransfered)
         # no new mesh was generated
 
+    resultingMesh = objShapeKeyTransfered.data
 
-    resulting_mesh = obj_sk_transfered.data
+    for obj in generatedObjs:
+        bpy.data.objects.remove(obj, do_unlink=True, do_id_user=True, do_ui_user=True)
+    for mesh in generatedMeshes:
+        if mesh != resultingMesh:
+            bpy.data.meshes.remove(mesh, do_unlink=True, do_id_user=True, do_ui_user=True)
+    if generatedShapeKeys:
+        bpy.data.batch_remove(generatedShapeKeys)
 
-    for tmp_obj in generated_objs:
-        bpy.data.objects.remove(tmp_obj)
-    for tmp_mesh in generated_meshes:
-        if tmp_mesh != resulting_mesh:
-            bpy.data.meshes.remove(tmp_mesh)
-
-    return resulting_mesh
+    return resultingMesh
 
 
 def filterApply(exportSettings):

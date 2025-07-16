@@ -18,19 +18,13 @@ import math
 
 import bpy
 import mathutils
-import numpy as np
 
 from .gltf2_extract import *
 from .utils import *
 
-from .curve_approx import approximateCurveMulti, calcCurveApproximationErrors
-
-DEBUG_ANIM_APPROX = False
-
 QUAT_X_90 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi/2)
 QUAT_X_270 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi + math.pi/2)
 
-CONST_INTERP_OFFSET = 0.001
 
 def getActionNameFcurves(blAnimationData):
     if blAnimationData is None or blAnimationData.action is None:
@@ -202,109 +196,49 @@ def animateGatherKeys(exportSettings, fcurves, interpolation):
     keys = []
 
     if interpolation == 'CONVERSION_NEEDED':
-        fcurves = [fcurve for fcurve in fcurves if fcurve is not None]
-        if fcurves:
+        start = None
+        end = None
 
-            start = min([fcurve.range()[0] for fcurve in fcurves])
-            end = max([fcurve.range()[1] for fcurve in fcurves])
-            if exportSettings['exportFrameRange']:
-                start = max(start, bpy.context.scene.frame_start)
-                end = min(end, bpy.context.scene.frame_end)
+        for fcurve in fcurves:
+            if fcurve is None:
+                continue
 
-            rangeKeys = [start, end]
-            explicitKeys = []
-            constInterpFixKeys = []
-            for fcurve in fcurves:
-                kPoints = fcurve.keyframe_points
-                explicitKeys.extend([point.co[0] for point in kPoints])
+            if start == None:
+                start = fcurve.range()[0]
+            else:
+                start = min(start, fcurve.range()[0])
 
-                # Ensure that all points with the CONSTANT interpolation keep
-                # the "step" shape regardless of point distribution in the
-                # resulting piecewise linear approximation. To do that we sample
-                # additional points in close proximity (just before) of certain
-                # already existing keyframe point, i.e: { f(0.999) = 0; f(1) = 1 }
-                # - this keeps the step shape (or to be precise - a very abrupt
-                # slope).
-                constIndices = [idx for idx, point in enumerate(kPoints)
-                        if point.interpolation == 'CONSTANT']
-                constInterpFixKeys.extend([kPoints[idx + 1].co[0] - CONST_INTERP_OFFSET
-                        if idx < len(kPoints) - 1 else end - CONST_INTERP_OFFSET
-                        for idx in constIndices])
+            if end == None:
+                end = fcurve.range()[1]
+            else:
+                end = max(end, fcurve.range()[1])
 
-            # Create a grid of points that fit into the (start, end) range.
-            # The amount of points per frame (and the grid step) is chosen so
-            # that all integers from the (start, end) range are among the keys.
-            # This is convenient to use as an initial approximation (which is
-            # the old 1 sample per frame approach). The initial approximation is
-            # used to estimate the overall error level.
+            add_epsilon_keyframe = False
+            for blKeyframe in fcurve.keyframe_points:
+                if add_epsilon_keyframe:
+                    key = blKeyframe.co[0] - 0.001
 
-            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 100, 0.01, 2
-            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 10, 0.1, 1
-            SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 4, 0.25, 2
-            # SEGM_PER_FRAME, GRID_STEP, DIGITS_TO_ROUND = 2, 0.5, 1
+                    if key not in keys:
+                        keys.append(key)
 
-            startCeiled = math.ceil(start * SEGM_PER_FRAME) / SEGM_PER_FRAME
-            endFloored = math.floor(end * SEGM_PER_FRAME) / SEGM_PER_FRAME
-            gridKeys = np.arange(startCeiled, endFloored, GRID_STEP, dtype=np.double)
-            gridKeys.round(DIGITS_TO_ROUND, gridKeys)
-            if gridKeys.size and gridKeys[-1] < endFloored:
-                gridKeys = np.append(gridKeys, endFloored)
+                    add_epsilon_keyframe = False
 
-            allKeys = np.concatenate((rangeKeys, explicitKeys,
-                    constInterpFixKeys, gridKeys))
-            allKeys = np.unique(allKeys) # this also sorts the values
-            allValues = [np.vectorize(fcurve.evaluate)(allKeys) for fcurve in fcurves]
+                if blKeyframe.interpolation == 'CONSTANT':
+                    add_epsilon_keyframe = True
 
-            if len(allKeys) >= 2:
-                rangeKeysMask = np.isin(allKeys, rangeKeys)
-                explicitKeysMask = np.isin(allKeys, explicitKeys)
-                constInterpFixKeysMask = np.isin(allKeys, constInterpFixKeys)
-                gridIntegerKeysMask = np.equal(np.mod(allKeys, 1), 0)
+            if add_epsilon_keyframe:
+                key = end - 0.001
 
-                initApproxMask = (rangeKeysMask + constInterpFixKeysMask
-                        + gridIntegerKeysMask)
-                initApproxMask[0] = True
-                initApproxMask[-1] = True
-                initApproxIndices = initApproxMask.nonzero()[0]
+                if key not in keys:
+                    keys.append(key)
 
-                initApproxErrors = [calcCurveApproximationErrors(allKeys,
-                        allValues[i], initApproxIndices) for i in range(len(fcurves))]
+        key = start
+        while key <= end:
+            if not exportSettings['exportFrameRange'] or (exportSettings['exportFrameRange'] and key >= bpy.context.scene.frame_start and key <= bpy.context.scene.frame_end):
+                keys.append(key)
+            key += 1.0
 
-                mandatoryIndicesMask = (rangeKeysMask + constInterpFixKeysMask
-                        + explicitKeysMask)
-
-                # Detect outliers among the error data of the initial
-                # approximation. These limits serve several purposes: they
-                # prevent the resulting approximation from having too large
-                # errors, and they keep the same level of errors while, in
-                # general, reducing the number of used keyframe points.
-                # See: https://en.wikipedia.org/wiki/Interquartile_range#Outliers
-                maxSegmentErrors = []
-                for errors in initApproxErrors:
-                    q1, q3 = np.quantile(errors, [0.25, 0.75])
-                    maxErrWithoutOutliers = np.amax(errors, initial=0,
-                            where=errors<(q3 + 1.5 * (q3 - q1)))
-                    maxSegmentErrors.append(maxErrWithoutOutliers)
-
-                approxIndices = approximateCurveMulti(allKeys, allValues,
-                        mandatoryIndicesMask, maxSegmentErrors)
-                keys = list(allKeys[approxIndices])
-
-                if DEBUG_ANIM_APPROX:
-                    approxErrors = [calcCurveApproximationErrors(allKeys,
-                            allValues[i], approxIndices) for i in range(len(fcurves))]
-                    initMaxErr = max([max(err) for err in initApproxErrors])
-                    initErrSum = sum([sum(err) for err in initApproxErrors])
-                    resMaxErr = max([max(err) for err in approxErrors])
-                    resErrSum = sum([sum(err) for err in approxErrors])
-
-                    print()
-                    print(f'Range: [{start}, {end}], channels: {len(fcurves)}')
-                    print('                Length    MaxErr          ErrSum')
-                    print('-' * 56)
-                    print('Init Approx     %-8i  %.12f  %.12f' % (len(initApproxIndices), initMaxErr, initErrSum))
-                    print('Result Approx   %-8i  %.12f  %.12f' % (len(approxIndices), resMaxErr, resErrSum))
-                    print('-' * 56 + '\n')
+        keys.sort()
 
     else:
         for fcurve in fcurves:

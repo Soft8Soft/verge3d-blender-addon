@@ -126,14 +126,7 @@ class AppManagerConn():
         if system == 'Windows':
             pythonPath = join(cls.root, 'python', 'windows', 'pythonw.exe')
         elif system == 'Darwin':
-            # NOTE: Blender, in Maya sys.executable points to modelling suite executable
-            pythonPath = sys.executable
-
-            try:
-                import maya.cmds
-                pythonPath = join(os.getenv('MAYA_LOCATION'), 'bin', 'mayapy')
-            except ImportError:
-                pass
+            pythonPath = join(cls.root, 'python', 'macos', 'bin', 'python')
         else:
             pythonPath = 'python3'
 
