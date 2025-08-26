@@ -21,8 +21,9 @@ import sys
 join = os.path.join
 
 # used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(join(ROOT_DIR, 'python'))
+
+#ROOT_DIR = join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+sys.path.append(join(os.path.abspath(os.path.dirname(__file__)), 'python'))
 
 ADDON_DISABLE_DELAY = 2
 
