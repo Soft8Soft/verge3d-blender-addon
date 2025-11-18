@@ -132,7 +132,14 @@ class AppManagerConn():
 
         modPackage = 'ALL' if APP_MANAGER_FORCE_ALL else cls.modPackage
         args = [pythonPath, join(cls.root, 'manager', 'server.py'), modPackage]
-        subprocess.Popen(args)
+
+        if system == 'Linux':
+            # HACK: remove env variables that fail to start the App Manager
+            # reproduced in Maya 2023 / Python 3.9
+            env = {k: v for k, v in os.environ.items() if k not in {'PYTHONPATH', 'PYTHONHOME', 'LD_LIBRARY_PATH'}}
+            subprocess.Popen(args, env=env)
+        else:
+            subprocess.Popen(args)
 
     @classmethod
     def stop(cls):

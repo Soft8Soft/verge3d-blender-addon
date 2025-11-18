@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import math
 
 import bpy
@@ -56,7 +55,6 @@ def setSelectedObject(bl_obj):
     selectedObject = bl_obj
     selectedObjectsSave = bpy.context.selected_objects.copy()
 
-    # NOTE: seems like we need both selection and setting active object
     for o in selectedObjectsSave:
         o.select_set(False)
 
@@ -113,7 +111,6 @@ def imgNeedsCompression(bl_image, exportSettings):
 
     if bl_image.get('compression_error_status') == 1:
         return False
-    # only JPEG/PNG (ktx2) or HDR (xz/ktx2) compression supported
     elif (exportSettings['compressTextures'] and method != 'DISABLE' and
             bl_image.file_format in ['JPEG', 'PNG', 'HDR'] and
             pu.isPowerOfTwo(bl_image.size[0]) and pu.isPowerOfTwo(bl_image.size[1])):
@@ -122,12 +119,9 @@ def imgNeedsCompression(bl_image, exportSettings):
         return False
 
 def mat4IsIdentity(mat4):
-    # e.g. "Keep Transform Without Inverse" might create semi-identity parent inverse matrix
     return np.all(np.isclose(mat4, mathutils.Matrix.Identity(4), atol=1e-6))
 
 def mat4IsTRSDecomposable(mat4):
-    # don't use mathutils.Matrix.is_orthogonal_axis_vectors property, because it
-    # doesn't normalize vectors before checking
 
     mat = mat4.to_3x3().transposed()
     v0 = mat[0].normalized()
@@ -150,14 +144,12 @@ def mat4SvdDecomposeToMatrs(mat4):
         mat_s = mathutils.Matrix([[s[0], 0, 0], [0, s[1], 0], [0, 0, s[2]]])
         mat_vh = mathutils.Matrix(vh)
 
-        # NOTE: a potential reflection part in U and VH matrices isn't considered
         mat_trans = mathutils.Matrix.Translation(mat4.to_translation())
         mat_left = mat_trans @ (mat_u @ mat_s).to_4x4()
 
         return (mat_left, mat_vh.to_4x4())
 
     except np.linalg.LinAlgError:
-        # numpy failed to decompose the matrix
         return None
 
 def findArmature(obj):
@@ -166,20 +158,11 @@ def findArmature(obj):
         if mod.type == 'ARMATURE' and mod.object is not None and mod.object.users > 0:
             return mod.object
 
-    # use obj.find_armature as a last resort, because it doesn't work with many
-    # armature modifiers
     armature = obj.find_armature()
     return armature if armature is not None and armature.users > 0 else None
 
-def matHasBlendBackside(bl_mat):
-    if bpy.app.version < (4, 2, 0):
-        return (bl_mat.blend_method == 'BLEND' and bl_mat.show_transparent_back)
-    else:
-        return False
-
 def extractAlphaMode(bl_mat):
-    # COMPAT: Blender <4.2
-    blendMethod = bl_mat.v3d.blend_method if bpy.app.version >= (4, 2, 0) else bl_mat.blend_method
+    blendMethod = bl_mat.v3d.blend_method
 
     if blendMethod in ['OPAQUE', 'BLEND']:
         return blendMethod
@@ -187,8 +170,6 @@ def extractAlphaMode(bl_mat):
         return 'MASK'
     elif blendMethod == 'HASHED':
         return 'BLEND'
-
-    # handle AUTO mode
 
     if bl_mat and bl_mat.use_nodes and bl_mat.node_tree != None:
         node_trees = extractMaterialNodeTrees(bl_mat.node_tree)
@@ -224,9 +205,6 @@ def updateOrbitCameraView(cam_obj, scene):
     cam_obj.rotation_mode = 'QUATERNION'
     cam_obj.rotation_quaternion = quat
     cam_obj.rotation_mode = rot_mode
-
-    # need to update the camera state (i.e. world matrix) immediately in case of
-    # several consecutive UI updates
 
     bpy.context.view_layer.update()
 
@@ -280,9 +258,6 @@ def objDelNotExportedModifiers(obj):
 def objAddTriModifier(obj):
     mod = obj.modifiers.new('Temporary_Triangulation', 'TRIANGULATE')
     mod.quad_method = 'FIXED'
-    # COMPAT: < Blender 4.2
-    if bpy.app.version < (4, 2, 0):
-        mod.keep_custom_normals = True
 
 def objApplyModifiers(obj):
     """
@@ -296,23 +271,16 @@ def objApplyModifiers(obj):
     need_linking = dg.scene.collection.objects.find(obj.name) == -1
     need_showing = obj.hide_viewport
 
-    # NOTE: link the object if it's not in the 'Master Collection' and update
-    # the view layer to make the depsgraph able to apply modifiers to the object
     if need_linking:
         dg.scene.collection.objects.link(obj)
 
     obj.update_tag()
 
-    # a hidden object doesn't get its modifiers applied, need to make it visible
-    # before updating the view layer
     if need_showing:
         obj.hide_viewport = False
 
     bpy.context.view_layer.update()
 
-    # NOTE: some modifiers can remove UV layers from an object after applying
-    # (e.g. Skin), which is a consistent behavior regarding uv usage in the
-    # viewport (e.g. degenerate tangent space in the Normal Map node)
     obj_eval = obj.evaluated_get(dg)
 
     obj.data = bpy.data.meshes.new_from_object(obj_eval,
@@ -324,7 +292,6 @@ def objApplyModifiers(obj):
     if need_showing:
         obj.hide_viewport = True
 
-
 def applyShapeKey(obj, index):
     shapekeys = obj.data.shape_keys.key_blocks
 
@@ -335,9 +302,7 @@ def applyShapeKey(obj, index):
         if i != index:
             obj.shape_key_remove(shapekeys[i])
 
-    # bake
     obj.shape_key_remove(shapekeys[0])
-
 
 def objTransferShapeKeys(objFrom, objTo, generatedObjs, generatedMeshes, generatedShapeKeys):
     names = [shkey.name for shkey in objFrom.data.shape_keys.key_blocks]
@@ -402,8 +367,6 @@ def meshMaterialsUseTangents(mesh):
                     if matNodeUseTangents(bl_node):
                         return True
 
-        # HACK: in most cases this one indicates that object linking is used
-        # disable tangent optimizations for such cases
         elif mat == None:
             return True
 
@@ -441,7 +404,6 @@ def meshPreferredTangentsUvMap(mesh):
     if len(uvMaps) == 1 and uvMaps[0] in mesh.uv_layers:
         return uvMaps[0]
     else:
-        # allow 0 or multiple, report multiple
 
         if len(uvMaps) > 1:
             log.warning('More than 1 UV map is used to calculate tangents in material(s) ' +
@@ -500,13 +462,10 @@ def getSocketDefvalCompat(socket, RGBAToRGB=False, isOSL=False):
             val = val[0:3]
         return val
     elif socket.type == 'SHADER':
-        # shader sockets have no default value
         return [0, 0, 0, 0]
     elif socket.type == 'STRING' and isOSL:
-        # for now used for OSL only
         return pyosl.glslgen.string_to_osl_const(socket.default_value)
     elif socket.type == 'CUSTOM':
-        # not supported
         return 0
     else:
         return 0
@@ -520,7 +479,6 @@ def createCustomProperty(bl_element):
 
     props = {}
 
-    # Custom properties, which are in most cases present and should not be exported.
     black_list = ['cycles', 'cycles_visibility', 'cycles_curves', '_RNA_UI', 'v3d']
 
     count = 0
@@ -563,14 +521,12 @@ def calcLightThresholdDist(bl_light, threshold):
         / max(threshold, 1e-16)
     ))
 
-
 def objHasFixOrthoZoom(bl_obj):
     if (bl_obj.parent and bl_obj.parent.type == 'CAMERA' and
             bl_obj.parent.data.type == 'ORTHO' and bl_obj.v3d.fix_ortho_zoom):
         return True
     else:
         return False
-
 
 def objHasCanvasFitParams(bl_obj):
     if (bl_obj.parent and bl_obj.parent.type == 'CAMERA' and
@@ -583,12 +539,6 @@ def sceneFrameSetFloat(scene, value):
     frame = math.floor(value)
     subframe = value - frame
     scene.frame_set(frame, subframe=subframe)
-
-def isNewEEVEE():
-    """
-    Check if the current version of the rendering engine is EEVEE-Next.
-    """
-    return bpy.app.version >= (4, 2, 0) and bpy.context.scene.render.engine == 'BLENDER_EEVEE_NEXT'
 
 def nodeIsConnectedTo(blNode, fromOutput, toType):
     for link in blNode.outputs[fromOutput].links:

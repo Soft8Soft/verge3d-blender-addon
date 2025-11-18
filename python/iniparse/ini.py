@@ -7,7 +7,7 @@
 
 Example:
 
-    >>> from six import StringIO
+    >>> from io import StringIO
     >>> sio = StringIO('''# configure foo-application
     ... [foo]
     ... bar1 = qualia
@@ -39,25 +39,31 @@ Example:
 
 # An ini parser that supports ordered sections/options
 # Also supports updates, while preserving structure
-# Backward-compatiable with ConfigParser
+# Backward-compatible with ConfigParser
 
 import re
-from .configparser import DEFAULTSECT, ParsingError, MissingSectionHeaderError
 
-import six
+from typing import Any, Callable, Dict, TextIO, Iterator, List, Optional, Set, Union
+from typing import TYPE_CHECKING
+
+from .configparser import DEFAULTSECT, ParsingError, MissingSectionHeaderError
 
 from . import config
 
-class LineType(object):
-    line = None
+if TYPE_CHECKING:
+    from compat import RawConfigParser
 
-    def __init__(self, line=None):
+
+class LineType:
+    line: Optional[str] = None
+
+    def __init__(self, line: Optional[str] = None) -> None:
         if line is not None:
             self.line = line.strip('\n')
 
     # Return the original line for unmodified objects
     # Otherwise construct using the current attribute values
-    def __str__(self):
+    def __str__(self) -> str:
         if self.line is not None:
             return self.line
         else:
@@ -65,63 +71,78 @@ class LineType(object):
 
     # If an attribute is modified after initialization
     # set line to None since it is no longer accurate.
-    def __setattr__(self, name, value):
-        if hasattr(self,name):
+    def __setattr__(self, name: str, value: object) -> None:
+        if hasattr(self, name):
             self.__dict__['line'] = None
         self.__dict__[name] = value
 
-    def to_string(self):
+    def to_string(self) -> str:
+        # FIXME Raise NotImplementedError instead
         raise Exception('This method must be overridden in derived classes')
 
 
 class SectionLine(LineType):
-    regex =  re.compile(r'^\['
-                        r'(?P<name>[^]]+)'
-                        r'\]\s*'
-                        r'((?P<csep>;|#)(?P<comment>.*))?$')
+    regex = re.compile(r'^\['
+                       r'(?P<name>[^]]+)'
+                       r'\]\s*'
+                       r'((?P<csep>;|#)(?P<comment>.*))?$')
 
-    def __init__(self, name, comment=None, comment_separator=None,
-                             comment_offset=-1, line=None):
-        super(SectionLine, self).__init__(line)
-        self.name = name
-        self.comment = comment
-        self.comment_separator = comment_separator
-        self.comment_offset = comment_offset
+    def __init__(
+        self,
+        name: str,
+        comment: Optional[str] = None,
+        comment_separator: Optional[str] = None,
+        comment_offset: int = -1,
+        line: Optional[str] = None,
+    ) -> None:
+        super().__init__(line)
+        self.name: str = name
+        self.comment: Optional[str] = comment
+        self.comment_separator: Optional[str] = comment_separator
+        self.comment_offset: int = comment_offset
 
-    def to_string(self):
-        out = '[' + self.name + ']'
+    def to_string(self) -> str:
+        out: str = '[' + self.name + ']'
         if self.comment is not None:
             # try to preserve indentation of comments
-            out = (out+' ').ljust(self.comment_offset)
+            out = (out + ' ').ljust(self.comment_offset)
             out = out + self.comment_separator + self.comment
         return out
 
-    def parse(cls, line):
-        m = cls.regex.match(line.rstrip())
+    @classmethod
+    def parse(cls, line: str) -> Optional["SectionLine"]:
+        m: Optional[re.Match] = cls.regex.match(line.rstrip())
         if m is None:
             return None
         return cls(m.group('name'), m.group('comment'),
                    m.group('csep'), m.start('csep'),
                    line)
-    parse = classmethod(parse)
 
 
 class OptionLine(LineType):
-    def __init__(self, name, value, separator=' = ', comment=None,
-                 comment_separator=None, comment_offset=-1, line=None):
-        super(OptionLine, self).__init__(line)
-        self.name = name
-        self.value = value
-        self.separator = separator
-        self.comment = comment
-        self.comment_separator = comment_separator
-        self.comment_offset = comment_offset
+    def __init__(
+        self,
+        name: str,
+        value: object,
+        separator: str = ' = ',
+        comment: Optional[str] = None,
+        comment_separator: Optional[str] = None,
+        comment_offset: int = -1,
+        line: Optional[str] = None,
+    ) -> None:
+        super().__init__(line)
+        self.name: str = name
+        self.value: object = value
+        self.separator: str = separator
+        self.comment: Optional[str] = comment
+        self.comment_separator: Optional[str] = comment_separator
+        self.comment_offset: int = comment_offset
 
-    def to_string(self):
-        out = '%s%s%s' % (self.name, self.separator, self.value)
+    def to_string(self) -> str:
+        out: str = '%s%s%s' % (self.name, self.separator, self.value)
         if self.comment is not None:
             # try to preserve indentation of comments
-            out = (out+' ').ljust(self.comment_offset)
+            out = (out + ' ').ljust(self.comment_offset)
             out = out + self.comment_separator + self.comment
         return out
 
@@ -129,14 +150,15 @@ class OptionLine(LineType):
                        r'(?P<sep>[:=]\s*)'
                        r'(?P<value>.*)$')
 
-    def parse(cls, line):
-        m = cls.regex.match(line.rstrip())
+    @classmethod
+    def parse(cls, line: str) -> Optional["OptionLine"]:
+        m: Optional[re.Match] = cls.regex.match(line.rstrip())
         if m is None:
             return None
 
-        name = m.group('name').rstrip()
-        value = m.group('value')
-        sep = m.group('name')[len(name):] + m.group('sep')
+        name: str = m.group('name').rstrip()
+        value: str = m.group('value')
+        sep: str = m.group('name')[len(name):] + m.group('sep')
 
         # comments are not detected in the regex because
         # ensuring total compatibility with ConfigParser
@@ -149,9 +171,9 @@ class OptionLine(LineType):
         # include ';' in the value needs to be addressed.
         # Also, '#' doesn't mark comments in options...
 
-        coff = value.find(';')
-        if coff != -1 and value[coff-1].isspace():
-            comment = value[coff+1:]
+        coff: int = value.find(';')
+        if coff != -1 and value[coff - 1].isspace():
+            comment = value[coff + 1:]
             csep = value[coff]
             value = value[:coff].rstrip()
             coff = m.start('value') + coff
@@ -161,92 +183,96 @@ class OptionLine(LineType):
             coff = -1
 
         return cls(name, value, sep, comment, csep, coff, line)
-    parse = classmethod(parse)
 
 
-def change_comment_syntax(comment_chars='%;#', allow_rem=False):
-    comment_chars = re.sub(r'([\]\-\^])', r'\\\1', comment_chars)
-    regex = r'^(?P<csep>[%s]' % comment_chars
+def change_comment_syntax(comment_chars: str = '%;#', allow_rem: bool = False) -> None:
+    comment_chars: str = re.sub(r'([\]\-\^])', r'\\\1', comment_chars)
+    regex: str = r'^(?P<csep>[%s]' % comment_chars
     if allow_rem:
         regex += '|[rR][eE][mM]'
     regex += r')(?P<comment>.*)$'
     CommentLine.regex = re.compile(regex)
 
+
 class CommentLine(LineType):
-    regex = re.compile(r'^(?P<csep>[;#]|[rR][eE][mM])'
-                       r'(?P<comment>.*)$')
+    regex: re.Pattern = re.compile(r'^(?P<csep>[;#]|[rR][eE][mM])'
+                                   r'(?P<comment>.*)$')
 
-    def __init__(self, comment='', separator='#', line=None):
-        super(CommentLine, self).__init__(line)
-        self.comment = comment
-        self.separator = separator
+    def __init__(self, comment: str = '', separator: str = '#', line: Optional[str] = None) -> None:
+        super().__init__(line)
+        self.comment: str = comment
+        self.separator: str = separator
 
-    def to_string(self):
+    def to_string(self) -> str:
         return self.separator + self.comment
 
-    def parse(cls, line):
-        m = cls.regex.match(line.rstrip())
+    @classmethod
+    def parse(cls, line: str) -> Optional["CommentLine"]:
+        m: Optional[re.Match] = cls.regex.match(line.rstrip())
         if m is None:
             return None
         return cls(m.group('comment'), m.group('csep'), line)
-    parse = classmethod(parse)
 
 
 class EmptyLine(LineType):
     # could make this a singleton
-    def to_string(self):
+    def to_string(self) -> str:
         return ''
 
-    value = property(lambda _: '')
+    value = property(lambda self: '')
 
-    def parse(cls, line):
-        if line.strip(): return None
+    @classmethod
+    def parse(cls, line: str) -> Optional["EmptyLine"]:
+        if line.strip():
+            return None
         return cls(line)
-    parse = classmethod(parse)
 
 
 class ContinuationLine(LineType):
-    regex = re.compile(r'^\s+(?P<value>.*)$')
+    regex: re.Pattern = re.compile(r'^\s+(?P<value>.*)$')
 
-    def __init__(self, value, value_offset=None, line=None):
-        super(ContinuationLine, self).__init__(line)
+    def __init__(self, value: str, value_offset: Optional[int] = None, line: Optional[str] = None) -> None:
+        super().__init__(line)
         self.value = value
         if value_offset is None:
             value_offset = 8
-        self.value_offset = value_offset
+        self.value_offset: int = value_offset
 
-    def to_string(self):
-        return ' '*self.value_offset + self.value
+    def to_string(self) -> str:
+        return ' ' * self.value_offset + self.value
 
-    def parse(cls, line):
-        m = cls.regex.match(line.rstrip())
+    @classmethod
+    def parse(cls, line: str) -> Optional["ContinuationLine"]:
+        m: Optional[re.Match] = cls.regex.match(line.rstrip())
         if m is None:
             return None
         return cls(m.group('value'), m.start('value'), line)
-    parse = classmethod(parse)
 
 
-class LineContainer(object):
-    def __init__(self, d=None):
+class LineContainer:
+    def __init__(self, d: Optional[Union[List[LineType], LineType]] = None) -> None:
         self.contents = []
-        self.orgvalue = None
+        self.orgvalue: str = None
         if d:
-            if isinstance(d, list): self.extend(d)
-            else: self.add(d)
+            if isinstance(d, list):
+                self.extend(d)
+            else:
+                self.add(d)
 
-    def add(self, x):
+    def add(self, x: LineType) -> None:
         self.contents.append(x)
 
-    def extend(self, x):
-        for i in x: self.add(i)
+    def extend(self, x: List[LineType]) -> None:
+        for i in x:
+            self.add(i)
 
-    def get_name(self):
+    def get_name(self) -> str:
         return self.contents[0].name
 
-    def set_name(self, data):
+    def set_name(self, data: str) -> None:
         self.contents[0].name = data
 
-    def get_value(self):
+    def get_value(self) -> str:
         if self.orgvalue is not None:
             return self.orgvalue
         elif len(self.contents) == 1:
@@ -255,12 +281,12 @@ class LineContainer(object):
             return '\n'.join([('%s' % x.value) for x in self.contents
                               if not isinstance(x, CommentLine)])
 
-    def set_value(self, data):
+    def set_value(self, data: object) -> None:
         self.orgvalue = data
-        lines = ('%s' % data).split('\n')
+        lines: List[str] = ('%s' % data).split('\n')
 
         # If there is an existing ContinuationLine, use its offset
-        value_offset = None
+        value_offset: Optional[int] = None
         for v in self.contents:
             if isinstance(v, ContinuationLine):
                 value_offset = v.value_offset
@@ -276,41 +302,45 @@ class LineContainer(object):
             else:
                 self.add(EmptyLine())
 
+    def get_line_number(self) -> Optional[int]:
+        return self.contents[0].line_number if self.contents else None
+
     name = property(get_name, set_name)
+
     value = property(get_value, set_value)
 
-    def __str__(self):
-        for c in self.contents:
-            pass#print(c.__str__())
-        s = [x.__str__() for x in self.contents]
+    line_number = property(get_line_number)
+
+    def __str__(self) -> str:
+        s: List[str] = [x.__str__() for x in self.contents]
         return '\n'.join(s)
 
-    def finditer(self, key):
+    def finditer(self, key: str) -> Iterator[Union[SectionLine, OptionLine]]:
         for x in self.contents[::-1]:
-            if hasattr(x, 'name') and x.name==key:
+            if hasattr(x, 'name') and x.name == key:
                 yield x
 
-    def find(self, key):
+    def find(self, key: str) -> Union[SectionLine, OptionLine]:
         for x in self.finditer(key):
             return x
         raise KeyError(key)
 
 
-def _make_xform_property(myattrname, srcattrname=None):
-    private_attrname = myattrname + 'value'
-    private_srcname = myattrname + 'source'
+def _make_xform_property(myattrname: str, srcattrname: Optional[str] = None) -> property:
+    private_attrname: str = myattrname + 'value'
+    private_srcname: str = myattrname + 'source'
     if srcattrname is None:
         srcattrname = myattrname
 
-    def getfn(self):
-        srcobj = getattr(self, private_srcname)
+    def getfn(self) -> Callable:
+        srcobj: Optional[object] = getattr(self, private_srcname)
         if srcobj is not None:
             return getattr(srcobj, srcattrname)
         else:
             return getattr(self, private_attrname)
 
-    def setfn(self, value):
-        srcobj = getattr(self, private_srcname)
+    def setfn(self, value: Callable) -> None:
+        srcobj: Optional[object] = getattr(self, private_srcname)
         if srcobj is not None:
             setattr(srcobj, srcattrname, value)
         else:
@@ -320,14 +350,20 @@ def _make_xform_property(myattrname, srcattrname=None):
 
 
 class INISection(config.ConfigNamespace):
-    _lines = None
-    _options = None
-    _defaults = None
-    _optionxformvalue = None
-    _optionxformsource = None
-    _compat_skip_empty_lines = set()
-    def __init__(self, lineobj, defaults = None,
-                       optionxformvalue=None, optionxformsource=None):
+    _lines: List[LineContainer] = None
+    _options: Dict[str, object] = None
+    _defaults: Optional["INISection"] = None
+    _optionxformvalue: "INIConfig" = None
+    _optionxformsource: "INIConfig" = None
+    _compat_skip_empty_lines: Set[str] = set()
+
+    def __init__(
+        self,
+        lineobj: LineContainer,
+        defaults: Optional["INISection"] = None,
+        optionxformvalue: Optional["INIConfig"] = None,
+        optionxformsource: Optional["INIConfig"] = None
+    ) -> None:
         self._lines = [lineobj]
         self._defaults = defaults
         self._optionxformvalue = optionxformvalue
@@ -336,15 +372,16 @@ class INISection(config.ConfigNamespace):
 
     _optionxform = _make_xform_property('_optionxform')
 
-    def _compat_get(self, key):
+    def _compat_get(self, key: str) -> str:
         # identical to __getitem__ except that _compat_XXX
         # is checked for backward-compatible handling
         if key == '__name__':
             return self._lines[-1].name
-        if self._optionxform: key = self._optionxform(key)
+        if self._optionxform:
+            key = self._optionxform(key)
         try:
-            value = self._options[key].value
-            del_empty = key in self._compat_skip_empty_lines
+            value: str = self._options[key].value
+            del_empty: bool = key in self._compat_skip_empty_lines
         except KeyError:
             if self._defaults and key in self._defaults._options:
                 value = self._defaults._options[key].value
@@ -355,10 +392,11 @@ class INISection(config.ConfigNamespace):
             value = re.sub('\n+', '\n', value)
         return value
 
-    def _getitem(self, key):
+    def _getitem(self, key: str) -> object:
         if key == '__name__':
             return self._lines[-1].name
-        if self._optionxform: key = self._optionxform(key)
+        if self._optionxform:
+            key = self._optionxform(key)
         try:
             return self._options[key].value
         except KeyError:
@@ -367,7 +405,7 @@ class INISection(config.ConfigNamespace):
             else:
                 raise
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: object) -> None:
         if self._optionxform: xkey = self._optionxform(key)
         else: xkey = key
         if xkey in self._compat_skip_empty_lines:
@@ -381,7 +419,7 @@ class INISection(config.ConfigNamespace):
         # automatically handles multi-line values
         self._options[xkey].value = value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str) -> None:
         if self._optionxform: key = self._optionxform(key)
         if key in self._compat_skip_empty_lines:
             self._compat_skip_empty_lines.remove(key)
@@ -397,7 +435,7 @@ class INISection(config.ConfigNamespace):
             l.contents = remaining
         del self._options[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         d = set()
         for l in self._lines:
             for x in l.contents:
@@ -419,16 +457,15 @@ class INISection(config.ConfigNamespace):
         raise Exception('No sub-sections allowed', name)
 
 
-def make_comment(line):
+def make_comment(line: str) -> CommentLine:
     return CommentLine(line.rstrip('\n'))
 
 
-def readline_iterator(f):
-    """iterate over a file by only using the file object's readline method"""
-
-    have_newline = False
+def readline_iterator(f: TextIO) -> Iterator[str]:
+    """Iterate over a file by only using the file object's readline method."""
+    have_newline: bool = False
     while True:
-        line = f.readline()
+        line: Optional[str] = f.readline()
 
         if not line:
             if have_newline:
@@ -443,31 +480,40 @@ def readline_iterator(f):
         yield line
 
 
-def lower(x):
+def lower(x: str) -> str:
     return x.lower()
 
 
 class INIConfig(config.ConfigNamespace):
-    _data = None
-    _sections = None
-    _defaults = None
-    _optionxformvalue = None
-    _optionxformsource = None
-    _sectionxformvalue = None
-    _sectionxformsource = None
+    _data: LineContainer = None
+    _sections: Dict[str, object] = None
+    _defaults: INISection = None
+    _optionxformvalue: Callable = None
+    _optionxformsource: Optional["INIConfig"] = None
+    _sectionxformvalue: Optional["INIConfig"] = None
+    _sectionxformsource: Optional["INIConfig"] = None
     _parse_exc = None
     _bom = False
-    def __init__(self, fp=None, defaults=None, parse_exc=True,
-                 optionxformvalue=lower, optionxformsource=None,
-                 sectionxformvalue=None, sectionxformsource=None):
+
+    def __init__(
+        self,
+        fp: TextIO = None,
+        defaults: Dict[str, object] = None,
+        parse_exc: bool = True,
+        optionxformvalue: Callable = lower,
+        optionxformsource: Optional[Union["INIConfig", "RawConfigParser"]] = None,
+        sectionxformvalue: Optional["INIConfig"] = None,
+        sectionxformsource: Optional["INIConfig"] = None,
+    ) -> None:
         self._data = LineContainer()
         self._parse_exc = parse_exc
         self._optionxformvalue = optionxformvalue
         self._optionxformsource = optionxformsource
         self._sectionxformvalue = sectionxformvalue
         self._sectionxformsource = sectionxformsource
-        self._sections = {}
-        if defaults is None: defaults = {}
+        self._sections: Dict[str, INISection] = {}
+        if defaults is None:
+            defaults = {}
         self._defaults = INISection(LineContainer(), optionxformsource=self)
         for name, value in defaults.items():
             self._defaults[name] = value
@@ -477,22 +523,24 @@ class INIConfig(config.ConfigNamespace):
     _optionxform = _make_xform_property('_optionxform', 'optionxform')
     _sectionxform = _make_xform_property('_sectionxform', 'optionxform')
 
-    def _getitem(self, key):
+    def _getitem(self, key: str) -> INISection:
         if key == DEFAULTSECT:
             return self._defaults
-        if self._sectionxform: key = self._sectionxform(key)
+        if self._sectionxform:
+            key = self._sectionxform(key)
         return self._sections[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: object):
         raise Exception('Values must be inside sections', key, value)
 
-    def __delitem__(self, key):
-        if self._sectionxform: key = self._sectionxform(key)
+    def __delitem__(self, key: str) -> None:
+        if self._sectionxform:
+            key = self._sectionxform(key)
         for line in self._sections[key]._lines:
             self._data.contents.remove(line)
         del self._sections[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[str]:
         d = set()
         d.add(DEFAULTSECT)
         for x in self._data.contents:
@@ -501,12 +549,13 @@ class INIConfig(config.ConfigNamespace):
                     yield x.name
                     d.add(x.name)
 
-    def _new_namespace(self, name):
+    def _new_namespace(self, name: str) -> INISection:
         if self._data.contents:
             self._data.add(EmptyLine())
         obj = LineContainer(SectionLine(name))
         self._data.add(obj)
-        if self._sectionxform: name = self._sectionxform(name)
+        if self._sectionxform:
+            name = self._sectionxform(name)
         if name in self._sections:
             ns = self._sections[name]
             ns._lines.append(obj)
@@ -516,20 +565,18 @@ class INIConfig(config.ConfigNamespace):
             self._sections[name] = ns
         return ns
 
-    def __str__(self):
+    def __str__(self) -> str:
         if self._bom:
             fmt = u'\ufeff%s'
         else:
             fmt = '%s'
         return fmt % self._data.__str__()
 
-    __unicode__ = __str__
-
     _line_types = [EmptyLine, CommentLine,
                    SectionLine, OptionLine,
                    ContinuationLine]
 
-    def _parse(self, line):
+    def _parse(self, line: str) -> Any:
         for linetype in self._line_types:
             lineobj = linetype.parse(line)
             if lineobj:
@@ -538,7 +585,7 @@ class INIConfig(config.ConfigNamespace):
             # can't parse line
             return None
 
-    def _readfp(self, fp):
+    def _readfp(self, fp: TextIO) -> None:
         cur_section = None
         cur_option = None
         cur_section_name = None
@@ -549,34 +596,33 @@ class INIConfig(config.ConfigNamespace):
             fname = fp.name
         except AttributeError:
             fname = '<???>'
-        linecount = 0
+        line_count = 0
         exc = None
         line = None
 
         for line in readline_iterator(fp):
             # Check for BOM on first line
-            if linecount == 0 and isinstance(line, six.text_type):
+            if line_count == 0 and isinstance(line, str):
                 if line[0] == u'\ufeff':
                     line = line[1:]
                     self._bom = True
 
-            lineobj = self._parse(line)
-            linecount += 1
-
-            if not cur_section and not isinstance(lineobj,
-                                (CommentLine, EmptyLine, SectionLine)):
+            line_obj = self._parse(line)
+            line_count += 1
+            if not cur_section and not isinstance(line_obj, (CommentLine, EmptyLine, SectionLine)):
                 if self._parse_exc:
-                    raise MissingSectionHeaderError(fname, linecount, line)
+                    raise MissingSectionHeaderError(fname, line_count, line)
                 else:
-                    lineobj = make_comment(line)
+                    line_obj = make_comment(line)
 
-            if lineobj is None:
+            if line_obj is None:
                 if self._parse_exc:
-                    if exc is None: exc = ParsingError(fname)
-                    exc.append(linecount, line)
-                lineobj = make_comment(line)
+                    if exc is None:
+                        exc = ParsingError(fname)
+                    exc.append(line_count, line)
+                line_obj = make_comment(line)
 
-            if isinstance(lineobj, ContinuationLine):
+            if isinstance(line_obj, ContinuationLine):
                 if cur_option:
                     if pending_lines:
                         cur_option.extend(pending_lines)
@@ -584,20 +630,21 @@ class INIConfig(config.ConfigNamespace):
                         if pending_empty_lines:
                             optobj._compat_skip_empty_lines.add(cur_option_name)
                             pending_empty_lines = False
-                    cur_option.add(lineobj)
+                    cur_option.add(line_obj)
                 else:
                     # illegal continuation line - convert to comment
                     if self._parse_exc:
-                        if exc is None: exc = ParsingError(fname)
-                        exc.append(linecount, line)
-                    lineobj = make_comment(line)
+                        if exc is None:
+                            exc = ParsingError(fname)
+                        exc.append(line_count, line)
+                    line_obj = make_comment(line)
 
-            if isinstance(lineobj, OptionLine):
+            if isinstance(line_obj, OptionLine):
                 if pending_lines:
                     cur_section.extend(pending_lines)
                     pending_lines = []
                     pending_empty_lines = False
-                cur_option = LineContainer(lineobj)
+                cur_option = LineContainer(line_obj)
                 cur_section.add(cur_option)
                 if self._optionxform:
                     cur_option_name = self._optionxform(cur_option.name)
@@ -609,11 +656,11 @@ class INIConfig(config.ConfigNamespace):
                     optobj = self._sections[cur_section_name]
                 optobj._options[cur_option_name] = cur_option
 
-            if isinstance(lineobj, SectionLine):
+            if isinstance(line_obj, SectionLine):
                 self._data.extend(pending_lines)
                 pending_lines = []
                 pending_empty_lines = False
-                cur_section = LineContainer(lineobj)
+                cur_section = LineContainer(line_obj)
                 self._data.add(cur_section)
                 cur_option = None
                 cur_option_name = None
@@ -632,16 +679,17 @@ class INIConfig(config.ConfigNamespace):
                     else:
                         self._sections[cur_section_name]._lines.append(cur_section)
 
-            if isinstance(lineobj, (CommentLine, EmptyLine)):
-                pending_lines.append(lineobj)
-                if isinstance(lineobj, EmptyLine):
+            if isinstance(line_obj, (CommentLine, EmptyLine)):
+                pending_lines.append(line_obj)
+                if isinstance(line_obj, EmptyLine):
                     pending_empty_lines = True
 
+            if line_obj:
+                line_obj.line_number = line_count
+
         self._data.extend(pending_lines)
-        if line and line[-1]=='\n':
+        if line and line[-1] == '\n':
             self._data.add(EmptyLine())
 
         if exc:
             raise exc
-
-

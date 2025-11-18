@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import json, struct, os, tempfile
 
@@ -24,7 +22,6 @@ log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_filter import *
 from .gltf2_generate import *
-
 
 def prepare(exportSettings):
     """
@@ -59,8 +56,6 @@ def finish(exportSettings):
     del exportSettings['uriCache']['uri'][:]
     del exportSettings['uriCache']['blDatablocks'][:]
 
-    # HACK: fix user count for materials, which can be 0 in case of copying objects
-    # for bpy.data.meshes.new_from_object operation
     for obj in bpy.data.objects:
         if obj.data is not None and hasattr(obj.data, 'materials'):
             mats = obj.data.materials
@@ -79,7 +74,6 @@ def compressLZMA(path, settings):
 
     pluginUtils.convert.compressLZMA(path)
 
-
 def save(operator, context, exportSettings):
     """
     Starts the glTF 2.0 export and saves to content either to a .gltf or .glb file.
@@ -89,9 +83,7 @@ def save(operator, context, exportSettings):
     bpy.context.window_manager.progress_begin(0, 100)
     bpy.context.window_manager.progress_update(1)
 
-
     prepare(exportSettings)
-
 
     glTF = {}
 
@@ -112,7 +104,6 @@ def save(operator, context, exportSettings):
 
     glTF_encoded = json.dumps(glTF, indent=indent, separators=separators,
             sort_keys=True, ensure_ascii=False)
-
 
     if exportFormat  == 'ASCII':
         file = open(exportSettings['filepath'], 'w', encoding='utf8', newline='\n')
@@ -153,19 +144,16 @@ def save(operator, context, exportSettings):
         if length_bin > 0:
             length += 8 + length_bin
 
-        # Header (Version 2)
         file.write('glTF'.encode())
         file.write(struct.pack('I', 2))
         file.write(struct.pack('I', length))
 
-        # Chunk 0 (JSON)
         file.write(struct.pack('I', length_gtlf))
         file.write('JSON'.encode())
         file.write(glTF_data)
         for i in range(0, spaces_gltf):
             file.write(' '.encode())
 
-        # Chunk 1 (BIN)
         if length_bin > 0:
             file.write(struct.pack('I', length_bin))
             file.write('BIN\0'.encode())

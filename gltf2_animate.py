@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import math
 
 import bpy
@@ -25,25 +23,30 @@ from .utils import *
 QUAT_X_90 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi/2)
 QUAT_X_270 = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi + math.pi/2)
 
-
 def getActionNameFcurves(blAnimationData):
     if blAnimationData is None or blAnimationData.action is None:
         return None, None
 
     action = blAnimationData.action
 
+    fcurves = getActionFcurves(action)
+    if fcurves:
+        return action.name, fcurves
+    else:
+        return None, None
+
+def getActionFcurves(action):
     if bpy.app.version >= (4, 4, 0):
-        slot = blAnimationData.action_slot
+        slot = action.slots[0] if action.slots else None
 
         if slot and action.layers and action.layers[0].strips:
             channelBag = action.layers[0].strips[0].channelbag(slot)
             if channelBag:
-                return action.name, channelBag.fcurves
+                return channelBag.fcurves
 
-        return None, None
+        return None
     else:
-        return action.name, action.fcurves
-
+        return action.fcurves
 
 def dataPathNameInBrackets(fcurve):
     """
@@ -67,7 +70,6 @@ def dataPathNameInBrackets(fcurve):
 
     return bracketName[:(index)]
 
-
 def getAnimParamDim(fcurves, pathBracketName):
     dim = 0
 
@@ -76,7 +78,6 @@ def getAnimParamDim(fcurves, pathBracketName):
             dim = max(dim, fcurve.array_index+1)
 
     return dim
-
 
 def getAnimParam(fcurve):
     """
@@ -89,7 +90,6 @@ def getAnimParam(fcurve):
         return fcurve.data_path
 
     return fcurve.data_path[(index + 1):]
-
 
 def animateGetInterpolation(exportSettings, fcurves):
     """
@@ -150,13 +150,10 @@ def animateGetInterpolation(exportSettings, fcurves):
     if interpolation is None:
         interpolation = 'CONVERSION_NEEDED'
 
-    # NOTE: make curve conversion since CUBICSPLINE isn't supported in the
-    # engine at the moment
     if interpolation == 'CUBICSPLINE':
         interpolation = 'CONVERSION_NEEDED'
 
     return interpolation
-
 
 def animateConvertRotationAxisAngle(axisAngle):
     """
@@ -166,7 +163,6 @@ def animateConvertRotationAxisAngle(axisAngle):
 
     return [q.x, q.y, q.z, q.w]
 
-
 def animateConvertRotationEuler(euler, rotationMode):
     """
     Converts an euler angle to a quaternion rotation.
@@ -174,7 +170,6 @@ def animateConvertRotationEuler(euler, rotationMode):
     rotation = mathutils.Euler((euler[0], euler[1], euler[2]), rotationMode).to_quaternion()
 
     return [rotation.x, rotation.y, rotation.z, rotation.w]
-
 
 def animateConvertKeys(key_list):
     """
@@ -186,7 +181,6 @@ def animateConvertKeys(key_list):
         times.append(key / bpy.context.scene.render.fps)
 
     return times
-
 
 def animateGatherKeys(exportSettings, fcurves, interpolation):
     """
@@ -255,7 +249,6 @@ def animateGatherKeys(exportSettings, fcurves, interpolation):
 
     return keys
 
-
 def animateLocation(exportSettings, fcurves, interpolation, animType, blObj, blBone):
     """
     Calculates/gathers the key value pairs for location transformations.
@@ -323,7 +316,6 @@ def animateLocation(exportSettings, fcurves, interpolation, animType, blObj, blB
 
     return result, resultInTangent, resultOutTangent
 
-
 def animateRotationAxisAngle(exportSettings, fcurves, interpolation, animType, blObj, blBone):
     """
     Calculates/gathers the key value pairs for axis angle transformations.
@@ -370,13 +362,10 @@ def animateRotationAxisAngle(exportSettings, fcurves, interpolation, animType, b
 
             rotation = animateConvertRotationAxisAngle(axisAngleRotation)
 
-            # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, animType)
 
-        # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
 
         result[time] = rotation
@@ -384,7 +373,6 @@ def animateRotationAxisAngle(exportSettings, fcurves, interpolation, animType, b
         keyframeIndex += 1
 
     return result
-
 
 def animateRotationEuler(exportSettings, fcurves, rotationMode, interpolation, animType, blObj, blBone):
     """
@@ -432,13 +420,10 @@ def animateRotationEuler(exportSettings, fcurves, rotationMode, interpolation, a
 
             rotation = animateConvertRotationEuler(euler_rotation, rotationMode)
 
-            # Bring back to internal Quaternion notation.
             rotation = convertSwizzleRotation([rotation[3], rotation[0], rotation[1], rotation[2]])
 
-            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, animType)
 
-        # Bring back to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
 
         result[time] = rotation
@@ -446,7 +431,6 @@ def animateRotationEuler(exportSettings, fcurves, rotationMode, interpolation, a
         keyframeIndex += 1
 
     return result
-
 
 def animateRotationQuaternion(exportSettings, fcurves, interpolation, animType, blObj, blBone):
     """
@@ -502,7 +486,6 @@ def animateRotationQuaternion(exportSettings, fcurves, interpolation, animType, 
 
                 channelIndex += 1
 
-            # NOTE: fcurve.evaluate() requires normalization
             q = mathutils.Quaternion((rotation[0],rotation[1], rotation[2], rotation[3])).normalized()
             rotation = [q[0], q[1], q[2], q[3]]
 
@@ -511,12 +494,10 @@ def animateRotationQuaternion(exportSettings, fcurves, interpolation, animType, 
             inTangent = convertSwizzleRotation(inTangent)
             outTangent = convertSwizzleRotation(outTangent)
 
-            # apply additional rotation for lamps, cameras, fonts and their childs
             rotation = correctRotationQuat(rotation, animType)
             inTangent = correctRotationQuat(inTangent, animType)
             outTangent = correctRotationQuat(outTangent, animType)
 
-        # Bring to glTF Quaternion notation.
         rotation = [rotation[1], rotation[2], rotation[3], rotation[0]]
         inTangent = [inTangent[1], inTangent[2], inTangent[3], inTangent[0]]
         outTangent = [outTangent[1], outTangent[2], outTangent[3], outTangent[0]]
@@ -528,7 +509,6 @@ def animateRotationQuaternion(exportSettings, fcurves, interpolation, animType, 
         keyframeIndex += 1
 
     return result, resultInTangent, resultOutTangent
-
 
 def animateScale(exportSettings, fcurves, interpolation, animType, blObj, blBone):
     """
@@ -596,7 +576,6 @@ def animateScale(exportSettings, fcurves, interpolation, animType, blObj, blBone
 
     return result, resultInTangent, resultOutTangent
 
-
 def animateValue(exportSettings, fcurves, interpolation, animType):
     """
     Calculates/gathers the key value pairs for scalar animations.
@@ -637,7 +616,6 @@ def animateValue(exportSettings, fcurves, interpolation, animType):
         keyframeIndex += 1
 
     return result, resultInTangent, resultOutTangent
-
 
 def animateDefaultValue(exportSettings, fcurves, interpolation):
     """
@@ -681,7 +659,6 @@ def animateDefaultValue(exportSettings, fcurves, interpolation):
         keyframeIndex += 1
 
     return result, resultInTangent, resultOutTangent
-
 
 def animateEnergy(exportSettings, fcurves, interpolation):
     """
@@ -727,9 +704,7 @@ def animateEnergy(exportSettings, fcurves, interpolation):
 
     return result, resultInTangent, resultOutTangent
 
-
 def correctRotationQuat(rotation, animType):
-    # apply additional rotation for lamps, cameras, fonts and their childs
 
     if animType == 'NODE_X_90':
         rotation = rotation @ QUAT_X_270 # right-to-left means rotation around local X
@@ -739,7 +714,6 @@ def correctRotationQuat(rotation, animType):
         rotation = QUAT_X_90 @ rotation @ QUAT_X_270
 
     return rotation
-
 
 def getBoneJointMatrix(blObj, blBone, isBaked):
     correctionMatrixLocal = blBone.bone.matrix_local.copy()

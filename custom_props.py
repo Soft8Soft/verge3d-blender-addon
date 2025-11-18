@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import math
 
 import bpy
@@ -229,7 +228,6 @@ class V3DExportSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    # mandatory indices for UIList Exported Collections
     collections_exported_idx: bpy.props.IntProperty(
         default = 0,
         options = NO_ANIM_OPTS
@@ -243,7 +241,6 @@ class V3DWorldSettings(bpy.types.PropertyGroup):
         default = False,
         options = NO_ANIM_OPTS
     )
-
 
 class V3DOutlineSettings(bpy.types.PropertyGroup):
     """Outline settings are part of scene settings"""
@@ -313,9 +310,38 @@ class V3DOutlineSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-
 class V3DSceneSettings(bpy.types.PropertyGroup):
-    # NOTE: add missing AO props (removed in Blender 4.3)
+    use_gtao: bpy.props.BoolProperty(
+        name = 'Ambient Occlusion',
+        description = 'Enable ground truth ambient occlusion effect (GTAO)',
+        default = False,
+        options = NO_ANIM_OPTS
+    )
+
+    gtao_distance: bpy.props.FloatProperty(
+        name = 'Distance',
+        description = 'Distance of object that contribute to the ambient occlusion effect',
+        subtype = 'DISTANCE',
+        min = 0,
+        max = 100000,
+        soft_max = 100,
+        default = 0.2,
+        precision = 1,
+        step = 3,
+        options = NO_ANIM_OPTS
+    )
+
+    gtao_quality: bpy.props.FloatProperty(
+        name = 'Trace Precision',
+        description = 'Precision of the horizon search',
+        subtype = 'FACTOR',
+        min = 0,
+        max = 1,
+        default = 0.25,
+        precision = 2,
+        options = NO_ANIM_OPTS
+    )
+
     gtao_factor: bpy.props.FloatProperty(
         name = 'Factor',
         description = 'Factor for ambient occlusion blending',
@@ -539,7 +565,6 @@ class V3DObjectSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-
     canvas_break_enabled: bpy.props.BoolProperty(
         name = 'Visibility Breakpoints',
         description = 'Enable breakpoints to affect object visibility depending on canvas size and orientation',
@@ -756,7 +781,6 @@ class V3DCameraSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-
 class V3DShadowSettings(bpy.types.PropertyGroup):
     """Shadow settings are part of light settings"""
 
@@ -853,7 +877,6 @@ class V3DShadowSettings(bpy.types.PropertyGroup):
         unit = 'LENGTH'
     )
 
-
 class V3DLightSettings(bpy.types.PropertyGroup):
     shadow: bpy.props.PointerProperty(
         name = 'Shadow Settings',
@@ -862,7 +885,6 @@ class V3DLightSettings(bpy.types.PropertyGroup):
 
 class V3DMaterialSettings(bpy.types.PropertyGroup):
 
-    # NOTE: returning back feature removed in Blender 4.2
     blend_method: bpy.props.EnumProperty(
         name = 'Blend Mode',
         description = 'Preferred method to render transparency',
@@ -1056,7 +1078,6 @@ class V3DLightProbeSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    # NOTE: returning back feature removed in Blender 4.2
     intensity: bpy.props.FloatProperty(
         name = 'Intensity',
         description = 'Modify the intensity of the lighting captured by this probe',
@@ -1068,7 +1089,6 @@ class V3DLightProbeSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
-    # NOTE: returning back feature removed in Blender 4.2
     falloff: bpy.props.FloatProperty(
         name = 'Falloff',
         description = 'Controls how fast the probe influence decreases',
@@ -1080,17 +1100,26 @@ class V3DLightProbeSettings(bpy.types.PropertyGroup):
         options = NO_ANIM_OPTS
     )
 
+@persistent
+def refactorPropsLoad(_):
+    for scene in bpy.data.scenes:
+        if scene.v3d_export.ibl_environment_mode in ['PROBE_CUBEMAP', '']:
+            log.info('Cubemap IBL environement mode is no longer supported, setting to PMREM.')
+            scene.v3d_export.ibl_environment_mode = 'PMREM'
+
+        if scene.v3d_export.shadow_map_type in ['PCF', 'PCFSOFT', '']:
+            log.info('Poisson disk is the only supported PCF method, fixing the property.')
+            scene.v3d_export.shadow_map_type = 'PCFPOISSON'
 
 @persistent
-def refactorProps(_):
-    for bl_scene in bpy.data.scenes:
-        if bl_scene.v3d_export.ibl_environment_mode in ['PROBE_CUBEMAP', '']:
-            log.info('Cubemap IBL environement mode is no longer supported, setting to PMREM.')
-            bl_scene.v3d_export.ibl_environment_mode = 'PMREM'
+def refactorPropsSave(_):
+    for scene in bpy.data.scenes:
+        if bpy.app.version < (5, 0, 0) and scene.eevee.use_gtao:
+            log.info('Saving GTAO parameters for Blender 5.0+')
 
-        if bl_scene.v3d_export.shadow_map_type in ['PCF', 'PCFSOFT', '']:
-            log.info('Poisson disk is the only supported PCF method, fixing the property.')
-            bl_scene.v3d_export.shadow_map_type = 'PCFPOISSON'
+            scene.v3d.use_gtao = scene.eevee.use_gtao
+            scene.v3d.gtao_distance = scene.eevee.gtao_distance
+            scene.v3d.gtao_quality = scene.eevee.gtao_quality
 
 def register():
     bpy.utils.register_class(V3DCollectionSettings)
@@ -1181,7 +1210,8 @@ def register():
         type = V3DLightProbeSettings
     )
 
-    bpy.app.handlers.load_post.append(refactorProps)
+    bpy.app.handlers.load_post.append(refactorPropsLoad)
+    bpy.app.handlers.save_pre.append(refactorPropsSave)
 
 def unregister():
     bpy.utils.unregister_class(V3DImageSettings)
@@ -1214,4 +1244,5 @@ def unregister():
     del bpy.types.Collection.v3d
     del bpy.types.LightProbe.v3d
 
-    bpy.app.handlers.load_post.remove(refactorProps)
+    bpy.app.handlers.load_post.remove(refactorPropsLoad)
+    bpy.app.handlers.save_pre.remove(refactorPropsSave)

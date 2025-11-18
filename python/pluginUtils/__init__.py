@@ -3,6 +3,7 @@
 from . import convert, gltf, log, manager, path, rawdata
 
 debug = True
+copyrightLine = 'Soft8Soft, LLC'
 
 def clamp(val, minval, maxval):
     return max(minval, min(maxval, val))

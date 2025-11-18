@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,24 +12,19 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy, bpy_extras
-from bpy.app.handlers import persistent
 
-import fnmatch, re, os, sys
-import shutil
-import subprocess
+import os
 import webbrowser
 
 import pluginUtils
-from pluginUtils.path import getAppManagerHost, getRoot, findExportedAssetPath
+from pluginUtils.path import getAppManagerHost
 
 log = pluginUtils.log.getLogger('V3D-BL')
 
 from . import utils
 
 join = os.path.join
-norm = os.path.normpath
 
 from pluginUtils.manager import AppManagerConn
 
@@ -46,10 +41,10 @@ class V3DPanel():
                 context.object.type == 'EMPTY' and context.object.v3d.clipping_plane):
             return True
 
-        elif (cls.poll_datablock == 'lightprobe_sphere' and context.object
-                and context.object.type == 'LIGHT_PROBE' and context.object.data):
-            # COMPAT: CUBEMAP used in Blender < 4.1
-            return (context.object.data.type == 'CUBEMAP' or context.object.data.type == 'SPHERE')
+        elif (cls.poll_datablock == 'lightprobe_sphere' and context.object and
+                context.object.type == 'LIGHT_PROBE' and context.object.data and
+                context.object.data.type == 'SPHERE'):
+            return True
 
         elif (cls.poll_datablock == 'lightprobe_plane' and context.object and
               context.object.type == 'LIGHT_PROBE' and context.object.data and
@@ -63,7 +58,6 @@ class V3DPanel():
 
         else:
             return False
-
 
 class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
     """Located on render panel"""
@@ -111,9 +105,8 @@ class V3D_PT_RenderSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'use_oit')
 
-        if bpy.app.version >= (4, 2, 0):
-            row = layout.row()
-            row.prop(context.scene.eevee, 'gi_cubemap_resolution', text='Env. Map Size')
+        row = layout.row()
+        row.prop(context.scene.eevee, 'gi_cubemap_resolution', text='Env. Map Size')
 
         row = layout.row()
         row.prop(v3d_export, 'ibl_environment_mode')
@@ -122,34 +115,29 @@ class COLLECTION_UL_export(bpy.types.UIList):
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_property, index, flt_flag):
         col = layout.column()
-        col.prop(item, 'name', text='', emboss=False)
+        col.prop(item, 'name', text='', emboss=False, icon_value=icon)
         col = layout.column()
         col.prop(item.v3d, 'enable_export', text='')
 
     def filter_items(self, context, data, property):
+        collections = getattr(data, property)
+        helper_funcs = bpy.types.UI_UL_list
 
-        coll_list = getattr(data, property)
-        filter_name = self.filter_name.lower()
+        flt_flags = []
+        flt_neworder = []
 
-        flt_flags = [self.bitflag_filter_item
-            if filter_name in item.name.lower()
-            else 0 for i, item in enumerate(coll_list, 1)
-        ]
+        if self.filter_name:
+            flt_flags = helper_funcs.filter_items_by_name(self.filter_name, self.bitflag_filter_item,
+                                                          collections, 'name', reverse=self.use_filter_invert)
+        if not flt_flags:
+            flt_flags = [self.bitflag_filter_item] * len(collections)
 
         if self.use_filter_sort_alpha:
-            flt_neworder = [x[1] for x in sorted(
-                    zip(
-                        [x[0] for x in sorted(enumerate(coll_list), key=lambda x: x[1].name)],
-                        range(len(coll_list))
-                    )
-                )
-            ]
-        else:
-            flt_neworder = []
+            flt_neworder = helper_funcs.sort_items_by_name(collections, 'name')
+            if self.use_filter_sort_reverse:
+                flt_neworder.reverse()
 
         return flt_flags, flt_neworder
-
-
 
 class V3D_PT_RenderSettingsAnimation(bpy.types.Panel, V3DPanel):
     bl_label = 'Animation'
@@ -175,19 +163,11 @@ class V3D_PT_RenderSettingsAnimation(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d_export, 'bake_armature_actions')
 
-
-
 class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
     bl_label = 'Shadows'
     bl_parent_id = 'V3D_PT_RenderSettings'
 
     poll_datablock = 'scene'
-
-    def draw_header(self, context):
-        # COMPAT: using native shadow checker starting from Blender 4.2
-        if bpy.app.version < (4, 2, 0):
-            v3d_export = bpy.data.scenes[0].v3d_export
-            self.layout.prop(v3d_export, 'use_shadows', text='')
 
     def draw(self, context):
         layout = self.layout
@@ -196,8 +176,7 @@ class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
         scene0 = bpy.data.scenes[0]
         v3d_export = scene0.v3d_export
 
-        # COMPAT: using native shadow checker starting from Blender 4.2
-        layout.active = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
+        layout.active = scene0.eevee.use_shadows
 
         row = layout.row()
         row.prop(v3d_export, 'shadow_map_type')
@@ -209,13 +188,11 @@ class V3D_PT_RenderSettingsShadows(bpy.types.Panel, V3DPanel):
         row.prop(v3d_export, 'esm_distance_scale')
         row.active = v3d_export.shadow_map_type == 'ESM'
 
-        if bpy.app.version >= (4, 2, 0):
-            row = layout.row()
-            row.prop(v3d_export, 'shadow_cube_size')
+        row = layout.row()
+        row.prop(v3d_export, 'shadow_cube_size')
 
-            row = layout.row()
-            row.prop(v3d_export, 'shadow_cascade_size')
-
+        row = layout.row()
+        row.prop(v3d_export, 'shadow_cascade_size')
 
 class V3D_PT_RenderSettingsOutline(bpy.types.Panel, V3DPanel):
     bl_label = 'Outline Effect'
@@ -260,29 +237,42 @@ class V3D_PT_RenderSettingsGTAO(bpy.types.Panel, V3DPanel):
     poll_datablock = 'scene'
 
     def draw_header(self, context):
-        eevee = context.scene.eevee
-        self.layout.prop(eevee, 'use_gtao', text='')
+        if bpy.app.version < (5, 0, 0):
+            self.layout.prop(context.scene.eevee, 'use_gtao', text='')
+        else:
+            self.layout.prop(context.scene.v3d, 'use_gtao', text='')
 
     def draw(self, context):
         layout = self.layout
         layout.use_property_split = True
 
         eevee = context.scene.eevee
+        v3d = context.scene.v3d
 
-        layout.active = eevee.use_gtao
+        if bpy.app.version < (5, 0, 0):
+            layout.active = eevee.use_gtao
+        else:
+            layout.active = v3d.use_gtao
 
         row = layout.row()
-        row.prop(eevee, 'gtao_distance')
+        if bpy.app.version < (5, 0, 0):
+            row.prop(eevee, 'gtao_distance')
+        else:
+            row.prop(v3d, 'gtao_distance')
+
         row = layout.row()
-        # COMPAT: prop removed in Blender 4.3
         if bpy.app.version < (4, 3, 0):
             row.prop(eevee, 'gtao_factor')
         else:
             row.prop(context.scene.v3d, 'gtao_factor')
+
         row = layout.row()
-        row.prop(eevee, 'gtao_quality')
+        if bpy.app.version < (5, 0, 0):
+            row.prop(eevee, 'gtao_quality')
+        else:
+            row.prop(v3d, 'gtao_quality')
+
         row = layout.row()
-        # COMPAT: prop removed in Blender 4.3
         if bpy.app.version < (4, 3, 0):
             row.prop(eevee, 'use_gtao_bent_normals')
         else:
@@ -300,7 +290,6 @@ class V3D_PT_RenderSettingsCollections(bpy.types.Panel, V3DPanel):
         layout.template_list('COLLECTION_UL_export', '', bpy.data,
                 'collections', context.scene.v3d_export, 'collections_exported_idx', rows=4)
 
-
 class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'world'
     bl_label = 'Verge3D Settings'
@@ -316,7 +305,6 @@ class V3D_PT_WorldSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(world.v3d, 'dithering')
 
-
 class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'object'
     bl_label = 'Verge3D Settings'
@@ -325,7 +313,6 @@ class V3D_PT_ObjectSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         pass
-
 
 class V3D_PT_ObjectSettingsAnimation(bpy.types.Panel, V3DPanel):
     bl_label = 'Animation'
@@ -355,7 +342,6 @@ class V3D_PT_ObjectSettingsAnimation(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(v3d, 'anim_offset')
-
 
 class V3D_PT_ObjectSettingsRendering(bpy.types.Panel, V3DPanel):
     bl_label = 'Rendering'
@@ -392,7 +378,6 @@ class V3D_PT_ObjectSettingsRendering(bpy.types.Panel, V3DPanel):
                 row = layout.row()
                 row.prop(v3d, 'fix_ortho_zoom')
 
-
 class V3D_PT_ObjectSettingsChildRendering(bpy.types.Panel, V3DPanel):
     bl_label = 'Child Rendering'
     bl_parent_id = 'V3D_PT_ObjectSettings'
@@ -412,7 +397,6 @@ class V3D_PT_ObjectSettingsChildRendering(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(v3d, 'hidpi_compositing')
-
 
 class V3D_PT_ObjectSettingsVisibilityBreakpoints(bpy.types.Panel, V3DPanel):
     bl_label = 'Visibility Breakpoints'
@@ -449,7 +433,6 @@ class V3D_PT_ObjectSettingsVisibilityBreakpoints(bpy.types.Panel, V3DPanel):
         col = split.column()
         col.prop(v3d, 'canvas_break_orientation', text='')
 
-
 class V3D_PT_ObjectSettingsFitCameraEdge(bpy.types.Panel, V3DPanel):
     bl_label = 'Fit to Camera Edge'
     bl_parent_id = 'V3D_PT_ObjectSettings'
@@ -475,7 +458,6 @@ class V3D_PT_ObjectSettingsFitCameraEdge(bpy.types.Panel, V3DPanel):
         if ((v3d.canvas_fit_x != 'NONE' or v3d.canvas_fit_y != 'NONE') and
                 not utils.mat4IsIdentity(context.object.matrix_parent_inverse)):
             layout.label(text='Clear parent inverse for correct positioning', icon='ERROR')
-
 
 class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -517,7 +499,6 @@ class V3D_PT_CameraSettings(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.active = (v3d.controls != 'NONE')
         row.prop(v3d, 'move_speed')
-
 
 class V3D_PT_CameraSettingsTarget(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -567,14 +548,12 @@ class V3D_PT_CameraSettingsTarget(bpy.types.Panel, V3DPanel):
         row.prop(v3d, 'orbit_min_polar_angle')
         row.prop(v3d, 'orbit_max_polar_angle')
 
-
         row = layout.row()
         row.label(text='Horizontal Rotation Limits:')
 
         row = layout.row()
         row.prop(v3d, 'orbit_min_azimuth_angle')
         row.prop(v3d, 'orbit_max_azimuth_angle')
-
 
 class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -584,7 +563,6 @@ class V3D_PT_LightSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         pass
-
 
 class V3D_PT_LightSettingsShadow(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -606,18 +584,16 @@ class V3D_PT_LightSettingsShadow(bpy.types.Panel, V3DPanel):
                 not in ['BASIC', 'BILINEAR'])
         row.prop(shadow, 'radius', text='Blur Radius')
 
-        if bpy.app.version >= (4, 2, 0):
-            if context.light.type in ('POINT', 'SPOT', 'AREA'):
-                row = layout.row()
-                row.prop(shadow, 'buffer_clip_start', text='Clip Start')
-
+        if context.light.type in ('POINT', 'SPOT', 'AREA'):
             row = layout.row()
-            row.prop(shadow, 'buffer_bias', text='Bias')
+            row.prop(shadow, 'buffer_clip_start', text='Clip Start')
+
+        row = layout.row()
+        row.prop(shadow, 'buffer_bias', text='Bias')
 
         row = layout.row()
         row.active = context.scene.v3d_export.shadow_map_type == 'ESM'
         row.prop(shadow, 'esm_exponent', text='ESM Bias')
-
 
 class V3D_PT_LightSettingsShadowCSM(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -638,22 +614,20 @@ class V3D_PT_LightSettingsShadowCSM(bpy.types.Panel, V3DPanel):
         type = light.type
         shadow = light.v3d.shadow
 
-        if bpy.app.version >= (4, 2, 0):
-            row = layout.row()
-            row.prop(shadow, 'cascade_count', text='Count')
+        row = layout.row()
+        row.prop(shadow, 'cascade_count', text='Count')
 
-            row = layout.row()
-            row.prop(shadow, 'cascade_fade', text='Fade')
+        row = layout.row()
+        row.prop(shadow, 'cascade_fade', text='Fade')
 
-            row = layout.row()
-            row.prop(shadow, 'cascade_max_distance', text='Max Distance')
+        row = layout.row()
+        row.prop(shadow, 'cascade_max_distance', text='Max Distance')
 
-            row = layout.row()
-            row.prop(shadow, 'cascade_exponent', text='Distribution')
+        row = layout.row()
+        row.prop(shadow, 'cascade_exponent', text='Distribution')
 
         row = layout.row()
         row.prop(shadow, 'csm_light_margin', text='Cascade Margin')
-
 
 class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -686,7 +660,6 @@ class V3D_PT_CurveSettings(bpy.types.Panel, V3DPanel):
         row.prop(v3d.line_rendering_settings, 'width')
         row.active = is_active
 
-
 class V3D_PT_MeshSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
@@ -695,7 +668,6 @@ class V3D_PT_MeshSettings(bpy.types.Panel, V3DPanel):
 
     def draw(self, context):
         pass
-
 
 class V3D_PT_MeshSettingsLineRendering(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -722,7 +694,6 @@ class V3D_PT_MeshSettingsLineRendering(bpy.types.Panel, V3DPanel):
         row = layout.row()
         row.prop(v3d.line_rendering_settings, 'width')
 
-
 class V3D_PT_LightProbeSphereSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
     bl_label = 'Verge3D Settings'
@@ -730,18 +701,16 @@ class V3D_PT_LightProbeSphereSettings(bpy.types.Panel, V3DPanel):
     poll_datablock = 'lightprobe_sphere'
 
     def draw(self, context):
-        if bpy.app.version >= (4, 2, 0):
-            v3d = context.lightprobe.v3d
-            layout = self.layout
-            layout.use_property_split = True
+        v3d = context.lightprobe.v3d
+        layout = self.layout
+        layout.use_property_split = True
 
-            row = layout.row(align=True)
-            row.prop(v3d, 'intensity')
+        row = layout.row(align=True)
+        row.prop(v3d, 'intensity')
 
-            if utils.isNewEEVEE():
-                row = layout.row(align=True)
-                row.prop(context.lightprobe, 'visibility_collection')
-                row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
+        row = layout.row(align=True)
+        row.prop(context.lightprobe, 'visibility_collection')
+        row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
 
 class V3D_PT_LightProbeSphereSettingsCustomInfluence(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -772,18 +741,16 @@ class V3D_PT_LightProbePlaneSettings(bpy.types.Panel, V3DPanel):
     poll_datablock = 'lightprobe_plane'
 
     def draw(self, context):
-        if bpy.app.version >= (4, 2, 0):
-            v3d = context.lightprobe.v3d
-            layout = self.layout
-            layout.use_property_split = True
+        v3d = context.lightprobe.v3d
+        layout = self.layout
+        layout.use_property_split = True
 
-            row = layout.row(align=True)
-            row.prop(v3d, 'falloff')
+        row = layout.row(align=True)
+        row.prop(v3d, 'falloff')
 
-            if utils.isNewEEVEE():
-                row = layout.row(align=True)
-                row.prop(context.lightprobe, 'visibility_collection')
-                row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
+        row = layout.row(align=True)
+        row.prop(context.lightprobe, 'visibility_collection')
+        row.prop(context.lightprobe, 'invert_visibility_collection', text='', icon='ARROW_LEFTRIGHT')
 
 class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -808,7 +775,6 @@ class V3D_PT_ClippingPlaneSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(plane.v3d, 'clipping_plane_union')
-
 
 class V3D_PT_ClippingPlaneSettingsCrossSection(bpy.types.Panel, V3DPanel):
     bl_context = 'data'
@@ -841,7 +807,6 @@ class V3D_PT_ClippingPlaneSettingsCrossSection(bpy.types.Panel, V3DPanel):
         row = layout.split()
         row.prop(plane.v3d, 'clipping_plane_size', text='Plane Size')
 
-
 class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
     bl_context = 'material'
     bl_label = 'Verge3D Settings'
@@ -854,31 +819,23 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         material = context.material
 
-        if bpy.app.version >= (4, 2, 0):
-            row = layout.row()
-            row.prop(material.v3d, 'blend_method')
+        row = layout.row()
+        row.prop(material.v3d, 'blend_method')
 
-            row = layout.row()
-            row.prop(material, 'alpha_threshold')
-            row.active = material.v3d.blend_method == 'CLIP'
+        row = layout.row()
+        row.prop(material, 'alpha_threshold')
+        row.active = material.v3d.blend_method == 'CLIP'
 
-            row = layout.row()
-            row.prop(material.v3d, 'transparency_hack')
-            row.active = material.v3d.blend_method == 'BLEND'
-
-        blend_back = utils.matHasBlendBackside(material)
-
-        if blend_back:
-            row = layout.row()
-            row.label(text='Overridden by Settings → Show Backface', icon='INFO')
+        row = layout.row()
+        row.prop(material.v3d, 'transparency_hack')
+        row.active = material.v3d.blend_method == 'BLEND'
 
         row = layout.row()
         row.prop(material.v3d, 'render_side')
-        row.active = not blend_back
 
         row = layout.row()
         row.prop(material.v3d, 'depth_write')
-        row.active = not blend_back and not material.blend_method == 'OPAQUE'
+        row.active = not material.v3d.blend_method == 'OPAQUE'
 
         row = layout.row()
         row.prop(material.v3d, 'depth_test')
@@ -888,7 +845,6 @@ class V3D_PT_MaterialSettings(bpy.types.Panel, V3DPanel):
 
         row = layout.row()
         row.prop(material.v3d, 'gltf_compat')
-
 
 class V3D_PT_NodeSettings(bpy.types.Panel):
     bl_space_type = 'NODE_EDITOR'
@@ -946,7 +902,6 @@ class V3D_PT_NodeSettings(bpy.types.Panel):
 
             row = layout.row()
             row.prop(node.v3d, 'dispersion_factor')
-
 
 def execBrowser(url):
     try:
@@ -1008,90 +963,6 @@ class V3D_OT_app_manager(bpy.types.Operator):
         execBrowser(getAppManagerHost('BLENDER'))
         return {"FINISHED"}
 
-
-@persistent
-def loadHandler(dummy):
-    log.info('Reexporting ' + V3D_OT_reexport_all.currBlend)
-
-    exported = filepath=V3D_OT_reexport_all.currGLTF
-
-    if os.path.splitext(exported)[1] == '.gltf':
-        bpy.ops.export_scene.v3d_gltf(filepath=exported)
-    elif os.path.splitext(exported)[1] == '.glb':
-        bpy.ops.export_scene.v3d_glb(filepath=exported)
-    else:
-        log.error('Invalid exported extension')
-
-    V3D_OT_reexport_all.reexportNext()
-
-class V3D_OT_reexport_all(bpy.types.Operator):
-    bl_idname = 'wm.v3d_reexport_all'
-    bl_label = 'Reexport all Verge3D assets'
-    bl_description = 'Reexport all glTF files inside Verge3D SDK'
-
-    exported = []
-    currBlend = None
-    currGLTF = None
-
-    debugForceGLB = False
-
-    @classmethod
-    def reexportNext(cls):
-        if len(cls.exported):
-            cls.currBlend, cls.currGLTF = cls.exported.pop(0)
-
-            if loadHandler not in bpy.app.handlers.load_post:
-                bpy.app.handlers.load_post.append(loadHandler)
-
-            bpy.ops.wm.open_mainfile(filepath=cls.currBlend)
-
-        else:
-            if loadHandler in bpy.app.handlers.load_post:
-                bpy.app.handlers.load_post.remove(loadHandler)
-
-    def execute(self, context):
-        apps = join(getRoot(), 'applications')
-
-        # NOTE: fixes crashes with copy.deepcopy()
-        sys.setrecursionlimit(10000)
-
-        for root, dirs, files in os.walk(apps):
-            for name in files:
-                if fnmatch.fnmatch(name, '*.blend'):
-                    blendpath = norm(join(root, name))
-
-                    # use file utility to check .blend version
-                    if sys.platform.startswith('linux'):
-                        fileinfo = subprocess.check_output(['file', '--uncompress', blendpath]).decode()
-                        verStr = re.search('\d\.\d\d', fileinfo).group(0)
-                        ver = tuple([int(n) for n in verStr.split('.')]) + (0,)
-
-                        # ignore incompatible blender files
-                        if ver < (2, 80, 0) or ver > bpy.app.version:
-                            blendRel = os.path.relpath(blendpath, apps)
-                            log.warning(f'Ignoring {blendRel}, saved in Blender {ver[0]}.{ver[1]}')
-                            continue
-
-                        IGNORE = []
-
-                        ignore = False
-                        for pattern in IGNORE:
-                            if fnmatch.fnmatch(name, pattern):
-                                ignore = True
-                        if ignore:
-                            continue
-
-                    gltfpath = findExportedAssetPath(blendpath)
-                    if gltfpath:
-                        if self.__class__.debugForceGLB:
-                            gltfpath = os.path.splitext(gltfpath)[0] + '.glb'
-                        self.__class__.exported.append((blendpath, gltfpath))
-                        self.__class__.exported.sort()
-
-        self.__class__.reexportNext()
-
-        return {'FINISHED'}
-
 def btnSneakPeek(self, context):
     self.layout.operator(V3D_OT_sneak_peek.bl_idname, text='Sneak Peek', icon='HIDE_OFF')
 
@@ -1103,18 +974,12 @@ def menuUserManual(self, context):
         self.layout.separator()
         self.layout.operator('wm.url_open', text='Verge3D User Manual', icon='URL').url = AppManagerConn.getManualURL()
 
-def menuReexportAll(self, context):
-    self.layout.separator()
-    self.layout.operator(V3D_OT_reexport_all.bl_idname, icon='TOOL_SETTINGS')
-
-
 class VIEW3D_MT_verge3d_add(bpy.types.Menu):
     bl_idname = 'VIEW3D_MT_verge3d_add'
     bl_label = 'Verge3D'
 
     def draw(self, context):
         self.layout.operator('object.add_clipping_plane', icon='AXIS_TOP')
-
 
 class V3D_OT_add_clipping_plane(bpy.types.Operator, bpy_extras.object_utils.AddObjectHelper):
     bl_idname = 'object.add_clipping_plane'
@@ -1146,15 +1011,10 @@ def register():
     bpy.types.VIEW3D_MT_add.append(menuVerge3dAdd)
     bpy.types.TOPBAR_MT_help.append(menuUserManual)
 
-    if pluginUtils.debug:
-        bpy.types.TOPBAR_MT_render.append(menuReexportAll)
-
     bpy.utils.register_class(V3D_PT_RenderSettings)
     bpy.utils.register_class(V3D_PT_RenderSettingsAnimation)
     bpy.utils.register_class(V3D_PT_RenderSettingsShadows)
-    # COMPAT: UI removed in Blender 4.2
-    if bpy.app.version >= (4, 2, 0):
-        bpy.utils.register_class(V3D_PT_RenderSettingsGTAO)
+    bpy.utils.register_class(V3D_PT_RenderSettingsGTAO)
     bpy.utils.register_class(V3D_PT_RenderSettingsOutline)
     bpy.utils.register_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.register_class(V3D_PT_WorldSettings)
@@ -1182,7 +1042,6 @@ def register():
 
     bpy.utils.register_class(V3D_OT_orbit_camera_target_from_cursor)
     bpy.utils.register_class(V3D_OT_orbit_camera_update_view)
-    bpy.utils.register_class(V3D_OT_reexport_all)
 
     bpy.utils.register_class(COLLECTION_UL_export)
 
@@ -1191,7 +1050,6 @@ def register():
         bpy.utils.register_class(V3D_OT_app_manager)
         bpy.types.VIEW3D_HT_header.append(btnSneakPeek)
         bpy.types.VIEW3D_HT_header.append(btnAppManager)
-
 
 def unregister():
 
@@ -1221,9 +1079,7 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_RenderSettings)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsAnimation)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsShadows)
-    # COMPAT: UI removed in Blender 4.2
-    if bpy.app.version >= (4, 2, 0):
-        bpy.utils.unregister_class(V3D_PT_RenderSettingsGTAO)
+    bpy.utils.unregister_class(V3D_PT_RenderSettingsGTAO)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsOutline)
     bpy.utils.unregister_class(V3D_PT_RenderSettingsCollections)
     bpy.utils.unregister_class(V3D_PT_MeshSettings)
@@ -1232,14 +1088,10 @@ def unregister():
     bpy.utils.unregister_class(V3D_PT_LightProbeSphereSettingsCustomInfluence)
     bpy.utils.unregister_class(V3D_PT_LightProbePlaneSettings)
 
-    bpy.utils.unregister_class(V3D_OT_reexport_all)
     bpy.utils.unregister_class(V3D_OT_orbit_camera_target_from_cursor)
     bpy.utils.unregister_class(V3D_OT_orbit_camera_update_view)
 
     bpy.utils.unregister_class(COLLECTION_UL_export)
-
-    if pluginUtils.debug:
-        bpy.types.TOPBAR_MT_render.remove(menuReexportAll)
 
     bpy.types.TOPBAR_MT_help.remove(menuUserManual)
     bpy.types.VIEW3D_MT_add.remove(menuVerge3dAdd)

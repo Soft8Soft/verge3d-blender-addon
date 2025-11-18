@@ -12,6 +12,8 @@ The underlying INIConfig object can be accessed as cfg.data
 """
 
 import re
+from typing import Dict, List, TextIO, Optional, Type, Union, Tuple
+
 from .configparser import DuplicateSectionError,    \
                    NoSectionError, NoOptionError,   \
                    InterpolationMissingOptionError, \
@@ -19,36 +21,36 @@ from .configparser import DuplicateSectionError,    \
                    InterpolationSyntaxError,        \
                    DEFAULTSECT, MAX_INTERPOLATION_DEPTH
 
-# These are imported only for compatiability.
+# These are imported only for compatibility.
 # The code below does not reference them directly.
 from .configparser import Error, InterpolationError, \
                    MissingSectionHeaderError, ParsingError
 
-import six
-
 from . import ini
 
-class RawConfigParser(object):
-    def __init__(self, defaults=None, dict_type=dict):
+
+class RawConfigParser:
+    def __init__(self, defaults: Optional[Dict[str, str]] = None, dict_type: Union[Type[Dict], str] = dict):
         if dict_type != dict:
             raise ValueError('Custom dict types not supported')
         self.data = ini.INIConfig(defaults=defaults, optionxformsource=self)
 
-    def optionxform(self, optionstr):
+    def optionxform(self, optionstr: str) -> str:
         return optionstr.lower()
 
-    def defaults(self):
-        d = {}
-        secobj = self.data._defaults
+    def defaults(self) -> Dict[str, str]:
+        d: Dict[str, str] = {}
+        secobj: ini.INISection = self.data._defaults
+        name: str
         for name in secobj._options:
             d[name] = secobj._compat_get(name)
         return d
 
-    def sections(self):
+    def sections(self) -> List[str]:
         """Return a list of section names, excluding [DEFAULT]"""
         return list(self.data)
 
-    def add_section(self, section):
+    def add_section(self, section: str) -> None:
         """Create a new section in the configuration.
 
         Raise DuplicateSectionError if a section by the specified name
@@ -65,21 +67,21 @@ class RawConfigParser(object):
         else:
             self.data._new_namespace(section)
 
-    def has_section(self, section):
+    def has_section(self, section: str) -> bool:
         """Indicate whether the named section is present in the configuration.
 
         The DEFAULT section is not acknowledged.
         """
-        return (section in self.data)
+        return section in self.data
 
-    def options(self, section):
+    def options(self, section: str) -> List[str]:
         """Return a list of option names for the given section name."""
         if section in self.data:
             return list(self.data[section])
         else:
             raise NoSectionError(section)
 
-    def read(self, filenames):
+    def read(self, filenames: Union[List[str], str]) -> List[str]:
         """Read and parse a filename or a list of filenames.
 
         Files that cannot be opened are silently ignored; this is
@@ -88,9 +90,11 @@ class RawConfigParser(object):
         home directory, systemwide directory), and all existing
         configuration files in the list will be read.  A single
         filename may also be given.
+
+        Returns the list of files that were read.
         """
         files_read = []
-        if isinstance(filenames, six.string_types):
+        if isinstance(filenames, str):
             filenames = [filenames]
         for filename in filenames:
             try:
@@ -102,7 +106,7 @@ class RawConfigParser(object):
             fp.close()
         return files_read
 
-    def readfp(self, fp, filename=None):
+    def readfp(self, fp: TextIO, filename: Optional[str] = None) -> None:
         """Like read() but the argument must be a file-like object.
 
         The `fp' argument must have a `readline' method.  Optional
@@ -112,43 +116,44 @@ class RawConfigParser(object):
         """
         self.data._readfp(fp)
 
-    def get(self, section, option, vars=None):
+    def get(self, section: str, option: str, vars: dict = None) -> str:
         if not self.has_section(section):
             raise NoSectionError(section)
-        if vars is not None and option in vars:
-            value = vars[option]
 
-        sec = self.data[section]
+        sec: ini.INISection = self.data[section]
         if option in sec:
             return sec._compat_get(option)
         else:
             raise NoOptionError(option, section)
 
-    def items(self, section):
+    def items(self, section: str) -> List[Tuple[str, str]]:
         if section in self.data:
             ans = []
+            opt: str
             for opt in self.data[section]:
                 ans.append((opt, self.get(section, opt)))
             return ans
         else:
             raise NoSectionError(section)
 
-    def getint(self, section, option):
+    def getint(self, section: str, option: str) -> int:
         return int(self.get(section, option))
 
-    def getfloat(self, section, option):
+    def getfloat(self, section: str, option: str) -> float:
         return float(self.get(section, option))
 
-    _boolean_states = {'1': True, 'yes': True, 'true': True, 'on': True,
-                       '0': False, 'no': False, 'false': False, 'off': False}
+    _boolean_states = {
+        '1': True, 'yes': True, 'true': True, 'on': True,
+        '0': False, 'no': False, 'false': False, 'off': False,
+    }
 
-    def getboolean(self, section, option):
+    def getboolean(self, section: str, option: str) -> bool:
         v = self.get(section, option)
         if v.lower() not in self._boolean_states:
             raise ValueError('Not a boolean: %s' % v)
         return self._boolean_states[v.lower()]
 
-    def has_option(self, section, option):
+    def has_option(self, section: str, option: str) -> bool:
         """Check for the existence of a given option in a given section."""
         if section in self.data:
             sec = self.data[section]
@@ -156,18 +161,19 @@ class RawConfigParser(object):
             raise NoSectionError(section)
         return (option in sec)
 
-    def set(self, section, option, value):
+    def set(self, section: str, option: str, value: str) -> None:
         """Set an option."""
         if section in self.data:
             self.data[section][option] = value
         else:
             raise NoSectionError(section)
 
-    def write(self, fp):
+    def write(self, fp: TextIO) -> None:
         """Write an .ini-format representation of the configuration state."""
         fp.write(str(self.data))
 
-    def remove_option(self, section, option):
+    # FIXME Return a boolean instead of integer
+    def remove_option(self, section: str, option: str) -> int:
         """Remove an option."""
         if section in self.data:
             sec = self.data[section]
@@ -179,7 +185,7 @@ class RawConfigParser(object):
         else:
             return 0
 
-    def remove_section(self, section):
+    def remove_section(self, section: str) -> bool:
         """Remove a file section."""
         if not self.has_section(section):
             return False
@@ -187,15 +193,15 @@ class RawConfigParser(object):
         return True
 
 
-class ConfigDict(object):
-    """Present a dict interface to a ini section."""
+class ConfigDict:
+    """Present a dict interface to an ini section."""
 
-    def __init__(self, cfg, section, vars):
-        self.cfg = cfg
-        self.section = section
-        self.vars = vars
+    def __init__(self, cfg: RawConfigParser, section: str, vars: dict):
+        self.cfg: RawConfigParser = cfg
+        self.section: str = section
+        self.vars: dict = vars
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Union[str, List[Union[int, str]]]:
         try:
             return RawConfigParser.get(self.cfg, self.section, key, self.vars)
         except (NoOptionError, NoSectionError):
@@ -204,7 +210,13 @@ class ConfigDict(object):
 
 class ConfigParser(RawConfigParser):
 
-    def get(self, section, option, raw=False, vars=None):
+    def get(
+        self,
+        section: str,
+        option: str,
+        raw: bool = False,
+        vars: Optional[dict] = None,
+    ) -> object:
         """Get an option value for a given section.
 
         All % interpolations are expanded in the return values, based on the
@@ -227,7 +239,7 @@ class ConfigParser(RawConfigParser):
             d = ConfigDict(self, section, vars)
             return self._interpolate(section, option, value, d)
 
-    def _interpolate(self, section, option, rawval, vars):
+    def _interpolate(self, section: str, option: str, rawval: object, vars: "ConfigDict"):
         # do the string interpolation
         value = rawval
         depth = MAX_INTERPOLATION_DEPTH
@@ -245,7 +257,7 @@ class ConfigParser(RawConfigParser):
             raise InterpolationDepthError(option, section, rawval)
         return value
 
-    def items(self, section, raw=False, vars=None):
+    def items(self, section: str, raw: bool = False, vars: Optional[dict] = None):
         """Return a list of tuples with (name, value) for each option
         in the section.
 
@@ -284,8 +296,8 @@ class SafeConfigParser(ConfigParser):
     _interpvar_re = re.compile(r"%\(([^)]+)\)s")
     _badpercent_re = re.compile(r"%[^%]|%$")
 
-    def set(self, section, option, value):
-        if not isinstance(value, six.string_types):
+    def set(self, section: str, option: str, value: object) -> None:
+        if not isinstance(value, str):
             raise TypeError("option values must be strings")
         # check for bad percent signs:
         # first, replace all "good" interpolations
@@ -298,7 +310,7 @@ class SafeConfigParser(ConfigParser):
 
         ConfigParser.set(self, section, option, value)
 
-    def _interpolate(self, section, option, rawval, vars):
+    def _interpolate(self, section: str, option: str, rawval: str, vars: ConfigDict):
         # do the string interpolation
         L = []
         self._interpolate_some(option, L, rawval, section, vars, 1)
@@ -306,7 +318,15 @@ class SafeConfigParser(ConfigParser):
 
     _interpvar_match = re.compile(r"%\(([^)]+)\)s").match
 
-    def _interpolate_some(self, option, accum, rest, section, map, depth):
+    def _interpolate_some(
+        self,
+        option: str,
+        accum: List[str],
+        rest: str,
+        section: str,
+        map: ConfigDict,
+        depth: int
+    ) -> None:
         if depth > MAX_INTERPOLATION_DEPTH:
             raise InterpolationDepthError(option, section, rest)
         while rest:
@@ -325,8 +345,7 @@ class SafeConfigParser(ConfigParser):
             elif c == "(":
                 m = self._interpvar_match(rest)
                 if m is None:
-                    raise InterpolationSyntaxError(option, section,
-                        "bad interpolation variable reference %r" % rest)
+                    raise InterpolationSyntaxError(option, section, "bad interpolation variable reference %r" % rest)
                 var = m.group(1)
                 rest = rest[m.end():]
                 try:

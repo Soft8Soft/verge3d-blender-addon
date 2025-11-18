@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import copy
 import mathutils
@@ -35,25 +33,9 @@ from profilehooks import profile
 GLTF_MAX_COLORS = 8
 CURVE_DATA_SIZE = 256
 
-
 def npConvertSwizzleLocation(array):
-    # x,y,z -> x,z,-y
     array[:, [1,2]] = array[:, [2,1]]  # x,z,y
     array[:, 2] *= -1  # x,z,-y
-
-def npSRGBToLinear(colors):
-    colors_noa = colors[..., 0:3] # only process RGB for speed
-
-    x = colors_noa
-    x[x <= 0.0] = 0.0
-    x[x >= 1] = 1.0
-    x[x < 0.04045] /= 12.92
-    mask = (x >= 0.04045) & (x < 1)
-    x[mask] = ((x[mask] + 0.055) / 1.055) ** 2.4
-    colors_noa = x
-
-    result = np.concatenate((colors_noa, colors[..., 3, np.newaxis]), axis=-1)
-    return result
 
 def npNormalizeVecs(vectors):
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
@@ -65,13 +47,11 @@ def convertSwizzleLocation(loc):
     """
     return mathutils.Vector((loc[0], loc[2], -loc[1]))
 
-
 def convertSwizzleTangent(tan, sign):
     """
     Converts a tangent from Blender coordinate system to glTF coordinate system.
     """
     return mathutils.Vector((tan[0], tan[2], -tan[1], sign))
-
 
 def convertSwizzleRotation(rot):
     """
@@ -79,7 +59,6 @@ def convertSwizzleRotation(rot):
     'w' is still at first position.
     """
     return mathutils.Quaternion((rot[0], rot[1], rot[3], -rot[2]))
-
 
 def convertSwizzleScale(scale):
     """
@@ -127,12 +106,10 @@ def extractPrimitiveFloor(a, indices, use_tangents):
     result_primitive = {
         'material' : a['material'],
         'useNodeAttrs' : a['useNodeAttrs'],
-        # 'indices' : [],
         'attributes' : attributes
     }
 
     source_attributes = a['attributes']
-
 
     texcoord_index = 0
     process_texcoord = True
@@ -145,7 +122,6 @@ def extractPrimitiveFloor(a, indices, use_tangents):
 
     texcoord_max = texcoord_index
 
-
     color_index = 0
     process_color = True
     while process_color:
@@ -157,7 +133,6 @@ def extractPrimitiveFloor(a, indices, use_tangents):
 
     color_max = color_index
 
-
     skinAttrIndex = 0
     process_bone = True
     while process_bone:
@@ -168,7 +143,6 @@ def extractPrimitiveFloor(a, indices, use_tangents):
             process_bone = False
 
     skinAttrIndexMax = skinAttrIndex
-
 
     morph_index = 0
     process_morph = True
@@ -216,7 +190,6 @@ def extractPrimitiveFloor(a, indices, use_tangents):
 
     return result_primitive
 
-
 def extractPrimitivePack(a, indices, use_tangents):
     """
     Packs indices, that the first one starts with 0. Current indices can have gaps.
@@ -261,7 +234,6 @@ def extractPrimitivePack(a, indices, use_tangents):
 
     color_max = color_index
 
-
     skinAttrIndex = 0
     process_bone = True
     while process_bone:
@@ -273,7 +245,6 @@ def extractPrimitivePack(a, indices, use_tangents):
             process_bone = False
 
     skinAttrIndexMax = skinAttrIndex
-
 
     morph_index = 0
     process_morph = True
@@ -288,7 +259,6 @@ def extractPrimitivePack(a, indices, use_tangents):
 
     morph_max = morph_index
 
-
     unqie, init_indxs = np.unique(indices, return_index=True)
     indx_fields = [('old_index', np.uint32), ('old_index_index', np.uint32)]
     unique_indices = np.empty(len(init_indxs), dtype=np.dtype(indx_fields))
@@ -298,7 +268,6 @@ def extractPrimitivePack(a, indices, use_tangents):
     del unique
     del init_indxs
 
-    # index_in_new_indices = np.searchsorted(unique, unique_indices['old_index'])
     new_indices = np.searchsorted(unique_indices['old_index'], indices)
     result_primitive['indices'] = new_indices
 
@@ -336,7 +305,6 @@ def extractPrimitivePack(a, indices, use_tangents):
 
     return result_primitive
 
-
 def checkUseNodeAttrs(bl_mat):
     mat_type = getMaterialType(bl_mat)
 
@@ -357,10 +325,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
     use_normals = True
 
-    # COMPAT: < Blender 4.1
-    if bpy.app.version < (4, 1, 0) and (bl_mesh.has_custom_normals or bl_mesh.use_auto_smooth or use_normals):
-        bl_mesh.calc_normals_split()
-
     use_tangents = False
     if meshNeedTangentsForExport(bl_mesh, exportSettings['optimizeAttrs']):
         try:
@@ -373,13 +337,11 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     if bl_mesh.uv_layers.active:
         texcoord_max = len(bl_mesh.uv_layers)
 
-
     morph_max = 0
     use_morph_normals = exportSettings['morph'] and use_normals
     use_morph_tangents = exportSettings['morph'] and use_tangents
     bl_shape_keys = []
 
-    # shape keys can't be retrieved when using Apply Modifiers (Blender/bpy limitation)
     if bl_mesh.shape_keys:
         bl_shape_keys = [
             key_block
@@ -399,23 +361,15 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             break
     color_max = color_index
 
-
     need_skin_attributes = exportSettings['skins'] and len(bl_joint_indices) > 0
     skinAttrIndexMax = 0
     if need_skin_attributes:
         for vertex in bl_mesh.vertices:
-            # any vertex should be skinned to at least one bone - to the
-            # armature itself if no groups are specified
             bones_count = max(len(vertex.groups), 1)
             if bones_count % 4 == 0:
                 bones_count -= 1
             skinAttrIndexMax = max(skinAttrIndexMax, bones_count // 4 + 1)
 
-    # Gathering position, normal and texcoords.
-
-    # Fetch vert positions and bone data (joint,weights)
-
-    # POSITIONS
     locs = np.empty(len(bl_mesh.vertices) * 3, dtype=np.float32)
     bl_mesh.vertices.foreach_get('co', locs)
     locs = locs.reshape(len(bl_mesh.vertices), 3)
@@ -427,7 +381,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         vs = vs.reshape(len(bl_mesh.vertices), 3)
         morph_locs.append(vs)
 
-    # glTF stores deltas in morph targets
     for vs in morph_locs:
         vs -= locs
 
@@ -435,19 +388,9 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     for vs in morph_locs:
         npConvertSwizzleLocation(vs)
 
-
-    # In Blender there is both per-vert data, like position, and also per-loop
-    # (loop=corner-of-poly) data, like normals or UVs. glTF only has per-vert
-    # data, so we need to split Blender verts up into potentially-multiple glTF
-    # verts.
     #
-    # First, we'll collect a "dot" for every loop: a struct that stores all the
-    # attributes at that loop, namely the vertex index (which determines all
-    # per-vert data), and all the per-loop data like UVs, etc.
     #
-    # Each unique dot will become one unique glTF vert.
 
-    # List all fields the dot struct needs.
     dot_fields = [('vertex_index', np.uint32)]
     if use_normals:
         dot_fields += [('nx', np.float32), ('ny', np.float32), ('nz', np.float32)]
@@ -497,20 +440,15 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             npNormalizeVecs(ns)
             morph_normals.append(ns)
 
-        # Force normalization of normals in case some normals are not (why ?)
         npNormalizeVecs(normals)
 
         for ns in [normals, *morph_normals]:
-            # Replace zero normals with the unit UP vector.
-            # Seems to happen sometimes with degenerate tris?
             is_zero = ~ns.any(axis=1)
             ns[is_zero, 2] = 1
 
-        # glTF stores deltas in morph targets
         for ns in morph_normals:
             ns -= normals
 
-        # npNormalizeVecs(normals)
         npConvertSwizzleLocation(normals)
         for ns in morph_normals:
             npConvertSwizzleLocation(ns)
@@ -525,7 +463,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
             dots['morph%dny' % morph_i] = ns[:, 1]
             dots['morph%dnz' % morph_i] = ns[:, 2]
         del morph_normals
-
 
     if use_tangents:
         tangents = np.empty(len(bl_mesh.loops) * 3, dtype=np.float32)
@@ -544,14 +481,11 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         dots['tw'] = signs
         del signs
 
-
     for uv_i in range(texcoord_max):
         layer = bl_mesh.uv_layers[uv_i]
         uvs = np.empty(len(bl_mesh.loops) * 2, dtype=np.float32)
         layer.data.foreach_get('uv', uvs)
         uvs = uvs.reshape(len(bl_mesh.loops), 2)
-        # Blender UV space -> glTF UV space
-        # u,v -> u,1-v
         uvs[:, 1] *= -1
         uvs[:, 1] += 1
 
@@ -561,20 +495,15 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
     for col_i in range(color_max):
         color_name = 'COLOR_' + str(col_i)
-        if bpy.app.version >= (3, 2, 0):
-            if bl_mesh.color_attributes[col_i].domain == "POINT":
-                colors = np.empty(len(bl_mesh.vertices) * 4, dtype=np.float32)
-            else:
-                colors = np.empty(len(bl_mesh.loops) * 4, dtype=np.float32)
+        if bl_mesh.color_attributes[col_i].domain == 'POINT':
+            colors = np.empty(len(bl_mesh.vertices) * 4, dtype=np.float32)
         else:
             colors = np.empty(len(bl_mesh.loops) * 4, dtype=np.float32)
 
         vertex_colors[color_name].data.foreach_get('color', colors)
         colors = colors.reshape(-1, 4)
 
-        if bpy.app.version < (3, 2, 0):
-            colors = npSRGBToLinear(colors)
-        elif vertex_colors[color_name].domain == "POINT":
+        if vertex_colors[color_name].domain == 'POINT':
             colors = colors[dots['vertex_index']]
 
         dots['color%dr' % col_i] = colors[:, 0]
@@ -589,7 +518,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
         joint_name_to_index = bl_joint_indices
         group_to_joint = [joint_name_to_index.get(g.name) for g in bl_vertex_groups]
 
-        # List of (joint, weight) pairs for each vert
         vert_bones = []
         max_num_influences = 0
 
@@ -609,17 +537,13 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
                     bones.append((joint, weight))
             bones.sort(key=lambda x: x[1], reverse=True)
             if not bones:
-                # Is not assign to any bone
                 bones = ((len(bl_joint_indices), 1.0),)  # Assign to a joint that will be created later
                 need_neutral_bone = True
             vert_bones.append(bones)
             if len(bones) > max_num_influences:
                 max_num_influences = len(bones)
 
-        # How many joint sets do we need? 1 set = 4 influences
         num_joint_sets = (max_num_influences + 3) // 4
-
-    # Calculate triangles and sort them into primitives.
 
     bl_mesh.calc_loop_triangles()
     loop_indices = np.empty(len(bl_mesh.loop_triangles) * 3, dtype=np.uint32)
@@ -636,18 +560,14 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
     for material_idx in unique_material_idxs:
         prim_indices[material_idx] = loop_indices[loop_material_idxs == material_idx]
 
-    # Create all the primitives.
     primitives = []
 
     for material_idx, dot_indices in prim_indices.items():
-        # Extract just dots used by this primitive, deduplicate them, and
-        # calculate indices into this deduplicated list.
         prim_dots = dots[dot_indices]
         prim_dots, indices = np.unique(prim_dots, return_inverse=True)
 
         if len(prim_dots) == 0:
             continue
-
 
         attributes = {}
         primitive = {
@@ -663,9 +583,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
             primitive['useNodeAttrs'] = checkUseNodeAttrs(bl_mesh.materials[material_idx])
             primitive['material'] = bl_mesh.materials[material_idx].name
-
-
-        # Now just move all the data for prim_dots into attribute arrays
 
         blender_idxs = prim_dots['vertex_index']
         attributes['POSITION'] = locs[blender_idxs].reshape(-1)
@@ -758,19 +675,14 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
         max_index = primitive['max_index']
 
-        # NOTE: avoiding WebGL2 PRIMITIVE_RESTART_FIXED_INDEX behavior
-        # see: https://www.khronos.org/registry/webgl/specs/latest/2.0/#5.18
         range_indices = 65535
         if exportSettings['indices'] == 'UNSIGNED_BYTE':
             range_indices = 255
         elif exportSettings['indices'] == 'UNSIGNED_INT':
             range_indices = 4294967295
 
-
         if max_index >= range_indices:
-            # Spliting result_primitives.
 
-            # At start, all indicees are pending.
             pending_primitive = {
                 'material' : primitive['material'],
                 'useNodeAttrs' : primitive['useNodeAttrs'],
@@ -780,7 +692,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
             pending_indices = pending_primitive['indices']
 
-            # Continue until all are processed.
             while len(pending_indices) > 0:
 
                 process_indices = pending_primitive['indices']
@@ -793,23 +704,17 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
                 written_mask = np.zeros(len(process_indices), dtype=bool)
 
-                # For all faces ...
                 for i in range(0, rnum):
                     offset = i * range_indices
 
-                    # ... check if it can be but in a range of maximum indices.
-                    # Yes, so store the primitive with its indices.
                     mask = (face_min_indices >= offset) & (face_max_indices < (offset + range_indices))
                     all_local_indices.append(process_indices[mask])
 
                     written_mask |= mask
 
-                # If not written, the triangel face has indices from different ranges.
                 pending_indices = process_indices[~written_mask]
                 pending_indices = pending_indices.reshape(-1)
 
-
-                # Only add result_primitives, which do have indices in it.
                 for local_indices in all_local_indices:
                     if len(local_indices) > 0:
                         current_primitive = extractPrimitiveFloor(pending_primitive, local_indices, use_tangents)
@@ -818,7 +723,6 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
 
                         log.debug('Adding primitive with splitting. Indices: ' + str(len(current_primitive['indices'])) + ' Vertices: ' + str(len(current_primitive['attributes']['POSITION']) // 3))
 
-                # Process primitive faces having indices in several ranges.
                 if len(pending_indices) > 0:
                     pending_primitive = extractPrimitivePack(pending_primitive, pending_indices, use_tangents)
 
@@ -827,14 +731,12 @@ def extractPrimitives(glTF, bl_mesh, bl_vertex_groups,
                     log.debug('Creating temporary primitive for splitting')
 
         else:
-            # No splitting needed.
             result_primitives.append(primitive)
 
             log.debug('Adding primitive without splitting. Indices: ' + str(len(primitive['indices'])) + ' Vertices: ' + str(len(primitive['attributes']['POSITION']) // 3))
 
     log.debug('Primitives created: ' + str(len(result_primitives)))
     return result_primitives
-
 
 def extractLinePrimitives(glTF, bl_mesh, exportSettings):
     """
@@ -844,7 +746,6 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
 
     log.debug('Extracting line primitive')
 
-    # material property currently isn't used for line meshes in the engine
     mat_name = (bl_mesh.materials[0].name if bl_mesh.materials
             and bl_mesh.materials[0] is not None else '')
 
@@ -872,11 +773,8 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
 
             orig_indices.append(new_index)
 
-
     result_primitives = []
 
-    # NOTE: avoiding WebGL2 PRIMITIVE_RESTART_FIXED_INDEX behavior
-    # see: https://www.khronos.org/registry/webgl/specs/latest/2.0/#5.18
     range_indices = 65535
     if exportSettings['indices'] == 'UNSIGNED_BYTE':
         range_indices = 255
@@ -884,31 +782,23 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
         range_indices = 4294967295
 
     if len(set(orig_indices)) >= range_indices:
-        # Splitting the bunch of a primitive's edges into several parts.
         split_parts = []
 
-        # Process every edge.
         for i in range(0, len(orig_indices), 2):
             edge = orig_indices[i:i+2]
 
             part_count = len(split_parts)
             part_suitabilities = [0]*part_count
 
-            # Define which split_part is more suitable for a particular edge.
-            # The best case is when the both edge indices are already contained
-            # in a split_part, so we won't increase the number of the part's
-            # unique indices by adding the edge into it.
             for i in range(0, part_count):
                 if edge[0] in split_parts[i]:
                     part_suitabilities[i] += 1
                 if edge[1] in split_parts[i]:
                     part_suitabilities[i] += 1
 
-            # Sort split_parts by their suitability, e.g. 2,1,1,1,0,0.
             split_part_order = sorted(range(part_count),
                     key=lambda i: part_suitabilities[i], reverse=True)
 
-            # Trying to find the first most suitable split_part with free space.
             need_new_part = True
             for i in split_part_order:
                 if len(set(split_parts[i] + edge)) <= range_indices:
@@ -916,11 +806,9 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
                     need_new_part = False
                     break
 
-            # Create new split_part if no existed part can contain an edge.
             if need_new_part:
                 split_parts.append(edge)
 
-        # Create new primitives based on the calculated split_parts.
         for old_indices in split_parts:
 
             part_primitive = {
@@ -939,7 +827,6 @@ def extractLinePrimitives(glTF, bl_mesh, exportSettings):
             result_primitives.append(part_primitive)
 
     else:
-        # No splitting needed.
         result_primitives.append(primitive)
 
     return result_primitives
@@ -971,7 +858,6 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
         nodes.append(node);
 
         if bl_node.type == 'ATTRIBUTE':
-            # rename for uniformity with GEOMETRY node
             node['colorLayer'] = bl_node.attribute_name
 
         elif bl_node.type == 'BSDF_METALLIC':
@@ -1014,15 +900,12 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['dataType'] = bl_node.data_type
             node['clampFactor'] = bl_node.clamp_factor
 
-            # Color
             node['blendType'] = bl_node.blend_type
             node['clampResult'] = bl_node.clamp_result
 
-            # Vector
             node['factorMode'] = bl_node.factor_mode
 
         elif bl_node.type == 'NORMAL_MAP' or bl_node.type == 'UVMAP':
-            # rename for uniformity with GEOMETRY node
             node['uvLayer'] = bl_node.uv_map
 
         elif bl_node.type == 'TANGENT':
@@ -1084,7 +967,6 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
             node['squashFrequency'] = bl_node.squash_frequency
 
         elif bl_node.type == 'TEX_COORD':
-            # NOTE: will be replaced by the corresponding index from glTF['nodes'] later
             node['object'] = bl_node.object
 
         elif bl_node.type == 'TEX_ENVIRONMENT':
@@ -1110,7 +992,6 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
                 alphaMode = getTexImage(bl_node).alpha_mode
 
-                # set Channel Packed for disabled alpha mode
                 if extractColorSpace(bl_node) in ['non-color', 'raw']:
                     alphaMode = 'CHANNEL_PACKED'
 
@@ -1125,23 +1006,34 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
         elif bl_node.type == 'TEX_GRADIENT':
             node['gradientType'] = bl_node.gradient_type
 
+        elif bl_node.type == 'TEX_MAGIC':
+            node['turbulenceDepth'] = bl_node.turbulence_depth
+
         elif bl_node.type == 'TEX_NOISE':
             node['falloffFactor'] = bl_node.v3d.falloff_factor
             node['dispersionFactor'] = bl_node.v3d.dispersion_factor
-
-            # COMPAT: Blender 4.1+
-            if hasattr(bl_node, 'noise_type'):
-                node['noiseType'] = bl_node.noise_type
+            node['noiseType'] = bl_node.noise_type
 
         elif bl_node.type == 'TEX_SKY':
             node['skyType'] = bl_node.sky_type
-            node['sunDirection'] = extractVec(bl_node.sun_direction)
-            node['turbidity'] = bl_node.turbidity
-            node['groundAlbedo'] = bl_node.ground_albedo
+            if bl_node.sky_type in ['PREETHAM', 'HOSEK_WILKIE']:
+                node['sunDirection'] = extractVec(bl_node.sun_direction)
+                node['turbidity'] = bl_node.turbidity
+                node['groundAlbedo'] = bl_node.ground_albedo
+            else:
+                node['sunElevation'] = bl_node.sun_elevation
+                node['sunRotation'] = bl_node.sun_rotation
+
+                node['altitude'] = bl_node.altitude
+
+                node['airDensity'] = bl_node.air_density
+                if bpy.app.version < (5, 0, 0):
+                    node['aerosolDensity'] = bl_node.dust_density
+                else:
+                    node['aerosolDensity'] = bl_node.aerosol_density
+                node['ozoneDensity'] = bl_node.ozone_density
 
         elif bl_node.type == 'TEX_VORONOI':
-            # only 3D is supported right now
-            # node['dimension'] = '3D'
             node['distance'] = bl_node.distance
             node['feature'] = bl_node.feature
 
@@ -1184,17 +1076,14 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
                     node['type'] == 'OSL_NODE')
             node['outputs'].append(defval)
 
-        # "is_active_output" exists on both tree outputs and group outputs
         node["is_active_output"] = (hasattr(bl_node, "is_active_output")
                 and bl_node.is_active_output)
-
 
     for bl_link in node_tree.links:
         if not bl_link.is_valid:
             log.error('Invalid edge')
             continue
 
-        # indices
         from_node = bl_nodes.find(bl_link.from_node.name)
         to_node = bl_nodes.find(bl_link.to_node.name)
 
@@ -1216,17 +1105,13 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
 
     return { 'nodes' : nodes, 'edges' : edges }
 
-
 def filterNodeInputs(bl_node):
     inputs = []
 
     for bl_input in bl_node.inputs:
-        # An input of type CUSTOM is usually the last input/output socket
-        # in the "Group Input"/"Group Output" nodes, should be safe to omit
         if bl_input.type == 'CUSTOM':
             continue
 
-        # Invisible Blender-specific input introduced in Blender 3.2
         if bl_input.name == 'Weight' and bl_input.enabled == False:
             continue
 
@@ -1238,8 +1123,6 @@ def filterNodeOutputs(bl_node):
     outputs = []
 
     for bl_output in bl_node.outputs:
-        # An input of type CUSTOM is usually the last input/output socket
-        # in the "Group Input"/"Group Output" nodes, should be safe to omit
         if bl_output.type == 'CUSTOM':
             continue
 
@@ -1254,7 +1137,6 @@ def extractCurveMapping(mapping, x_range):
 
     data = []
 
-    # first pixel = x_range[0], last pixel = x_range[1]
     pix_size = (x_range[1] - x_range[0]) / (CURVE_DATA_SIZE - 1)
 
     for i in range(CURVE_DATA_SIZE):
@@ -1269,7 +1151,6 @@ def extractCurveMapping(mapping, x_range):
 def extractColorRamp(color_ramp):
     """Make a curve from color ramp data"""
 
-    # for uniformity looks like a glTF animation sampler
     curve = {
         'input' : [],
         'output' : [],
@@ -1290,7 +1171,6 @@ def findNodeSocketNum(socket_list, identifier):
         if sock.identifier == identifier:
             return i
     return -1
-
 
 def preprocessOSL(code):
     out = io.StringIO()
@@ -1341,7 +1221,6 @@ def genOSLCode(ast, shaderName):
     code = pyosl.glslgen.generate(ast)
     return code
 
-
 def composeNodeGraph(bl_mat, exportSettings, glTF):
 
     graph = { 'nodes' : [], 'edges' : [] }
@@ -1352,13 +1231,13 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
         'inputs': [
             [0, 0, 0, 0],
             [0, 0, 0, 0],
-            [0, 0, 0]
+            [0, 0, 0],
+            0
         ],
         'outputs': [],
         'is_active_output': True
     })
 
-    # from Blender 4.0
     appendNode(graph, {
         'name': 'Principled-Based',
         'type': 'BSDF_PRINCIPLED_BL',
@@ -1369,6 +1248,7 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
             1.45,               # IOR
             1,                  # Alpha
             [0.0, 0.0, 0.0],    # Normal
+            0.0,                # Diffuse Roughness
             0.0,                # Subsurface Weight
             [0.0, 0.0, 0.0],    # Subsurface Radius
             0.0,                # Subsurface Scale
@@ -1390,6 +1270,8 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
             [1.0, 1.0, 1.0, 1.0], # Sheen Tint
             [1.0, 1.0, 1.0, 1.0], # Emission Color
             0.0,                # Emission Strength
+            0.0,                # Thin Film Thickness
+            0.0,                # Thin Film IOR
         ],
         'outputs': [[0, 0, 0, 0]]
     }, 0)
@@ -1414,9 +1296,7 @@ def appendNode(nodeGraph, node, toNode=-1, connections=[(0, 0)]):
 
     return nodeIndex
 
-
 def getView3DSpaceProp(prop):
-    # screen -> area -> space
     #for area in bpy.data.screens[bpy.context.screen.name].areas:
     for area in bpy.context.screen.areas:
         if area.type != 'VIEW_3D':
@@ -1427,7 +1307,6 @@ def getView3DSpaceProp(prop):
                 return getattr(space, prop)
 
     return None
-
 
 def extractConstraints(glTF, bl_obj):
     bl_constraints = bl_obj.constraints
@@ -1538,15 +1417,11 @@ def extractConstraints(glTF, bl_obj):
                     'useClampValue': curveObj.data.use_path_clamp,
                     'useCyclic': splineAttrs['useCyclic'],
                     'influence': bl_cons.influence,
-                    # Blender's specific params
                     'useChordLength': True,
                     'useObjOffset': True,
                     'objOffsetMode': 1, # MATRIX
                     'objOffsetRotMode': 1, # CONSTRAINT_FIRST
                     'fixCameraLightRotation': False, # disable, bcs useObjOffset is enabled
-                    # TODO
-                    # 'offsetValue': -(bl_cons.offset / curveObj.data.path_duration),
-                    # 'useCurveRadius': bl_cons.use_curve_radius,
                 }))
 
         elif bl_cons.type == 'LIMIT_DISTANCE':
@@ -1599,7 +1474,6 @@ def extractConstraints(glTF, bl_obj):
                     'min': bl_cons.min_z,
                     'max': bl_cons.max_z
                 }))
-
 
         elif bl_cons.type == 'LIMIT_SCALE':
             constraints.append(dict(cons, **{
@@ -1773,8 +1647,6 @@ def extractAxisParam(param, prefix, use_negative):
         param = param.replace('NEGATIVE_', '')
         param = '-' + param
 
-    # param = param.lower()
-
     if param == 'X':
         return 'X'
     elif param == 'Y':
@@ -1813,7 +1685,6 @@ def extractImageBindata(bl_image, scene, exportSettings):
     elif fileFormat == 'WEBP':
         return imageSaveRender(bl_image, scene, 'WEBP', 'RGBA', quality=90)
     elif fileFormat == 'BMP':
-        # RGBA bitmaps seams to be not supported
         return imageSaveRender(bl_image, scene, 'BMP', 'RGB')
     elif fileFormat == 'HDR':
         return imageSaveRender(bl_image, scene, 'HDR', 'RGB')
@@ -1824,7 +1695,6 @@ def imageSaveRender(bl_image, scene, file_format, color_mode, color_depth=None, 
                     quality=None):
 
     if not bl_image.is_dirty:
-        # it's much faster to access packed file data if no conversion is needed
         if bl_image.packed_file is not None and bl_image.file_format == file_format:
             return bl_image.packed_file.data
 
@@ -1936,16 +1806,13 @@ def extractNURBSSpline(spline, matrixWorld = None):
             if not usePointsTilt and point.tilt != 0.0:
                 usePointsTilt = True
 
-        # Calculate knot values, blender does not store knots
         innerMultiplicity = degree if spline.use_bezier_u else 1 # for knots
 
         if spline.use_cyclic_u:
             if spline.use_endpoint_u:
-                # behavior in blender version >= 3.2
                 head = tail = order
                 extraPointsNum = 1
             elif spline.use_bezier_u:
-                # behavior in blender version >= 3.1
                 head = tail = order
                 cvs.extend(cvs[:3])
                 del cvs[:3]

@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,14 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import os
 import sys
 
 join = os.path.join
 
-# used here to get path to plugin utils, afterwards use pluginUtils.path.getRoot()
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(join(ROOT_DIR, 'python'))
 
@@ -52,19 +49,6 @@ from pluginUtils.path import getRoot
 
 log = pluginUtils.log.getLogger('V3D-BL')
 
-# COMPAT: Blender <4.2
-bl_info = {
-    "name": "Verge3D",
-    "description": "Artist-friendly toolkit for creating 3D web experiences",
-    "author": "Soft8Soft",
-    "version": (4, 10, 0),
-    "blender": (3, 4, 0),
-    "location": "File > Import-Export",
-    "doc_url": "https://www.soft8soft.com/docs/manual/en/index.html",
-    "tracker_url": "https://www.soft8soft.com/forum/bug-reports-and-feature-requests/",
-    "category": "Render"
-}
-
 from bpy.props import (CollectionProperty,
                        StringProperty,
                        BoolProperty,
@@ -72,7 +56,6 @@ from bpy.props import (CollectionProperty,
                        FloatProperty)
 
 from bpy_extras.io_utils import (ExportHelper)
-
 
 class V3D_AddonPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
@@ -101,7 +84,6 @@ class V3D_OT_export():
         scene0 = bpy.data.scenes[0]
         v3d_export = scene0.v3d_export
 
-        # All custom export settings are stored in this container.
         exportSettings = {}
 
         exportSettings['filepath'] = bpy.path.ensure_ext(self.filepath, self.filename_ext)
@@ -109,8 +91,7 @@ class V3D_OT_export():
 
         exportSettings['format'] = self.export_format
         exportSettings['copyright'] = v3d_export.copyright
-        # COMPAT: using native shadow checker starting from Blender 4.2
-        exportSettings['useShadows'] = v3d_export.use_shadows if bpy.app.version < (4, 2, 0) else scene0.eevee.use_shadows
+        exportSettings['useShadows'] = scene0.eevee.use_shadows
         exportSettings['shadowMapType'] = v3d_export.shadow_map_type
         exportSettings['shadowMapSide'] = v3d_export.shadow_map_side
         exportSettings['esmDistanceScale'] = v3d_export.esm_distance_scale
@@ -119,12 +100,10 @@ class V3D_OT_export():
         exportSettings['iblEnvironmentMode'] = v3d_export.ibl_environment_mode
         exportSettings['bakeModifiers'] = v3d_export.bake_modifiers
         exportSettings['bakeArmatureActions'] = v3d_export.bake_armature_actions
-        # opentype module is not available for HTML export
         exportSettings['bakeText'] = v3d_export.bake_text if self.export_format != 'HTML' else True
         exportSettings['exportConstraints'] = v3d_export.export_constraints
         exportSettings['exportCustomProps'] = v3d_export.export_custom_props
         exportSettings['lzmaEnabled'] = v3d_export.lzma_enabled
-        # basic transcoder module is not available for HTML export
         exportSettings['compressTextures'] = v3d_export.compress_textures if self.export_format != 'HTML' else False
         exportSettings['optimizeAttrs'] = v3d_export.optimize_attrs
         exportSettings['aaMethod'] = v3d_export.aa_method
@@ -149,7 +128,6 @@ class V3D_OT_export():
 
         exportSettings['strip'] = True
 
-        # valid values are: 'UNSIGNED_INT', 'UNSIGNED_SHORT', 'UNSIGNED_BYTE'
         exportSettings['indices'] = 'UNSIGNED_INT'
         exportSettings['forceIndices'] = False
 
@@ -165,7 +143,7 @@ class V3D_OT_export():
         pass
 
 class V3D_OT_export_html(bpy.types.Operator, ExportHelper, V3D_OT_export):
-    '''Export scene to HTML'''
+    """Export scene to HTML"""
     bl_idname = 'export_scene.v3d_html'
     bl_label = 'Export HTML'
 
@@ -175,7 +153,7 @@ class V3D_OT_export_html(bpy.types.Operator, ExportHelper, V3D_OT_export):
     export_format = 'HTML'
 
 class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
-    '''Export scene to glTF 2.0 format'''
+    """Export scene to glTF 2.0 format"""
     bl_idname = 'export_scene.v3d_gltf'
     bl_label = 'Export Verge3D glTF'
 
@@ -185,7 +163,7 @@ class V3D_OT_export_gltf(bpy.types.Operator, ExportHelper, V3D_OT_export):
     export_format = 'ASCII'
 
 class V3D_OT_export_glb(bpy.types.Operator, ExportHelper, V3D_OT_export):
-    '''Export scene to glTF 2.0 binary format'''
+    """Export scene to glTF 2.0 binary format"""
     bl_idname = 'export_scene.v3d_glb'
     bl_label = 'Export Verge3D glTF Binary'
 
@@ -214,7 +192,7 @@ def disableBuiltInGLTFAddon():
         bpy.types.TOPBAR_MT_file_export.remove(io_scene_gltf2.menu_func_export)
 
 def register():
-    from . import custom_props, custom_ui, manual_map
+    from . import custom_props, custom_ui, reexport, manual_map
 
     AppManagerConn.init(getRoot(), 'BLENDER')
 
@@ -228,6 +206,7 @@ def register():
 
     custom_props.register()
     custom_ui.register()
+    reexport.register()
     manual_map.register()
 
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLTF)
@@ -242,9 +221,8 @@ def register():
     if bpy.context.preferences.addons[__package__].preferences.disable_builtin_gltf_addon:
         bpy.app.timers.register(disableBuiltInGLTFAddon, first_interval=ADDON_DISABLE_DELAY, persistent=True)
 
-
 def unregister():
-    from . import custom_props, custom_ui, manual_map
+    from . import custom_props, custom_ui, reexport, manual_map
 
     bpy.utils.unregister_class(V3D_AddonPreferences)
 
@@ -256,6 +234,7 @@ def unregister():
 
     custom_props.unregister()
     custom_ui.unregister()
+    reexport.unregister()
     manual_map.unregister()
 
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLTF)

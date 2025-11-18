@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 from string import Template
 
 import bpy
@@ -26,10 +24,8 @@ from .gltf2_extract import *
 from .node_material_wrapper import NodeMaterialWrapper
 from .utils import *
 
-
 TO_MESH_SOURCE_CUSTOM_PROP = "v3d_to_mesh_source_object"
 WORLD_NODE_MAT_NAME = Template('Verge3D_Environment_${name}')
-
 
 def flattenCollectionUnique(collection, dest_set):
 
@@ -39,10 +35,8 @@ def flattenCollectionUnique(collection, dest_set):
         dest_set.add(bl_obj)
 
         if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
-            # prevent possible infinite recursion for collections
             if is_unique:
                 flattenCollectionUnique(bl_obj.instance_collection, dest_set)
-
 
 def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
     """
@@ -57,7 +51,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
     generatedMeshes = []
     generatedShapeKeys = []
 
-    # APPLY MODIFIERS
     needApplyMods = bakeModifiers is True and objHasExportedModifiers(objOriginal)
 
     objModsApplied = objOriginal
@@ -77,8 +70,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
         generatedMeshes.append(tmpMesh)
         generatedMeshes.append(objModsApplied.data)
 
-
-    # TRIANGULATE
     needTangents = meshNeedTangentsForExport(objModsApplied.data, optimizeTangents)
     if not needTangents:
         log.debug('Tangent attribute will not be exported for mesh "%s"' % objOriginal.data.name)
@@ -90,9 +81,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
         objDelNotExportedModifiers(objTriangulated)
         objAddTriModifier(objTriangulated)
 
-        # need to copy object data before changes because it's shared with
-        # the object coming from the previous operation (due to .copy() not
-        # creating a new mesh datablock)
         tmpMesh = objTriangulated.data.copy()
         objTriangulated.data = tmpMesh
         if tmpMesh.shape_keys:
@@ -104,8 +92,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
         generatedObjs.append(objTriangulated)
         generatedMeshes.append(tmpMesh)
         generatedMeshes.append(objTriangulated.data)
-
-    # TRANSFER SHAPE KEYS
 
     needTransferShapeKeys = (objOriginal.data.shape_keys is not None and objTriangulated.data.shape_keys is None)
 
@@ -120,7 +106,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
                     + 'change vertex count. Object "' + objOriginal.name + '".')
 
         generatedObjs.append(objShapeKeyTransfered)
-        # no new mesh was generated
 
     resultingMesh = objShapeKeyTransfered.data
 
@@ -133,7 +118,6 @@ def meshObjGetExportData(objOriginal, bakeModifiers, optimizeTangents):
         bpy.data.batch_remove(generatedShapeKeys)
 
     return resultingMesh
-
 
 def filterApply(exportSettings):
     """
@@ -155,9 +139,6 @@ def filterApply(exportSettings):
 
     exportSettings['filteredObjectsShallow'] = filteredObjectsShallow
     exportSettings['filteredObjectsWithIC'] = filteredObjectsWithIC
-
-
-    # meshes
 
     filteredMeshes = []
     filteredVertexGroups = {}
@@ -189,7 +170,6 @@ def filterApply(exportSettings):
                         exportSettings['bakeModifiers'], exportSettings['optimizeAttrs'])
 
                 if mesh_for_export != current_bl_mesh:
-                    # a new mesh was generated
                     mesh_for_export[TO_MESH_SOURCE_CUSTOM_PROP] = current_bl_object
                     temporaryMeshes.append(mesh_for_export)
                     current_bl_mesh = mesh_for_export
@@ -202,9 +182,6 @@ def filterApply(exportSettings):
         filteredMeshes.append(current_bl_mesh)
         filteredVertexGroups[getPtr(bl_mesh)] = current_bl_object.vertex_groups
 
-
-    # curves (as well as surfaces and texts)
-
     filteredCurves = []
 
     for bl_curve in bpy.data.curves:
@@ -212,11 +189,9 @@ def filterApply(exportSettings):
         if bl_curve.users == 0:
             continue
 
-        # supported curve
         if isinstance(bl_curve, bpy.types.TextCurve) and not exportSettings['bakeText']:
             filteredCurves.append(bl_curve)
 
-        # convert to mesh
         else:
             current_bl_curve = bl_curve
             current_bl_mesh = None
@@ -268,9 +243,6 @@ def filterApply(exportSettings):
             filteredMeshes.append(current_bl_mesh)
             filteredVertexGroups[getPtr(bl_curve)] = current_bl_object.vertex_groups
 
-
-    # fonts
-
     filteredFonts = []
 
     for bl_curve in filteredCurves:
@@ -278,9 +250,6 @@ def filterApply(exportSettings):
         font = bl_curve.font if isinstance(bl_curve, bpy.types.TextCurve) else None
         if font is not None and font not in filteredFonts and font.users != 0:
             filteredFonts.append(font)
-
-
-    # metaballs
 
     for bl_meta in bpy.data.metaballs:
 
@@ -320,15 +289,11 @@ def filterApply(exportSettings):
         filteredMeshes.append(current_bl_mesh)
         filteredVertexGroups[getPtr(bl_meta)] = current_bl_obj.vertex_groups
 
-
     exportSettings['filteredCurves'] = filteredCurves
     exportSettings['filteredFonts'] = filteredFonts
     exportSettings['filteredMeshes'] = filteredMeshes
     exportSettings['filteredVertexGroups'] = filteredVertexGroups
     exportSettings['temporaryMeshes'] = temporaryMeshes
-
-
-    # materials
 
     filteredMaterials = []
     temporaryMaterials = []
@@ -369,7 +334,7 @@ def filterApply(exportSettings):
 
         world_mat_wrapper = NodeMaterialWrapper(world_mat)
 
-        if curr_world.use_nodes:
+        if bpy.app.version >= (5, 0, 0) or curr_world.use_nodes:
             mat_node_tree = curr_world.node_tree.copy()
         else:
             mat_node_tree = world_mat.node_tree.copy()
@@ -399,7 +364,6 @@ def filterApply(exportSettings):
         if group.users == 0:
             continue
 
-        # only groups used by 'EEVEE' materials
         for bl_mat in filteredMaterials:
             mat_type = getMaterialType(bl_mat)
             if mat_type == 'EEVEE':
@@ -408,7 +372,6 @@ def filterApply(exportSettings):
                     filteredNodeGroups.append(group)
 
     exportSettings['filteredNodeGroups'] = filteredNodeGroups
-
 
     filteredTextures = []
 
@@ -435,7 +398,6 @@ def filterApply(exportSettings):
 
     exportSettings['filteredTextures'] = filteredTextures
 
-
     filteredImages = []
 
     for bl_texture in filteredTextures:
@@ -445,7 +407,6 @@ def filterApply(exportSettings):
             filteredImages.append(img)
 
     exportSettings['filteredImages'] = filteredImages
-
 
     filteredCameras = []
 
@@ -458,7 +419,6 @@ def filterApply(exportSettings):
 
     exportSettings['filteredCameras'] = filteredCameras
 
-
     filteredLights = []
 
     for bl_light in bpy.data.lights:
@@ -470,7 +430,6 @@ def filterApply(exportSettings):
 
     exportSettings['filteredLights'] = filteredLights
 
-
     filteredLightProbes = []
 
     for bl_probe in bpy.data.lightprobes:
@@ -478,15 +437,12 @@ def filterApply(exportSettings):
         if bl_probe.users == 0:
             continue
 
-        # only "Reflection Cubemap" and "Reflection Plane" light probes are currently supported
-        # COMPAT: CUBEMAP/PLANAR used in Blender < 4.1
-        if bl_probe.type != 'CUBEMAP' and bl_probe.type != 'SPHERE' and bl_probe.type != 'PLANAR' and bl_probe.type != 'PLANE':
+        if bl_probe.type != 'SPHERE' and bl_probe.type != 'PLANE':
             continue
 
         filteredLightProbes.append(bl_probe)
 
     exportSettings['filteredLightProbes'] = filteredLightProbes
-
 
     jointIndices = {}
 
@@ -506,7 +462,6 @@ def filterApply(exportSettings):
                 grp[bl_bone.name] = len(grp)
 
     exportSettings['jointIndices'] = jointIndices
-
 
     filteredClippingPlanes = []
 

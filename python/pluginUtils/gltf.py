@@ -575,9 +575,7 @@ def createAnimSampler(gltf, binary, keys, values, dim, interpolation='LINEAR'):
     return sampler
 
 def mergeAnimations(gltf, animations):
-    '''
-    Find animations with the same name and merge them into one
-    '''
+    """Find animations with the same name and merge them into one"""
 
     newAnimations = []
     animMergeInfo = {}

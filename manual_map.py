@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -12,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import re
 from pluginUtils.manager import AppManagerConn
@@ -23,13 +22,10 @@ def add_verge3d_manual_map():
 
     url_manual_prefix = re.sub('index.html$', '', manualURL)
     url_manual_mapping = (
-        # buttons
         ('bpy.ops.view3d.v3d_sneak_peek', 'blender/Beginners-Guide.html#Sneak_Peek'),
         ('bpy.ops.view3d.v3d_app_manager', 'blender/Beginners-Guide.html#App_Manager'),
-        # menus
         ('bpy.ops.export_scene.v3d_gltf', 'blender/Beginners-Guide.html#Export'),
         ('bpy.ops.export_scene.v3d_glb', 'blender/Beginners-Guide.html#Export'),
-        # export settings
         ('bpy.types.v3dexportsettings.lzma_enabled', 'introduction/Asset-compression.html'),
         ('bpy.types.v3dexportsettings.compress_textures', 'introduction/Texture-Compression.html'),
         ('bpy.types.v3dexportsettings.export_animations', 'blender/Animation.html'),
@@ -46,10 +42,8 @@ def add_verge3d_manual_map():
         ('bpy.types.sceneeevee.gtao*', 'blender/Lighting-and-Rendering.html#ambient_occlusion'),
         ('bpy.types.v3doutlinesettings*', 'blender/Lighting-and-Rendering.html#outline_rendering'),
         ('bpy.types.v3dexportsettings*', 'blender/Lighting-and-Rendering.html#global_rendering_properties_verge3d'),
-        # world settings
         ('bpy.types.v3dworldsettings*', 'blender/Lighting-and-Rendering.html#world_rendering_properties'),
-        # object settings
-        ('bpy.types.v3dobjectsettings.anim*', 'blender/Animation.html#Verge3D_Per_Object_Settings'),
+        ('bpy.types.v3dobjectsettings.anim*', 'blender/Animation.html#per_object_settings'),
         ('bpy.types.v3dobjectsettings.render_order', 'blender/Lighting-and-Rendering.html#per_object_rendering_properties'),
         ('bpy.types.v3dobjectsettings.render_order', 'blender/Lighting-and-Rendering.html#per_object_rendering_properties'),
         ('bpy.types.v3dobjectsettings.frustum_culling', 'blender/Lighting-and-Rendering.html#per_object_rendering_properties'),
@@ -58,32 +52,25 @@ def add_verge3d_manual_map():
         ('bpy.types.v3dobjectsettings.canvas_break*', 'blender/Lighting-and-Rendering.html#visibility_breakpoints'),
         ('bpy.types.v3dobjectsettings.canvas_fit*', 'blender/Camera.html#fit_to_camera_edge'),
         ('bpy.types.v3dobjectsettings.fix_ortho_zoom', 'blender/Camera.html'),
-        # camera settings
         ('bpy.types.v3dcamerasettings.orbit*', 'blender/Camera.html#orbit_camera_settings'),
         ('bpy.types.v3dcamerasettings.fps*', 'blender/Camera.html#firstperson_camera_settings'),
         ('bpy.types.v3dcamerasettings.enable_pointer_lock', 'blender/Camera.html#firstperson_camera_settings'),
         ('bpy.types.v3dcamerasettings*', 'blender/Camera.html#camera_settings'),
         ('bpy.ops.camera.v3d_orbit_camera_target_from_cursor', 'blender/Camera.html#orbit_camera_settings'),
         ('bpy.ops.camera.v3d_orbit_camera_update_view', 'blender/Camera.html#orbit_camera_settings'),
-        # mesh,curve settings
         ('bpy.types.v3dlinerenderingsettings*', 'blender/Lighting-and-Rendering.html#line_rendering'),
-        # material settings
         ('bpy.types.v3dmaterialsettings.blend_method', 'blender/Transparency.html#setting_up_in_blender'),
         ('bpy.types.material.alpha_threshold', 'blender/Transparency.html#setting_up_in_blender'),
         ('bpy.types.v3dmaterialsettings.transparency_hack', 'blender/Transparency.html#setting_up_in_blender'),
         ('bpy.types.v3dmaterialsettings.depth_write', 'blender/Transparency.html#alpha_add'),
         ('bpy.types.v3dmaterialsettings.gltf_compat', 'blender/GLTF-Materials.html'),
         ('bpy.types.v3dmaterialsettings*', 'blender/Lighting-and-Rendering.html#material_verge3d_panel'),
-        # light settings
         ('bpy.types.v3dshadowsettings*', 'blender/Shadows.html#per_light_settings'),
-        # texture settings
         ('bpy.types.v3dtexturesettings.anisotropy', 'blender/Shader-Nodes-Reference.html#Image_Texture'),
         ('bpy.types.v3dimagesettings.compression_method', 'introduction/Texture-Compression.html#tweaking_compression'),
         ('bpy.types.v3dtexturenoisesettings*', 'blender/Shader-Nodes-Reference.html#Noise_Texture'),
-        # light probe settings
         ('bpy.types.v3dlightprobesettings*', 'blender/Lighting-and-Rendering.html#light_probes'),
         ('bpy.types.lightprobe.visibility_collection', 'blender/Lighting-and-Rendering.html#light_probes'),
-        # clipping plane settings
         ('bpy.types.v3dobjectsettings.clipping_plane*', 'blender/Lighting-and-Rendering.html#clipping_planes'),
         ('bpy.ops.object.add_clipping_plane', 'blender/Lighting-and-Rendering.html#clipping_planes'),
     )

@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,14 +12,12 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import os
 
 import pluginUtils.gltf as gltf
 
 from .utils import *
-
 
 def getUsedMaterials():
     """
@@ -34,7 +31,6 @@ def getUsedMaterials():
 
     return materials
 
-
 def getImageIndex(exportSettings, uri):
     """
     Return the image index in the glTF array.
@@ -47,7 +43,6 @@ def getImageIndex(exportSettings, uri):
         return exportSettings['uriCache']['uri'].index(uri)
 
     return -1
-
 
 def getTextureIndexByTexture(exportSettings, glTF, bl_texture):
     """
@@ -125,7 +120,6 @@ def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
         else:
             return -1
 
-    # color factor
     if isinstance(fromNode, bpy.types.ShaderNodeMix) and fromNode.data_type == 'RGBA' and fromNode.blend_type == 'MULTIPLY':
         if len(fromNode.inputs['A'].links) > 0:
             fromNode = fromNode.inputs['A'].links[0].from_node
@@ -141,7 +135,6 @@ def getTextureIndexNode(exportSettings, glTF, name, shaderNode):
         return -1
 
     return getTextureIndexByTexture(exportSettings, glTF, fromNode)
-
 
 def getTexcoordIndex(glTF, name, shaderNode):
     """
@@ -190,7 +183,6 @@ def getTexcoordIndex(glTF, name, shaderNode):
     if inputNode.uv_map == '':
         return 0
 
-    # try to gather map index.
     for bl_mesh in bpy.data.meshes:
         texCoordIndex = bl_mesh.uv_layers.find(inputNode.uv_map)
         if texCoordIndex >= 0:
@@ -229,7 +221,6 @@ def getSkinIndex(glTF, name, index_offset):
         index += 1
 
     return -1
-
 
 def getCameraIndex(glTF, name):
     """
@@ -293,7 +284,6 @@ def getNodeGraphIndex(glTF, name):
         index += 1
 
     return -1
-
 
 def getImageExportedURI(exportSettings, bl_image):
     """
@@ -364,7 +354,6 @@ def getScalar(default_value, init_value = 0.0):
 
     return return_value
 
-
 def getVec3(default_value, init_value = [0.0, 0.0, 0.0]):
     """
     Return vec3 with a given default/fallback value.
@@ -385,7 +374,6 @@ def getVec3(default_value, init_value = [0.0, 0.0, 0.0]):
 
     return return_value
 
-
 def getVec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
     """
     Return vec4 with a given default/fallback value.
@@ -405,7 +393,6 @@ def getVec4(default_value, init_value = [0.0, 0.0, 0.0, 1.0]):
             return return_value
 
     return return_value
-
 
 def getIndex(list, name):
     """
@@ -444,7 +431,6 @@ def getByName(list, name):
 
     return None
 
-
 def getOrCreateDefaultMatIndex(glTF):
     def_idx = gltf.getMaterialIndex(glTF, DEFAULT_MAT_NAME)
 
@@ -476,7 +462,8 @@ def createDefaultMaterial():
                             "inputs" : [
                                 [ 0, 0, 0, 0 ],
                                 [ 0, 0, 0, 0 ],
-                                [ 0, 0, 0 ]
+                                [ 0, 0, 0 ],
+                                0
                             ],
                             "is_active_output" : True,
                             "name" : "Material Output",
@@ -494,7 +481,6 @@ def createDefaultMaterial():
                             "outputs" : [
                                 [ 0, 0, 0, 0 ]
                             ],
-                            # COMPAT: used in Blender < 4.4, should be replaced to DIFFUSE_BSDF_BL
                             "type" : "BSDF_DIFFUSE_BL"
                         }
                     ]
@@ -511,7 +497,6 @@ def getFontPath(bl_font):
     path = bl_font.filepath
     abspath = bpy.path.abspath(bl_font.filepath)
 
-    # handle missing font as well
     if path == '<builtin>' or not os.path.isfile(abspath):
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts', 'bfont.woff')
     else:
@@ -522,19 +507,16 @@ def getFontExportedURI(bl_font):
     path = bl_font.filepath
     abspath = bpy.path.abspath(bl_font.filepath)
 
-    # handle missing font as well
     if path == '<builtin>' or not os.path.isfile(abspath):
         return 'bfont.woff'
     else:
         return bpy.path.basename(path)
-
 
 def getFontExportedMimeType(bl_font):
 
     path = bl_font.filepath
     abspath = bpy.path.abspath(bl_font.filepath)
 
-    # handle missing font as well
     if path == '<builtin>' or not os.path.isfile(abspath):
         return 'font/woff'
     else:

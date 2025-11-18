@@ -1,4 +1,10 @@
-class ConfigNamespace(object):
+from typing import Dict, Iterable, List, TextIO, Union, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ini import INIConfig, INISection
+
+
+class ConfigNamespace:
     """Abstract class representing the interface of Config objects.
 
     A ConfigNamespace is a collection of names mapped to values, where
@@ -12,27 +18,27 @@ class ConfigNamespace(object):
 
     Subclasses must implement the methods for container-like access,
     and this class will automatically provide dotted access.
-
     """
 
     # Methods that must be implemented by subclasses
 
-    def _getitem(self, key):
+    def _getitem(self, key: str) -> object:
         return NotImplementedError(key)
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: object):
         raise NotImplementedError(key, value)
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str) -> None:
         raise NotImplementedError(key)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[str]:
+        # FIXME Raise instead return
         return NotImplementedError()
 
-    def _new_namespace(self, name):
+    def _new_namespace(self, name: str) -> "ConfigNamespace":
         raise NotImplementedError(name)
 
-    def __contains__(self, key):
+    def __contains__(self, key: str) -> bool:
         try:
             self._getitem(key)
         except KeyError:
@@ -44,20 +50,20 @@ class ConfigNamespace(object):
     #
     # To distinguish between accesses of class members and namespace
     # keys, we first call object.__getattribute__().  If that succeeds,
-    # the name is assumed to be a class member.  Otherwise it is
+    # the name is assumed to be a class member.  Otherwise, it is
     # treated as a namespace key.
     #
     # Therefore, member variables should be defined in the class,
     # not just in the __init__() function.  See BasicNamespace for
     # an example.
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Union[object, "Undefined"]:
         try:
             return self._getitem(key)
         except KeyError:
             return Undefined(key, self)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Union[object, "Undefined"]:
         try:
             return self._getitem(name)
         except KeyError:
@@ -65,14 +71,14 @@ class ConfigNamespace(object):
                 raise AttributeError
             return Undefined(name, self)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: object) -> None:
         try:
             object.__getattribute__(self, name)
             object.__setattr__(self, name, value)
         except AttributeError:
             self.__setitem__(name, value)
 
-    def __delattr__(self, name):
+    def __delattr__(self, name: str) -> None:
         try:
             object.__getattribute__(self, name)
             object.__delattr__(self, name)
@@ -82,11 +88,12 @@ class ConfigNamespace(object):
     # During unpickling, Python checks if the class has a __setstate__
     # method.  But, the data dicts have not been initialised yet, which
     # leads to  _getitem and hence __getattr__ raising an exception.  So
-    # we explicitly impement default __setstate__ behavior.
-    def __setstate__(self, state):
+    # we explicitly implement default __setstate__ behavior.
+    def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
 
-class Undefined(object):
+
+class Undefined:
     """Helper class used to hold undefined names until assignment.
 
     This class helps create any undefined subsections when an
@@ -94,15 +101,17 @@ class Undefined(object):
     statement is "cfg.a.b.c = 42", but "cfg.a.b" does not exist yet.
     """
 
-    def __init__(self, name, namespace):
+    def __init__(self, name: str, namespace: ConfigNamespace):
+        # FIXME These assignments into `object` feel very strange.
+        #       What's the reason for it?
         object.__setattr__(self, 'name', name)
         object.__setattr__(self, 'namespace', namespace)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: object) -> None:
         obj = self.namespace._new_namespace(self.name)
         obj[name] = value
 
-    def __setitem__(self, name, value):
+    def __setitem__(self, name, value) -> None:
         obj = self.namespace._new_namespace(self.name)
         obj[name] = value
 
@@ -148,7 +157,7 @@ class BasicConfig(ConfigNamespace):
     name.first = paramjit
     name.last = oberoi
 
-    Nested namepsaces are also namespaces:
+    Nested namespaces are also namespaces:
 
     >>> isinstance(n.name, ConfigNamespace)
     True
@@ -160,7 +169,7 @@ class BasicConfig(ConfigNamespace):
 
     Finally, values can be read from a file as follows:
 
-    >>> from six import StringIO
+    >>> from io import StringIO
     >>> sio = StringIO('''
     ... # comment
     ... ui.height = 100
@@ -180,29 +189,33 @@ class BasicConfig(ConfigNamespace):
     """
 
     # this makes sure that __setattr__ knows this is not a namespace key
-    _data = None
+    _data: Dict[str, str] = None
 
     def __init__(self):
         self._data = {}
 
-    def _getitem(self, key):
+    def _getitem(self, key: str) -> str:
         return self._data[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: object) -> None:
+        # FIXME We can add any object as 'value', but when an integer is read
+        #       from a file, it will be a string. Should we explicitly convert
+        #       this 'value' to string, to ensure consistency?
+        #       It will stay the original type until it is written to a file.
         self._data[key] = value
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str) -> None:
         del self._data[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[str]:
         return iter(self._data)
 
-    def __str__(self, prefix=''):
-        lines = []
-        keys = list(self._data.keys())
+    def __str__(self, prefix: str = '') -> str:
+        lines: List[str] = []
+        keys: List[str] = list(self._data.keys())
         keys.sort()
         for name in keys:
-            value = self._data[name]
+            value: object = self._data[name]
             if isinstance(value, ConfigNamespace):
                 lines.append(value.__str__(prefix='%s%s.' % (prefix,name)))
             else:
@@ -212,21 +225,21 @@ class BasicConfig(ConfigNamespace):
                     lines.append('%s%s = %s' % (prefix, name, value))
         return '\n'.join(lines)
 
-    def _new_namespace(self, name):
+    def _new_namespace(self, name: str) -> "BasicConfig":
         obj = BasicConfig()
         self._data[name] = obj
         return obj
 
-    def _readfp(self, fp):
+    def _readfp(self, fp: TextIO) -> None:
         while True:
-            line = fp.readline()
+            line: str = fp.readline()
             if not line:
                 break
 
             line = line.strip()
             if not line: continue
             if line[0] == '#': continue
-            data = line.split('=', 1)
+            data: List[str] = line.split('=', 1)
             if len(data) == 1:
                 name = line
                 value = None
@@ -234,12 +247,13 @@ class BasicConfig(ConfigNamespace):
                 name = data[0].strip()
                 value = data[1].strip()
             name_components = name.split('.')
-            ns = self
+            ns: ConfigNamespace = self
             for n in name_components[:-1]:
                 if n in ns:
-                    ns = ns[n]
-                    if not isinstance(ns, ConfigNamespace):
+                    maybe_ns: object = ns[n]
+                    if not isinstance(maybe_ns, ConfigNamespace):
                         raise TypeError('value-namespace conflict', n)
+                    ns = maybe_ns
                 else:
                     ns = ns._new_namespace(n)
             ns[name_components[-1]] = value
@@ -247,7 +261,7 @@ class BasicConfig(ConfigNamespace):
 
 # ---- Utility functions
 
-def update_config(target, source):
+def update_config(target: ConfigNamespace, source: ConfigNamespace):
     """Imports values from source into target.
 
     Recursively walks the <source> ConfigNamespace and inserts values
@@ -275,20 +289,17 @@ def update_config(target, source):
     display_clock = True
     display_qlength = True
     width = 150
-
     """
     for name in sorted(source):
-        value = source[name]
+        value: object = source[name]
         if isinstance(value, ConfigNamespace):
             if name in target:
-                myns = target[name]
-                if not isinstance(myns, ConfigNamespace):
+                maybe_myns: object = target[name]
+                if not isinstance(maybe_myns, ConfigNamespace):
                     raise TypeError('value-namespace conflict')
+                myns = maybe_myns
             else:
                 myns = target._new_namespace(name)
             update_config(myns, value)
         else:
             target[name] = value
-
-
-

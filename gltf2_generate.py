@@ -1,5 +1,4 @@
-# Copyright (c) 2017 The Khronos Group Inc.
-# Copyright (c) 2017-2025 Soft8Soft
+# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,7 +12,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 import bpy
 import copy
 import json
@@ -38,9 +36,8 @@ from .utils import *
 
 from profilehooks import profile
 
-VERSION = '4.10.0'
+VERSION = '4.11.0'
 
-# Blender default grey color
 PRIMITIVE_MODE_LINES = 1
 PRIMITIVE_MODE_TRIANGLES = 4
 
@@ -50,9 +47,6 @@ SPOT_SHADOW_MIN_NEAR = 0.01
 
 CAM_ANGLE_EPSILON = math.pi / 180
 
-# some small offset to be added to the alphaCutoff option, it's needed bcz
-# Blender uses the "less or equal" condition for clipping values, but the engine
-# uses just "less"
 ALPHA_CUTOFF_EPS = 1e-4
 
 SUN_DEFAULT_NEAR = 0.1
@@ -89,12 +83,10 @@ def generateAnimChannel(glTF, blObj, samplerName, path, nodeName, samplers, chan
     if idx > -1:
         channel = gltf.createAnimChannel(idx, gltf.getNodeIndex(glTF, nodeName), path)
 
-        # HACK: avoid channel duplication (occurs when animating an armature object)
         for ch in channels:
             if ch['target'] == channel['target']:
                 return None
 
-        # to resolve default animation params
         channel['bl_obj'] = blObj
 
         channels.append(channel)
@@ -136,7 +128,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
     }
 
     if animType == 'NODE':
-        # correcting rotation animation for some objects
         if blObj.type == 'CAMERA' or blObj.type == 'LIGHT' or blObj.type == 'FONT':
             animType = 'NODE_X_90'
 
@@ -151,7 +142,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
     if animType == 'MAT_NODE':
         defaultValue *= getAnimParamDim(blFcurves, matNodeName)
 
-    # gather fcurves in data dict
     for blFcurve in blFcurves:
         pathBracketName = dataPathNameInBrackets(blFcurve)
 
@@ -181,10 +171,7 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
         else:
             data[animParam].append(blFcurve)
 
-    # same for all animations we export currently
     componentType = 'FLOAT'
-
-    # create location sampler
 
     if location.count(None) < 3:
 
@@ -222,7 +209,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
                     for i in range(0, 3):
                         values.append(outTangentData[key][i])
 
-
             count = len(finalKeys)
             if count:
                 sampler = {}
@@ -244,8 +230,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
                 samplers.append(sampler)
 
-    # create rotation sampler
-
     rotationData = None
     rotationInTangentData = [0.0, 0.0, 0.0, 0.0]
     rotationOutTangentData = [0.0, 0.0, 0.0, 0.0]
@@ -261,7 +245,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
         if hasAxisAngle:
             interpolation = animateGetInterpolation(exportSettings, rotationAxisAngle)
-            # conversion required in any case
             if interpolation == 'CUBICSPLINE':
                 interpolation = 'CONVERSION_NEEDED'
 
@@ -271,8 +254,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
         if hasEuler:
             interpolation = animateGetInterpolation(exportSettings, rotationEuler)
-            # conversion required in any case
-            # also for linear interpolation to fix issues with e.g 2*PI keyframe differences
             if interpolation == 'CUBICSPLINE' or interpolation == 'LINEAR':
                 interpolation = 'CONVERSION_NEEDED'
 
@@ -296,8 +277,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
             rotationData.update(rotationDataQuat)
 
         if hasQuaternion and (hasAxisAngle or hasEuler):
-            # NOTE: set tangent data to zeros just in case, since it's not clear
-            # what to do with it when mixing different types of rotation keyframes
             rotationInTangentData = [0.0, 0.0, 0.0, 0.0]
             rotationOutTangentData = [0.0, 0.0, 0.0, 0.0]
 
@@ -345,8 +324,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
             sampler['name'] = samplerName
 
             samplers.append(sampler)
-
-    # create scale sampler
 
     if scale.count(None) < 3:
         samplerName = samplerNamePrefix + actionName + "_scale"
@@ -404,8 +381,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
                 samplers.append(sampler)
 
-    # create morph target sampler
-
     if len(value) > 0 and animType == 'MORPH':
         samplerName = samplerNamePrefix + actionName + "_weights"
 
@@ -461,8 +436,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
                 samplers.append(sampler)
 
-    # create material node anim sampler
-    # NOTE: only value/colors supported for now
     defValDim = len(defaultValue)
     if (defValDim == 1 or defValDim == 4) and defaultValue.count(None) < defValDim:
         samplerName = samplerNamePrefix + actionName + "_mat_node_anim"
@@ -521,8 +494,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
                 samplers.append(sampler)
 
-    # create light energy sampler
-
     if energy.count(None) < 1:
         samplerName = samplerNamePrefix + actionName + '_energy'
 
@@ -573,8 +544,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
                 sampler['name'] = samplerName
 
                 samplers.append(sampler)
-
-    # create follow path eval_time sampler
 
     if len(evalTime) > 0:
         samplerName = samplerNamePrefix + actionName + '_eval_time'
@@ -649,10 +618,7 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
 
             samplers.append(sampler)
 
-
     processedPaths = []
-
-    # create animation channels
 
     for blFcurve in blFcurves:
         pathBracketName = dataPathNameInBrackets(blFcurve)
@@ -748,7 +714,6 @@ def generateAnimationsParameter(animType, operator, context, exportSettings, glT
             samplerName = samplerNamePrefix + actionName + '_eval_time'
             generateAnimChannel(glTF, blObj, samplerName, path, nodeName, samplers, channels)
 
-
 def generateAnimations(operator, context, exportSettings, glTF):
     """
     Generates the top level animations, channels and samplers entry.
@@ -767,10 +732,13 @@ def generateAnimations(operator, context, exportSettings, glTF):
         end = None
 
         for current_bl_action in bpy.data.actions:
-            # filter out non-object actions
-            if current_bl_action.id_root != 'OBJECT':
+            if bpy.app.version >= (4, 4, 0):
+                if not current_bl_action.slots or current_bl_action.slots[0].target_id_type != 'OBJECT':
+                    continue
+            elif current_bl_action.id_root != 'OBJECT':
                 continue
-            for current_bl_fcurve in current_bl_action.fcurves:
+
+            for current_bl_fcurve in getActionFcurves(current_bl_action):
                 if current_bl_fcurve is None:
                     continue
 
@@ -803,14 +771,12 @@ def generateAnimations(operator, context, exportSettings, glTF):
 
                 setSelectedObject(bl_obj)
 
-                # NOTE: int to prevent crashes in Blender 3.1+
                 bpy.ops.nla.bake(frame_start=int(start), frame_end=int(end),
                         only_selected=False, visual_keying=True)
 
                 restoreSelectedObjects()
 
                 bpy.context.window.scene = prev_active_scene
-
 
     for bl_obj in filteredObjectsWithIC:
 
@@ -828,9 +794,6 @@ def generateAnimations(operator, context, exportSettings, glTF):
                             actionName, fcurves, channels, samplers, bl_obj, bl_bone,
                             None, None, False)
 
-
-    # export morph targets animation data
-
     for bl_obj in filteredObjectsWithIC:
         if bl_obj.type != 'MESH' or bl_obj.data is None:
             continue
@@ -847,9 +810,6 @@ def generateAnimations(operator, context, exportSettings, glTF):
         generateAnimationsParameter('MORPH', operator, context, exportSettings, glTF, actionName, fcurves,
                 channels, samplers, bl_obj, None, None, None)
 
-
-    # export light animation
-
     for bl_obj in filteredObjectsWithIC:
         if bl_obj.type != 'LIGHT' or bl_obj.data is None:
             continue
@@ -863,12 +823,7 @@ def generateAnimations(operator, context, exportSettings, glTF):
         generateAnimationsParameter('LIGHT', operator, context, exportSettings, glTF, actionName, fcurves,
                 channels, samplers, bl_obj, None, None, None)
 
-
-    # export material animation
-
     for bl_obj in filteredObjectsWithIC:
-
-        # export morph targets animation data.
 
         if bl_obj.type != 'MESH' or bl_obj.data is None:
             continue
@@ -888,9 +843,6 @@ def generateAnimations(operator, context, exportSettings, glTF):
             for name in nodeNames:
                 generateAnimationsParameter('MAT_NODE', operator, context, exportSettings, glTF,
                         actionName, fcurves, channels, samplers, bl_obj, None, bl_mat.name, name)
-
-
-    # export follow path constraint's animation
 
     for bl_obj in filteredObjectsWithIC:
         bl_follow_path_constraint = None
@@ -915,16 +867,12 @@ def generateAnimations(operator, context, exportSettings, glTF):
         generateAnimationsParameter('FOLLOW_PATH', operator, context, exportSettings, glTF, actionName, fcurves,
                 channels, samplers, bl_obj, None, None, None, bl_follow_path_constraint.name)
 
-
     if exportSettings['bakeArmatureActions']:
         for bl_obj in filteredObjectsWithIC:
             if bl_backup_action.get(bl_obj.name) is not None:
                 bl_obj.animation_data.action = bl_backup_action[bl_obj.name]
 
-
     if len(channels) > 0 and len(samplers) > 0:
-
-        # collect channel/samplers by node
 
         anim_data = {}
 
@@ -932,17 +880,13 @@ def generateAnimations(operator, context, exportSettings, glTF):
             bl_obj = channel['bl_obj']
             name = bl_obj.name
 
-            # shallow copy (might be repetitions, need to find out why)
             sampler = samplers[channel['sampler']].copy()
 
             if not name in anim_data:
                 anim_data[name] = [[], [], None]
 
-            # fix sampler index in new array
             channel['sampler'] = len(anim_data[name][1])
 
-            # sampler 'name' is used to gather the index. However, 'name' is
-            # no property of sampler and has to be removed.
             del sampler['name']
 
             anim_data[name][0].append(channel)
@@ -966,15 +910,12 @@ def generateAnimations(operator, context, exportSettings, glTF):
             v3dExt['loop'] = bl_obj.v3d.anim_loop
             v3dExt['repeatInfinite'] = bl_obj.v3d.anim_repeat_infinite
             v3dExt['repeatCount'] = bl_obj.v3d.anim_repeat_count
-            # frame to sec
             v3dExt['offset'] = animateConvertKeys([bl_obj.v3d.anim_offset])[0]
 
             animations.append(animation)
 
-
     if len(animations) > 0:
         glTF['animations'] = animations
-
 
 def generateCameras(operator, context, exportSettings, glTF):
     """
@@ -998,7 +939,6 @@ def generateCameras(operator, context, exportSettings, glTF):
         if camera:
             cameras.append(camera)
 
-    # ensure that the active scene camera will be used for rendering (first one)
     cameras = sorted(cameras, key=lambda cam: cam==activeCam, reverse=True)
 
     if len(cameras) > 0:
@@ -1009,7 +949,6 @@ def generateCameras(operator, context, exportSettings, glTF):
 def generateCamera(bl_camera, glTF):
     camera = {}
 
-    # NOTE: should use a scene where the camera is located for proper calculation
     vf = bl_camera.view_frame(scene=bpy.context.scene)
     aspectRatio = (vf[0].x - vf[2].x) / (vf[0].y - vf[2].y)
 
@@ -1053,7 +992,6 @@ def generateCamera(bl_camera, glTF):
     else:
         return None
 
-
     camera['name'] = bl_camera.name
 
     v3dExt = {
@@ -1067,7 +1005,6 @@ def generateCamera(bl_camera, glTF):
     v3dExt['viewportFitType'] = bl_camera.sensor_fit
     v3dExt['viewportFitInitialAspect'] = aspectRatio
 
-    # optional orbit params
     if bl_camera.v3d.controls == 'ORBIT':
         target_point = (bl_camera.v3d.orbit_target if bl_camera.v3d.orbit_target_object is None
                 else bl_camera.v3d.orbit_target_object.matrix_world.to_translation())
@@ -1085,7 +1022,6 @@ def generateCamera(bl_camera, glTF):
         min_azim_angle = bl_camera.v3d.orbit_min_azimuth_angle
         max_azim_angle = bl_camera.v3d.orbit_max_azimuth_angle
 
-        # export only when needed
         if abs(2 * math.pi - (max_azim_angle - min_azim_angle)) > CAM_ANGLE_EPSILON:
             v3dExt['orbitMinAzimuthAngle'] = bl_camera.v3d.orbit_min_azimuth_angle
             v3dExt['orbitMaxAzimuthAngle'] = bl_camera.v3d.orbit_max_azimuth_angle
@@ -1121,7 +1057,6 @@ def generateCameraFromView(aspectRatio):
         camera['perspective'] = perspective
 
         perspective['aspectRatio'] = aspectRatio
-        # NOTE: decent default value
         perspective['yfov'] = math.pi / 4
 
         perspective['znear'] = near
@@ -1132,7 +1067,6 @@ def generateCameraFromView(aspectRatio):
         orthographic = {}
         camera['orthographic'] = orthographic
 
-        # NOTE: not quite right since far is the range around view point but OK in most cases
         orthographic['znear'] = -far
         orthographic['zfar'] = far
 
@@ -1200,20 +1134,12 @@ def generateLights(operator, context, exportSettings, glTF):
 
         eeveeCtx = context.scene.eevee
 
-        if bpy.app.version >= (4, 2, 0):
-            shadowCubeSize = int(exportSettings['shadowCubeSize'])
-            shadowCascadeSize = int(exportSettings['shadowCascadeSize'])
-            shadowBufferClipStart = bl_light.v3d.shadow.buffer_clip_start
-            shadowBufferBias = bl_light.v3d.shadow.buffer_bias
-        else:
-            shadowCubeSize = int(eeveeCtx.shadow_cube_size)
-            shadowCascadeSize = int(eeveeCtx.shadow_cascade_size)
-            shadowBufferClipStart = bl_light.shadow_buffer_clip_start
-            shadowBufferBias = bl_light.shadow_buffer_bias
+        shadowCubeSize = int(exportSettings['shadowCubeSize'])
+        shadowCascadeSize = int(exportSettings['shadowCascadeSize'])
+        shadowBufferClipStart = bl_light.v3d.shadow.buffer_clip_start
+        shadowBufferBias = bl_light.v3d.shadow.buffer_bias
 
         if bl_light.type == 'SUN':
-            # NOTE: the following values are not relevant because the engine
-            # calculates near/far dynamically for directional shadows
             cameraNear = SUN_DEFAULT_NEAR
             cameraFar = SUN_DEFAULT_FAR
 
@@ -1221,7 +1147,6 @@ def generateLights(operator, context, exportSettings, glTF):
             cameraNear = max(shadowBufferClipStart,
                     SPOT_SHADOW_MIN_NEAR) # usability improvement
 
-            # should bl_light.cutoff_distance affect this?
             cameraFar = calcLightThresholdDist(bl_light,
                     eeveeCtx.light_threshold)
             cameraFar = min(cameraFar, MAX_SHADOW_CAM_FAR)
@@ -1233,10 +1158,7 @@ def generateLights(operator, context, exportSettings, glTF):
             'cameraNear': cameraNear,
             'cameraFar': cameraFar,
             'radius': bl_light.v3d.shadow.radius,
-            # NOTE: negate bias since the negative is more appropriate in most cases
-            # but keeping it positive in the UI is more user-friendly
             'bias': -shadowBufferBias * 0.0018,
-            # empirical value that gives good results
             'slopeScaledBias': 2.5,
             'expBias': bl_light.v3d.shadow.esm_exponent,
         }
@@ -1246,20 +1168,13 @@ def generateLights(operator, context, exportSettings, glTF):
                 'lightMargin': bl_light.v3d.shadow.csm_light_margin
             }
 
-            if bpy.app.version >= (4, 2, 0):
-                csmConfig.update({
-                    'count': bl_light.v3d.shadow.cascade_count,
-                    'exponent': bl_light.v3d.shadow.cascade_exponent, # Distribution in UI
-                    'fade': bl_light.v3d.shadow.cascade_fade,
-                    'maxDistance': bl_light.v3d.shadow.cascade_max_distance,
-                })
-            else:
-                csmConfig.update({
-                    'count': bl_light.shadow_cascade_count,
-                    'exponent': bl_light.shadow_cascade_exponent, # Distribution in UI
-                    'fade': bl_light.shadow_cascade_fade,
-                    'maxDistance': bl_light.shadow_cascade_max_distance,
-                })
+            csmConfig.update({
+                'count': bl_light.v3d.shadow.cascade_count,
+                'exponent': bl_light.v3d.shadow.cascade_exponent, # Distribution in UI
+                'fade': bl_light.v3d.shadow.cascade_fade,
+                'maxDistance': bl_light.v3d.shadow.cascade_max_distance,
+            })
+
             light['shadow']['csm'] = csmConfig
 
         if bl_light.type in ['POINT', 'SPOT', 'AREA']:
@@ -1287,11 +1202,9 @@ def generateLights(operator, context, exportSettings, glTF):
                 else:
                     height = bl_light.size_y
 
-                # do not allow small or zero size
                 width = max(width, 0.01)
                 height = max(height, 0.01)
 
-                # TODO: need to export total power
                 if bpy.app.version < (4, 5, 0):
                     light['power'] /= (width * height)
                 elif bl_light.normalize:
@@ -1303,7 +1216,6 @@ def generateLights(operator, context, exportSettings, glTF):
                 light['ltcMat1'] = pluginUtils.rawdata.ltcMat1
                 light['ltcMat2'] = pluginUtils.rawdata.ltcMat2
 
-            # COMPAT: <4.6, possible issues for new export, old engine
             light['intensity'] = light['power']
 
         else:
@@ -1315,7 +1227,6 @@ def generateLights(operator, context, exportSettings, glTF):
 
     if len(lights) > 0:
         gltf.appendExtension(glTF, 'S8S_v3d_lights', glTF, {'lights': lights})
-
 
 def generateLightProbes(operator, context, exportSettings, glTF):
     """
@@ -1337,27 +1248,23 @@ def generateLightProbes(operator, context, exportSettings, glTF):
             'visibilityGroupInv': blProbe.invert_visibility_collection
         }
 
-        # COMPAT: CUBEMAP used in Blender < 4.1
-        if blProbe.type == 'CUBEMAP' or blProbe.type == 'SPHERE':
+        if blProbe.type == 'SPHERE':
             probe['influenceType'] = blProbe.influence_type
             probe['parallaxType'] = blProbe.parallax_type if blProbe.use_custom_parallax else blProbe.influence_type
             probe['parallaxDistance'] = blProbe.parallax_distance if blProbe.use_custom_parallax else blProbe.influence_distance
-            # COMPAT: native intensity prop removed in Blender 4.2
-            probe['intensity'] = blProbe.intensity if bpy.app.version < (4, 2, 0) else blProbe.v3d.intensity
+            probe['intensity'] = blProbe.v3d.intensity
             probe['clipEnd'] = blProbe.clip_end
             probe['influenceGroup'] = (blProbe.v3d.influence_collection.name
                     if blProbe.v3d.use_custom_influence
                     and blProbe.v3d.influence_collection is not None else None)
             probe['influenceGroupInv'] = blProbe.v3d.invert_influence_collection
         else:
-            # COMPAT: native falloff prop removed in Blender 4.2
-            probe['falloff'] = blProbe.falloff if bpy.app.version < (4, 2, 0) else blProbe.v3d.falloff
+            probe['falloff'] = blProbe.v3d.falloff
 
         probes.append(probe)
 
     if len(probes):
         gltf.appendExtension(glTF, 'S8S_v3d_light_probes', glTF, {'lightProbes': probes})
-
 
 def generateMeshes(operator, context, exportSettings, glTF):
     """
@@ -1391,10 +1298,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
         if len(internal_primitives) == 0:
             continue
 
-
-        # Property: mesh
-
-
         mesh = {}
 
         v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_mesh', mesh)
@@ -1414,13 +1317,10 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             material = gltf.getMaterialIndex(glTF, internal_primitive['material'])
 
-            # Meshes/primitives without material are allowed.
             if material >= 0:
                 primitive['material'] = material
             elif internal_primitive['material'] == DEFAULT_MAT_NAME:
                 primitive['material'] = getOrCreateDefaultMatIndex(glTF)
-                # it's possible that there were no materials in the scene, so
-                # the default one should 'register' the v3d material extension
                 gltf.appendExtension(glTF, 'S8S_v3d_materials')
             else:
                 log.warning('Material ' + internal_primitive['material'] + ' not found')
@@ -1430,8 +1330,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             max_index = max(indices)
 
-            # NOTE: avoiding WebGL2 PRIMITIVE_RESTART_FIXED_INDEX behavior
-            # see: https://www.khronos.org/registry/webgl/specs/latest/2.0/#5.18
             if max_index < 255:
                 componentType = "UNSIGNED_BYTE"
             elif max_index < 65535:
@@ -1457,8 +1355,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             primitive['indices'] = indices_index
 
-            # attributes
-
             attributes = {}
 
             internal_attributes = internal_primitive['attributes']
@@ -1479,7 +1375,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
             attributes['POSITION'] = position
 
-
             if internal_attributes.get('NORMAL') is not None:
                 internal_normal = internal_attributes['NORMAL']
 
@@ -1498,8 +1393,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                 attributes['NORMAL'] = normal
 
-
-
             if internal_attributes.get('TANGENT') is not None:
                 internal_tangent = internal_attributes['TANGENT']
 
@@ -1516,8 +1409,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                     continue
 
                 attributes['TANGENT'] = tangent
-
-            # texture coords
 
             v3dExt.setdefault('uvLayers', {})
 
@@ -1552,7 +1443,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 else:
                     process_texcoord = False
 
-            # swap UV coords, set active render UV as first (as TEXCOORD_0)
             if len(bl_mesh.uv_layers) > 0 and not bl_mesh.uv_layers[0].active_render:
                 for texcoord_index in range(len(bl_mesh.uv_layers)):
                     if bl_mesh.uv_layers[texcoord_index].active_render:
@@ -1569,8 +1459,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                             new_uv_layer_name = bl_mesh.uv_layers[texcoord_index].name
                             v3dExt['uvLayers'][new_uv_layer_name] = 'TEXCOORD_0';
                         break
-
-            # vertex colors
 
             v3dExt.setdefault('colorLayers', {})
 
@@ -1605,7 +1493,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                 else:
                     process_color = False
 
-
             if exportSettings['skins']:
                 skinAttrIndex = 0
 
@@ -1633,9 +1520,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                         attributes[joint_id] = joint
 
-
-
-
                         internal_weight = internal_attributes[weight_id]
 
                         componentType = "FLOAT"
@@ -1653,13 +1537,9 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                         attributes[weight_id] = weight
 
-
-
-
                         skinAttrIndex += 1
                     else:
                         process_bone = False
-
 
             if exportSettings['morph']:
                 if bl_mesh.shape_keys is not None:
@@ -1689,11 +1569,9 @@ def generateMeshes(operator, context, exportSettings, glTF):
                                     log.error('Could not create accessor for ' + target_position_id)
                                     continue
 
-
                                 target = {
                                     'POSITION' : target_position
                                 }
-
 
                                 if exportSettings['morphNormal'] and internal_attributes.get(target_normal_id) is not None:
 
@@ -1713,7 +1591,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                                     target['NORMAL'] = target_normal
 
-
                                 if exportSettings['morphTangent'] and internal_attributes.get(target_tangent_id) is not None:
 
                                     internal_target_tangent = internal_attributes[target_tangent_id]
@@ -1732,7 +1609,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
 
                                     target['TANGENT'] = target_tangent
 
-
                                 targets.append(target)
 
                                 morph_index += 1
@@ -1740,10 +1616,8 @@ def generateMeshes(operator, context, exportSettings, glTF):
                     if len(targets) > 0:
                         primitive['targets'] = targets
 
-
             primitive['attributes'] = attributes
             primitives.append(primitive)
-
 
         if exportSettings['morph']:
             if bl_mesh.shape_keys is not None:
@@ -1765,7 +1639,6 @@ def generateMeshes(operator, context, exportSettings, glTF):
                         mesh['extras'] = {}
                     mesh['extras']['targetNames'] = targetNames
 
-
         if exportSettings['exportCustomProps']:
             props = createCustomProperty(bl_mesh)
 
@@ -1774,19 +1647,15 @@ def generateMeshes(operator, context, exportSettings, glTF):
                     mesh['extras'] = {}
                 mesh['extras']['customProps'] = props
 
-
         mesh['primitives'] = primitives
 
         mesh['name'] = srcName
-        # also a pointer to object.data
         mesh['id'] = srcPtr
 
         meshes.append(mesh)
 
-
     if len (meshes) > 0:
         glTF['meshes'] = meshes
-
 
 def generateDuplicateMesh(operator, context, exportSettings, glTF, bl_obj):
     """
@@ -1817,7 +1686,6 @@ def generateDuplicateMesh(operator, context, exportSettings, glTF, bl_obj):
 
     new_mesh['name'] = new_name
 
-    # remove unnecessary parameters
     if findArmature(bl_obj) is None:
         for prim in primitives:
             if 'JOINTS_0' in prim['attributes']: del prim['attributes']['JOINTS_0']
@@ -1827,14 +1695,12 @@ def generateDuplicateMesh(operator, context, exportSettings, glTF, bl_obj):
 
     return len(glTF['meshes']) - 1
 
-
 def generateNodeParameter(matrix, node):
     """
     Helper function for storing node parameters.
     """
 
     translation, rotation, scale = decomposeTransformSwizzle(matrix)
-    # Put w at the end.
     rotation = mathutils.Quaternion((rotation[1], rotation[2], rotation[3], rotation[0]))
 
     if translation[0] != 0.0 or translation[1] != 0.0 or translation[2] != 0.0:
@@ -1845,7 +1711,6 @@ def generateNodeParameter(matrix, node):
 
     if scale[0] != 1.0 or scale[1] != 1.0 or scale[2] != 1.0:
         node['scale'] = [scale[0], scale[1], scale[2]]
-
 
 def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
 
@@ -1861,8 +1726,6 @@ def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
                     need_dublicate = True
                     break
 
-        # when two objects, and one of them is skinned, have the same mesh,
-        # duplicate the mesh (to have both skinned and unskinned variants)
         if not need_dublicate and findArmature(bl_obj) is None:
             idname = getPtr(bl_obj.data)
             for meshData in glTF['meshes']:
@@ -1883,9 +1746,7 @@ def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
     return mesh
 
 def generateClippingPlanes(operator, context, exportSettings, glTF):
-    '''
-    Generates the top level clippingPlanes entry.
-    '''
+    """Generates the top level clippingPlanes entry."""
 
     planes = []
 
@@ -1909,7 +1770,6 @@ def generateClippingPlanes(operator, context, exportSettings, glTF):
     if len(planes):
         gltf.appendExtension(glTF, 'S8S_v3d_clipping_planes', glTF, {'clippingPlanes': planes})
 
-
 def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
     """
     Helper function for storing node instances.
@@ -1919,8 +1779,6 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
 
     bl_obj_type = bl_obj.type
 
-    # the parent inverse matrix is considered later when generating scene
-    # hierarchy
     node_matrix = bl_obj.matrix_basis
     generateNodeParameter(node_matrix, node)
 
@@ -1944,7 +1802,6 @@ def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
                 gltf.appendExtension(glTF, 'S8S_v3d_curves', node, {'curve' : curve})
 
     elif bl_obj_type == 'CAMERA':
-        # NOTE: possible issues with libraries
         camera = getCameraIndex(glTF, bl_obj.data.name)
         if camera >= 0:
             node['camera'] = camera
@@ -2013,7 +1870,6 @@ def inheritParentProps(node, nodeParent):
             else:
                 v3dExt['groupNames'] = v3dExtParent['groupNames'].copy()
 
-
 def generateCameraNodeFromView(glTF):
     log.info('Generating default camera node')
 
@@ -2021,14 +1877,12 @@ def generateCameraNodeFromView(glTF):
 
     node['name'] = '__DEFAULT_CAMERA__'
 
-    # checked in generateCameraFromView()
     region3D = getView3DSpaceProp('region_3d')
 
     if region3D.is_perspective:
         matrix = region3D.view_matrix.inverted()
         generateNodeParameter(matrix, node)
     else:
-        # ortho: calculate based on view location and rotation
         q = region3D.view_rotation
         t = q @ mathutils.Vector((0, 0, region3D.view_distance)) + region3D.view_location
 
@@ -2042,7 +1896,6 @@ def generateCameraNodeFromView(glTF):
 
     return node
 
-
 def generateProxyNodes(operator, context, glTF, node, bl_obj):
     """
     Generate additional nodes for objects with the non-identity (for applying
@@ -2054,7 +1907,6 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
         return []
 
     proxy_nodes = []
-
 
     parInvMats = list(filter(lambda mat: not mat4IsIdentity(mat),
             mat4ToTRSMatrices(bl_obj.matrix_parent_inverse)))
@@ -2074,8 +1926,6 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
                             + '" has a non-identity parent bone relative matrix. '
                             + 'Creating proxy nodes.')
             else:
-                # objects parented to a bone without the "Relative Parent"
-                # option will have their node['translation'] modified later
                 bone_len = (pose_bone.bone.tail_local - pose_bone.bone.head_local).length
                 relBoneMats = [mathutils.Matrix.Translation((0, bone_len, 0))]
 
@@ -2090,7 +1940,6 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
 
     return proxy_nodes
 
-
 def mat4ToTRSMatrices(mat4):
     """
     Represent the given matrix in a form of a product of TRS-decomposable matrices.
@@ -2101,7 +1950,6 @@ def mat4ToTRSMatrices(mat4):
 
     result = mat4SvdDecomposeToMatrs(mat4)
     if result is None:
-        # fallback to the original matrix
         return [mat4]
 
     return [result[0], result[1]]
@@ -2113,7 +1961,6 @@ def generateNodes(operator, context, exportSettings, glTF):
 
     nodes = []
     skins = []
-
 
     filteredObjectsShallow = exportSettings['filteredObjectsShallow']
     filteredObjectsWithIC = exportSettings['filteredObjectsWithIC']
@@ -2153,7 +2000,6 @@ def generateNodes(operator, context, exportSettings, glTF):
             node['translation'] = [-translation[0], -translation[1], -translation[2]]
             nodes.append(node)
 
-
     if len(nodes) > 0:
         glTF['nodes'] = nodes
 
@@ -2187,7 +2033,6 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                     bpy.context.window.scene = obj_scene
 
-
             joints = []
 
             for bl_bone in bl_obj.pose.bones:
@@ -2202,10 +2047,8 @@ def generateNodes(operator, context, exportSettings, glTF):
                 joints.append(len(nodes))
                 nodes.append(node)
 
-            # add data for the armature itself at the end
             skeleton = gltf.getNodeIndex(glTF, bl_obj.name)
             joints.append(skeleton)
-
 
             children_list = list(bl_obj.children)
             for bl_check_object in filteredObjectsWithIC:
@@ -2251,12 +2094,8 @@ def generateNodes(operator, context, exportSettings, glTF):
             if temp_action is not None:
                 bl_obj.animation_data.action = temp_action
 
-
     if len (skins) > 0:
         glTF['skins'] = skins
-
-
-    # resolve children etc.
 
     for bl_obj in filteredObjectsShallow:
         node_index = gltf.getNodeIndex(glTF, bl_obj.name)
@@ -2286,19 +2125,14 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                 node['skin'] = getSkinIndex(glTF, bl_armature.name, index_offset)
 
-        # constraints
-
         v3dExt = gltf.getAssetExtension(node, 'S8S_v3d_node')
         if v3dExt and ((exportSettings['exportConstraints'] and len(bl_obj.constraints)) or
                        objHasFixOrthoZoom(bl_obj) or objHasCanvasFitParams(bl_obj) or
                        bl_obj.v3d.canvas_break_enabled):
             v3dExt['constraints'] = extractConstraints(glTF, bl_obj)
 
-        # COMPAT: taking this param from object in Blender 4.2+
-        if v3dExt and bpy.app.version >= (4, 2, 0):
+        if v3dExt:
             v3dExt['useCastShadows'] = bl_obj.visible_shadow
-
-        # first-person camera link to collision material
 
         if (bl_obj.type == 'CAMERA' and
                 bl_obj.data and
@@ -2311,15 +2145,12 @@ def generateNodes(operator, context, exportSettings, glTF):
                 if mat >= 0:
                     v3d_cam_data['fpsCollisionMaterial'] = mat
 
-
-        # nodes
         for child_obj in bl_obj.children:
             if child_obj.parent_type == 'BONE' and exportSettings['skins']:
                 continue
 
             nodeAppendChildFromObj(glTF, node, child_obj)
 
-        # instancing / duplications
         if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
             child_index = gltf.getNodeIndex(glTF, 'Instance_Offset_' + bl_obj.name)
             if child_index >= 0:
@@ -2333,12 +2164,9 @@ def generateNodes(operator, context, exportSettings, glTF):
                             bl_instance_obj, 'Instance_' + bl_obj.name
                             + '_' + bl_instance_obj.name)
 
-
-        # joints
         if exportSettings['skins']:
             if bl_obj.type == 'ARMATURE' and len(bl_obj.pose.bones) > 0:
 
-                # parent root bones to the node of the armature object
                 for bl_bone in bl_obj.pose.bones:
 
                     if bl_bone.parent:
@@ -2352,7 +2180,6 @@ def generateNodes(operator, context, exportSettings, glTF):
                         node['children'] = []
                     node['children'].append(child_index)
 
-                # process the bone's children: objects parented to the bone and child bones
                 for bl_bone in bl_obj.pose.bones:
 
                     bone_index = gltf.getNodeIndex(glTF, bl_obj.name + "_" + bl_bone.name)
@@ -2374,9 +2201,7 @@ def generateNodes(operator, context, exportSettings, glTF):
                                 bone_node['children'] = []
                             bone_node['children'].append(child_bone_index)
 
-    # NOTE: possible breakage of the children's animation
     preprocessCamLampNodes(nodes)
-
 
 def nodeAppendChildFromObj(glTF, parent_node, child_obj, child_node_name=None):
 
@@ -2417,8 +2242,6 @@ def preprocessCamLampNodes(nodes):
     rot_x_90 = mathutils.Quaternion((1.0, 0.0, 0.0), -math.pi/2).to_matrix().to_4x4()
     rot_x_90_inv = mathutils.Quaternion((1.0, 0.0, 0.0), math.pi/2).to_matrix().to_4x4()
 
-    # rotate cameras and lamps by 90 around X axis prior(!) to applying their TRS,
-    # the matrix is still decomposable after such operation
     for node in nodes:
         if nodeIsCamera(node) or nodeIsLamp(node) or nodeIsCurve(node):
             mat = nodeComposeMatrix(node)
@@ -2446,7 +2269,6 @@ def nodeComposeMatrix(node):
 
     if 'rotation' in node:
         rot = node['rotation']
-        # Put w to the start
         mat_rot = mathutils.Quaternion((rot[3], rot[0], rot[1], rot[2])).to_matrix().to_4x4()
     else:
         mat_rot = mathutils.Matrix.Identity(4)
@@ -2458,7 +2280,6 @@ def nodeComposeMatrix(node):
         mat_sca[2][2] = node['scale'][2]
 
     return mat_trans @ mat_rot @ mat_sca
-
 
 def nodeIsCamera(node):
     return 'camera' in node
@@ -2475,7 +2296,6 @@ def nodeIsPlaneReflProbe(node):
     return ('extensions' in node and 'S8S_v3d_light_probes' in node['extensions']
             and 'lightProbe' in node['extensions']['S8S_v3d_light_probes'])
 
-
 def generateImages(operator, context, exportSettings, glTF):
     """
     Generates the top level images entry.
@@ -2491,11 +2311,9 @@ def generateImages(operator, context, exportSettings, glTF):
             image = createImage(bl_image, context, exportSettings, glTF)
         except pu.convert.CompressionFailed:
             bl_image['compression_error_status'] = 1
-            # try again without compression
             image = createImage(bl_image, context, exportSettings, glTF)
 
         images.append(image)
-        # 5%-20%
         bpy.context.window_manager.progress_update(5 + round(15 * num / len(filteredImages)))
         num += 1
 
@@ -2511,13 +2329,10 @@ def createImage(bl_image, context, exportSettings, glTF):
     if exportSettings['format'] == 'ASCII':
 
         old_path = bl_image.filepath_from_user()
-        # try to reuse external file if new_path == old_path
         new_path = norm(exportSettings['filedirectory'] + uri)
 
         if (bl_image.is_dirty or bl_image.packed_file is not None
                 or not os.path.isfile(old_path)):
-            # always extract data for dirty/packed/missing images,
-            # because they can differ from an external source's data
 
             img_data = extractImageBindata(bl_image, context.scene, exportSettings)
 
@@ -2525,12 +2340,10 @@ def createImage(bl_image, context, exportSettings, glTF):
                 f.write(img_data)
 
         elif os.path.normcase(old_path) != os.path.normcase(new_path):
-            # copy an image to a new location
 
             if (bl_image.file_format != 'JPEG' and bl_image.file_format != 'PNG' and
                     bl_image.file_format != 'WEBP' and bl_image.file_format != 'BMP' and
                     bl_image.file_format != 'HDR'):
-                # need conversion to PNG
 
                 img_data = extractImageBindata(bl_image, context.scene, exportSettings)
 
@@ -2548,7 +2361,6 @@ def createImage(bl_image, context, exportSettings, glTF):
         image['uri'] = uri
 
     else:
-        # store image in glb
 
         img_data = extractImageBindata(bl_image, context.scene, exportSettings)
 
@@ -2562,7 +2374,6 @@ def createImage(bl_image, context, exportSettings, glTF):
 
     return image
 
-
 def generateTextures(operator, context, exportSettings, glTF):
     """
     Generates the top level textures entry.
@@ -2572,7 +2383,6 @@ def generateTextures(operator, context, exportSettings, glTF):
 
     textures = []
 
-    # shader node textures or texture slots
     for bl_tex in filteredTextures:
 
         texture = {
@@ -2612,7 +2422,6 @@ def generateTextures(operator, context, exportSettings, glTF):
 
         texture['sampler'] = gltf.createSampler(glTF, magFilter, wrap, wrap)
 
-        # 'source' isn't required but must be >=0 according to GLTF 2.0 spec.
         img_index = getImageIndex(exportSettings, uri)
         if img_index >= 0:
             if os.path.splitext(uri)[1].lower() == '.ktx2':
@@ -2631,7 +2440,6 @@ def generateTextures(operator, context, exportSettings, glTF):
     if len (textures) > 0:
         glTF['textures'] = textures
 
-
 def generateNodeGraphs(operator, context, exportSettings, glTF):
     """
     Generates the top level node graphs entry.
@@ -2643,8 +2451,6 @@ def generateNodeGraphs(operator, context, exportSettings, glTF):
         ext = gltf.appendExtension(glTF, 'S8S_v3d_materials', glTF)
         graphs = ext['nodeGraphs'] = []
 
-        # store group names prior to processing them in case of group multiple
-        # nesting
         for bl_node_group in filteredNodeGroups:
             graphs.append({ 'name': bl_node_group.name })
 
@@ -2653,7 +2459,6 @@ def generateNodeGraphs(operator, context, exportSettings, glTF):
 
             index = filteredNodeGroups.index(bl_node_group)
             graphs[index].update(graph)
-
 
 def generateFonts(operator, context, exportSettings, glTF):
 
@@ -2671,7 +2476,6 @@ def generateFonts(operator, context, exportSettings, glTF):
         font['id'] = uri
 
         if exportSettings['format'] == 'ASCII':
-            # use external file
 
             old_path = getFontPath(bl_font)
             new_path = norm(exportSettings['filedirectory'] + uri)
@@ -2683,14 +2487,12 @@ def generateFonts(operator, context, exportSettings, glTF):
                     f.write(font_data)
 
             elif old_path != new_path:
-                # copy an font to a new location
 
                 shutil.copyfile(old_path, new_path)
 
             font['uri'] = uri
 
         else:
-            # store font in glb
 
             font_data = extractFontBindata(bl_font)
             bufferView = gltf.generateBufferView(glTF, exportSettings['binary'], font_data, '', 0)
@@ -2718,8 +2520,6 @@ def generateCurves(operator, context, exportSettings, glTF):
 
         curve['name'] = bl_curve.name
 
-        # curve, surface, font
-        # NOTE: currently only font curves supported
         curve['type'] = 'font'
 
         if curve['type'] == 'font':
@@ -2730,13 +2530,10 @@ def generateCurves(operator, context, exportSettings, glTF):
             if font_index >= 0:
                 curve['font'] = font_index
 
-
-            # NOTE: default bfont.pfb font has slightly different metrics
             curve['size'] = bl_curve.size * 1.13 if uri == 'bfont.woff' else bl_curve.size
             curve['height'] = bl_curve.extrude
             curve['curveSegments'] = max(bl_curve.resolution_u - 1, 1)
 
-            # NOTE: 0.88 = 1/1.13
             curve['lineHeight'] = bl_curve.space_line * 0.88 if uri == 'bfont.woff' else bl_curve.space_line
 
             curve['scaledEmSize'] = True
@@ -2754,7 +2551,6 @@ def generateCurves(operator, context, exportSettings, glTF):
             elif alignX == 'RIGHT':
                 curve['alignX'] = 'right'
             else:
-                # JUSTIFY,FLUSH
                 log.warning('Unsupported font alignment: ' + alignX)
                 curve['alignX'] = 'left'
 
@@ -2774,7 +2570,6 @@ def generateCurves(operator, context, exportSettings, glTF):
                 log.warning('Unsupported font alignment: ' + alignY)
                 curve['alignY'] = 'topBaseline'
 
-            # optional
             if len(bl_curve.materials) and bl_curve.materials[0] is not None:
                 material = gltf.getMaterialIndex(glTF, bl_curve.materials[0].name)
 
@@ -2803,8 +2598,6 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
         mat_type = getMaterialType(bl_mat)
         alphaMode = extractAlphaMode(bl_mat)
-
-        # PBR Materials
 
         if mat_type == 'PBR':
             for bl_node in bl_mat.node_tree.nodes:
@@ -2853,7 +2646,6 @@ def generateMaterials(operator, context, exportSettings, glTF):
                         baseColorFactor[2] != 1.0 or baseColorFactor[3] != 1.0):
                         pbrMetallicRoughness['baseColorFactor'] = baseColorFactor
 
-
                     index = getTextureIndexNode(exportSettings, glTF, 'Metallic', bl_node)
                     if index < 0:
                         index = getTextureIndexNode(exportSettings, glTF, 'Roughness', bl_node)
@@ -2881,7 +2673,6 @@ def generateMaterials(operator, context, exportSettings, glTF):
                         if roughnessFactor != 1.0:
                             pbrMetallicRoughness['roughnessFactor'] = roughnessFactor
 
-
                     toNode = bl_node.outputs['BSDF'].links[0].to_node
                     if isinstance(toNode, bpy.types.ShaderNodeMixShader):
                         index = getTextureIndexNode(exportSettings, glTF, 'Fac', toNode)
@@ -2898,45 +2689,24 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
                     emissiveScale = getScalar(bl_node.inputs['Emission Strength'].default_value, 1.0)
 
-                    if bpy.app.version >= (4, 0, 0):
-                        index = getTextureIndexNode(exportSettings, glTF, 'Emission Color', bl_node)
-                        if index >= 0:
-                            emissiveTexture = {
-                                'index' : index
-                            }
+                    index = getTextureIndexNode(exportSettings, glTF, 'Emission Color', bl_node)
+                    if index >= 0:
+                        emissiveTexture = {
+                            'index' : index
+                        }
 
-                            texCoord = getTexcoordIndex(glTF, 'Emission Color', bl_node)
-                            if texCoord > 0:
-                                emissiveTexture['texCoord'] = texCoord
+                        texCoord = getTexcoordIndex(glTF, 'Emission Color', bl_node)
+                        if texCoord > 0:
+                            emissiveTexture['texCoord'] = texCoord
 
-                            material['emissiveTexture'] = emissiveTexture
-                            material['emissiveFactor'] = [emissiveScale, emissiveScale, emissiveScale]
-                        else:
-                            emissiveFactor = getVec3(bl_node.inputs['Emission Color'].default_value, [0.0, 0.0, 0.0])
-                            if (emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0) and emissiveScale != 0.0:
-                                material['emissiveFactor'] = [emissiveFactor[0] * emissiveScale,
-                                                              emissiveFactor[1] * emissiveScale,
-                                                              emissiveFactor[2] * emissiveScale]
-
-                    else: # COMPAT: Blender < 4.0
-                        index = getTextureIndexNode(exportSettings, glTF, 'Emission', bl_node)
-                        if index >= 0:
-                            emissiveTexture = {
-                                'index' : index
-                            }
-
-                            texCoord = getTexcoordIndex(glTF, 'Emission', bl_node)
-                            if texCoord > 0:
-                                emissiveTexture['texCoord'] = texCoord
-
-                            material['emissiveTexture'] = emissiveTexture
-                            material['emissiveFactor'] = [emissiveScale, emissiveScale, emissiveScale]
-                        else:
-                            emissiveFactor = getVec3(bl_node.inputs['Emission'].default_value, [0.0, 0.0, 0.0])
-                            if (emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0) and emissiveScale != 0.0:
-                                material['emissiveFactor'] = [emissiveFactor[0] * emissiveScale,
-                                                              emissiveFactor[1] * emissiveScale,
-                                                              emissiveFactor[2] * emissiveScale]
+                        material['emissiveTexture'] = emissiveTexture
+                        material['emissiveFactor'] = [emissiveScale, emissiveScale, emissiveScale]
+                    else:
+                        emissiveFactor = getVec3(bl_node.inputs['Emission Color'].default_value, [0.0, 0.0, 0.0])
+                        if (emissiveFactor[0] != 0.0 or emissiveFactor[1] != 0.0 or emissiveFactor[2] != 0.0) and emissiveScale != 0.0:
+                            material['emissiveFactor'] = [emissiveFactor[0] * emissiveScale,
+                                                          emissiveFactor[1] * emissiveScale,
+                                                          emissiveFactor[2] * emissiveScale]
 
                     index = getTextureIndexNode(exportSettings, glTF, 'Normal', bl_node)
                     if index >= 0:
@@ -2958,37 +2728,23 @@ def generateMaterials(operator, context, exportSettings, glTF):
                     if bl_mat.v3d.render_side == 'DOUBLE':
                         material['doubleSided'] = True
 
-
         else:
-            # Basic and Node-based materials
 
             v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_materials', material)
 
-            # COMPAT: Blender <4.2
-            if matHasBlendBackside(bl_mat):
-                v3dExt['depthWrite'] = False
-                backface = bl_mat.use_backface_culling
-                material['doubleSided'] = not backface
-                v3dExt['renderSide'] = 'FRONT' if backface else 'DOUBLE'
-            else:
-                if bl_mat.v3d.render_side == 'DOUBLE':
-                    material['doubleSided'] = True
-                if bl_mat.v3d.render_side != 'FRONT':
-                    v3dExt['renderSide'] = bl_mat.v3d.render_side
+            if bl_mat.v3d.render_side == 'DOUBLE':
+                material['doubleSided'] = True
+            if bl_mat.v3d.render_side != 'FRONT':
+                v3dExt['renderSide'] = bl_mat.v3d.render_side
 
-                if alphaMode != 'OPAQUE' and bl_mat.v3d.depth_write == False:
-                    v3dExt['depthWrite'] = bl_mat.v3d.depth_write
+            if alphaMode != 'OPAQUE' and bl_mat.v3d.depth_write == False:
+                v3dExt['depthWrite'] = bl_mat.v3d.depth_write
 
-                # COMPAT: Blender <4.2
-                if bpy.app.version < (4, 2, 0):
-                    if bl_mat.blend_method == 'BLEND':
-                        v3dExt['depthPrepass'] = True
-                else:
-                    if bl_mat.v3d.blend_method == 'BLEND':
-                        if bl_mat.v3d.transparency_hack == 'NEAREST_LAYER':
-                            v3dExt['depthPrepass'] = True
-                        elif bl_mat.v3d.transparency_hack == 'TWO_PASS' and bl_mat.v3d.render_side == 'DOUBLE':
-                            v3dExt['renderSide'] = 'TWO_PASS_DOUBLE';
+            if bl_mat.v3d.blend_method == 'BLEND':
+                if bl_mat.v3d.transparency_hack == 'NEAREST_LAYER':
+                    v3dExt['depthPrepass'] = True
+                elif bl_mat.v3d.transparency_hack == 'TWO_PASS' and bl_mat.v3d.render_side == 'DOUBLE':
+                    v3dExt['renderSide'] = 'TWO_PASS_DOUBLE';
 
             if bl_mat.v3d.depth_test == False:
                 v3dExt['depthTest'] = bl_mat.v3d.depth_test
@@ -3004,24 +2760,10 @@ def generateMaterials(operator, context, exportSettings, glTF):
 
             v3dExt['materialIndex'] = bl_mat.pass_index
 
-            # COMPAT: Blender <4.2
-            if bpy.app.version < (4, 2, 0) and bl_mat.blend_method == 'HASHED':
-                v3dExt['alphaToCoverage'] = True
-            elif bpy.app.version >= (4, 2, 0) and bl_mat.v3d.blend_method == 'HASHED':
+            if bl_mat.v3d.blend_method == 'HASHED':
                 v3dExt['alphaToCoverage'] = True
 
-            # disable GTAO for BLEND materials due to implementation issues
-            # COMPAT: Blender <4.2
-            if bpy.app.version < (4, 2, 0):
-                v3dExt['gtaoVisible'] = bl_mat.blend_method != 'BLEND'
-            else:
-                v3dExt['gtaoVisible'] = bl_mat.v3d.blend_method != 'BLEND'
-
-            # receive
-            if exportSettings['useShadows']:
-                # useShadows is assigned on objects not materials
-                if bpy.app.version < (4, 2, 0):
-                    v3dExt['useCastShadows'] = False if bl_mat.shadow_method == 'NONE' else True
+            v3dExt['gtaoVisible'] = bl_mat.v3d.blend_method != 'BLEND'
 
         material['alphaMode'] = alphaMode
         if alphaMode == 'MASK':
@@ -3042,17 +2784,15 @@ def generateMaterials(operator, context, exportSettings, glTF):
     if len (materials) > 0:
         glTF['materials'] = materials
 
-
 def getPostprocessingEffects(bl_scene):
     ppEffects = []
 
-    if bl_scene.eevee.use_gtao:
+    if (bl_scene.eevee.use_gtao if bpy.app.version < (5, 0, 0) else bl_scene.v3d.use_gtao):
         ppEffects.append({
             'type': 'gtao',
-            'distance': bl_scene.eevee.gtao_distance,
-            # COMPAT: native factor and bent normals props removed in Blender 4.3
+            'distance': bl_scene.eevee.gtao_distance if bpy.app.version < (5, 0, 0) else bl_scene.v3d.gtao_distance,
             'factor': bl_scene.eevee.gtao_factor if bpy.app.version < (4, 3, 0) else bl_scene.v3d.gtao_factor,
-            'precision': bl_scene.eevee.gtao_quality,
+            'precision': bl_scene.eevee.gtao_quality if bpy.app.version < (5, 0, 0) else bl_scene.v3d.gtao_quality,
             'bentNormals': bl_scene.eevee.use_gtao_bent_normals if bpy.app.version < (4, 3, 0) else bl_scene.v3d.use_gtao_bent_normals
         })
 
@@ -3096,7 +2836,6 @@ def generateScenes(operator, context, exportSettings, glTF):
 
                 nodes.append(node_index)
 
-        # TODO: need it only on the main scene
         if getCameraIndex(glTF, '__DEFAULT__') >= 0:
             nodes.append(gltf.getNodeIndex(glTF, '__DEFAULT_CAMERA__'))
 
@@ -3138,16 +2877,24 @@ def generateScenes(operator, context, exportSettings, glTF):
 
         if bl_scene.view_settings.view_transform == 'Khronos PBR Neutral':
             v3dExt['toneMapping'] = {
-                'type': 'pbrNeutral'
+                'type': 'pbrNeutral',
+                'exposure': 2 ** bl_scene.view_settings.exposure
             }
         elif bl_scene.view_settings.view_transform == 'AgX':
             v3dExt['toneMapping'] = {
                 'type': 'agxBlender',
-                'look': bl_scene.view_settings.look.upper().replace(' - ', '_').replace(' ', '_')
+                'look': bl_scene.view_settings.look.upper().replace(' - ', '_').replace(' ', '_'),
+                'exposure': 2 ** bl_scene.view_settings.exposure
             }
         elif bl_scene.view_settings.view_transform == 'Filmic':
             v3dExt['toneMapping'] = {
-                'type': 'filmicBlender'
+                'type': 'filmicBlender',
+                'exposure': 2 ** bl_scene.view_settings.exposure
+            }
+        elif bl_scene.view_settings.view_transform == 'Standard' and bl_scene.view_settings.exposure != 0:
+            v3dExt['toneMapping'] = {
+                'type': 'linear',
+                'exposure': 2 ** bl_scene.view_settings.exposure
             }
 
         v3dExt['pmremMaxTileSize'] = clamp(int(bl_scene.eevee.gi_cubemap_resolution),
@@ -3161,7 +2908,6 @@ def generateScenes(operator, context, exportSettings, glTF):
 
             if props is not None:
                 scene['extras']['customProps'] = props
-
 
         scene['name'] = bl_scene.name
 
@@ -3183,9 +2929,6 @@ def generateScene(operator, context, exportSettings, glTF):
 
 def generateFinish(operator, context, exportSettings, glTF):
 
-    # Texture Coordinate nodes refer to scene objects (needed for the Object output).
-    # Objects are not processed yet when generating materials and node graphs,
-    # thus have to set this relation only in the end.
     if glTF.get('materials') is not None:
         for mat in glTF['materials']:
             nGraph = gltf.getNodeGraph(mat)
@@ -3203,7 +2946,6 @@ def nodeGraphReplaceTexCoordObject(nGraph, glTF):
             matNode['object'] = (gltf.getNodeIndex(glTF, matNode['object'].name)
                     if matNode['object'] is not None else -1)
 
-# @profile(immediate=True)
 def generateGLTF(operator,
                   context,
                   exportSettings,
@@ -3268,7 +3010,6 @@ def generateGLTF(operator,
     generateFinish(operator, context, exportSettings, glTF)
 
     bpy.context.window_manager.progress_update(90)
-
 
     byteLength = len(exportSettings['binary'])
 
