@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -192,7 +192,7 @@ def disableBuiltInGLTFAddon():
         bpy.types.TOPBAR_MT_file_export.remove(io_scene_gltf2.menu_func_export)
 
 def register():
-    from . import custom_props, custom_ui, reexport, manual_map
+    from . import custom_props, custom_ui, reexport, manual_map, viewport_hints
 
     AppManagerConn.init(getRoot(), 'BLENDER')
 
@@ -208,6 +208,7 @@ def register():
     custom_ui.register()
     reexport.register()
     manual_map.register()
+    viewport_hints.register()
 
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.append(menuExportGLB)
@@ -222,7 +223,7 @@ def register():
         bpy.app.timers.register(disableBuiltInGLTFAddon, first_interval=ADDON_DISABLE_DELAY, persistent=True)
 
 def unregister():
-    from . import custom_props, custom_ui, reexport, manual_map
+    from . import custom_props, custom_ui, reexport, manual_map, viewport_hints
 
     bpy.utils.unregister_class(V3D_AddonPreferences)
 
@@ -236,6 +237,7 @@ def unregister():
     custom_ui.unregister()
     reexport.unregister()
     manual_map.unregister()
+    viewport_hints.unregister()
 
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLTF)
     bpy.types.TOPBAR_MT_file_export.remove(menuExportGLB)

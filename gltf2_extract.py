@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,20 +18,19 @@ import mathutils
 import mathutils.geometry
 import math, io, lzma, os, re, tempfile
 
-import pluginUtils
-import pluginUtils as pu
+import pluginUtils as pU
 import pluginUtils.gltf as gltf
-
-log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_get import *
 from .utils import *
 
 import pcpp, pyosl.oslparse, pyosl.glslgen
 import numpy as np
-from profilehooks import profile
+
 GLTF_MAX_COLORS = 8
 CURVE_DATA_SIZE = 256
+
+log = pU.log.getLogger('V3D-BL')
 
 def npConvertSwizzleLocation(array):
     array[:, [1,2]] = array[:, [2,1]]  # x,z,y
@@ -908,6 +907,10 @@ def extractNodeGraph(node_tree, exportSettings, glTF):
         elif bl_node.type == 'NORMAL_MAP' or bl_node.type == 'UVMAP':
             node['uvLayer'] = bl_node.uv_map
 
+        elif bl_node.type == 'ShaderNodeRadialTiling':
+            node['type'] = 'RADIAL_TILING_BL'
+            node['normalize'] = bl_node.normalize
+
         elif bl_node.type == 'TANGENT':
             node['directionType'] = bl_node.direction_type
             node['axis'] = bl_node.axis
@@ -1221,8 +1224,10 @@ def genOSLCode(ast, shaderName):
     code = pyosl.glslgen.generate(ast)
     return code
 
-def composeNodeGraph(bl_mat, exportSettings, glTF):
-
+def composeNodeGraph(blMat):
+    """
+    Compose node graph for material with disabled nodes
+    """
     graph = { 'nodes' : [], 'edges' : [] }
 
     appendNode(graph, {
@@ -1242,9 +1247,9 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
         'name': 'Principled-Based',
         'type': 'BSDF_PRINCIPLED_BL',
         'inputs': [
-            extractVec(bl_mat.diffuse_color),
-            bl_mat.metallic,
-            bl_mat.roughness,
+            extractVec(blMat.diffuse_color),
+            blMat.metallic,
+            blMat.roughness,
             1.45,               # IOR
             1,                  # Alpha
             [0.0, 0.0, 0.0],    # Normal
@@ -1254,7 +1259,7 @@ def composeNodeGraph(bl_mat, exportSettings, glTF):
             0.0,                # Subsurface Scale
             1.4,                # Subsurface IOR
             0.0,                # Subsurface Anisotropy
-            bl_mat.specular_intensity,
+            blMat.specular_intensity,
             [1.0, 1.0, 1.0, 1.0], # Specular Tint
             0.0,                # Anisotropic
             0.0,                # Anisotropic Rotation
@@ -1678,7 +1683,7 @@ def extractImageBindata(bl_image, scene, exportSettings):
         if fileFormat == 'HDR':
             return lzma.compress(data)
         else:
-            return pu.convert.compressKTX2(srcData=data, method=bl_image.v3d.compression_method)
+            return pU.convert.compressKTX2(srcData=data, method=bl_image.v3d.compression_method)
 
     elif fileFormat == 'JPEG':
         return imageSaveRender(bl_image, scene, 'JPEG', 'RGB', quality=90)

@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -529,6 +529,7 @@ class V3D_PT_CameraSettingsTarget(bpy.types.Panel, V3DPanel):
         column.prop(v3d, 'orbit_target_object', text='')
 
         column.operator(V3D_OT_orbit_camera_target_from_cursor.bl_idname, text='From Cursor')
+        column.prop(v3d, 'orbit_target_show')
 
         layout.operator(V3D_OT_orbit_camera_update_view.bl_idname, text='Update View')
 
@@ -941,7 +942,12 @@ class V3D_OT_sneak_peek(bpy.types.Operator):
         if not AppManagerConn.ping():
             AppManagerConn.start()
 
-        prevDir = AppManagerConn.getPreviewDir(True)
+        try:
+            prevDir = AppManagerConn.getPreviewDir(True)
+        except (PermissionError, FileExistsError):
+            self.report({'ERROR'}, 'Permission denied when attempting to access the preview folder.\n'
+                    'Make sure that you\'re not running the App Manager under different user.')
+            return {'CANCELLED'}
 
         bpy.ops.export_scene.v3d_gltf(filepath=join(prevDir, 'sneak_peek.gltf'),
                                 export_sneak_peek = True)

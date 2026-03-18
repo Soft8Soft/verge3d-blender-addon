@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -126,8 +126,12 @@ class V3D_OT_reexport_all(bpy.types.Operator):
 
                     if sys.platform.startswith('linux'):
                         fileinfo = subprocess.check_output(['file', '--uncompress', blendpath]).decode()
-                        verStr = re.search('\d\.\d\d', fileinfo).group(0)
-                        ver = tuple([int(n) for n in verStr.split('.')]) + (0,)
+                        verStrMatch = re.search(r'\d\.\d\d', fileinfo)
+                        if verStrMatch:
+                            verStr = verStrMatch.group(0)
+                            ver = tuple([int(n) for n in verStr.split('.')]) + (0,)
+                        else:
+                            ver = (5, 0, 0)
 
                         if ver < (2, 80, 0) or ver > bpy.app.version:
                             blendRel = os.path.relpath(blendpath, apps)

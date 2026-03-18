@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,13 +20,14 @@ import mathutils
 
 import pyosl.glslgen
 
-import pluginUtils
-import pluginUtils as pu
-
-log = pluginUtils.log.getLogger('V3D-BL')
+import pluginUtils as pU
 
 ORTHO_EPS = 1e-5
 DEFAULT_MAT_NAME = 'v3d_default_material'
+
+VEC4_ALL_ONES = mathutils.Vector([1, 1, 1, 1])
+
+log = pU.log.getLogger('V3D-BL')
 
 selectedObject = None
 selectedObjectsSave = []
@@ -113,13 +114,19 @@ def imgNeedsCompression(bl_image, exportSettings):
         return False
     elif (exportSettings['compressTextures'] and method != 'DISABLE' and
             bl_image.file_format in ['JPEG', 'PNG', 'HDR'] and
-            pu.isPowerOfTwo(bl_image.size[0]) and pu.isPowerOfTwo(bl_image.size[1])):
+            pU.math.isPowerOfTwo(bl_image.size[0]) and pU.math.isPowerOfTwo(bl_image.size[1])):
         return True
     else:
         return False
 
+def vec3IsIdentity(vec3):
+    return np.all(np.isclose(vec3, mathutils.Vector(), atol=1e-6))
+
 def mat4IsIdentity(mat4):
     return np.all(np.isclose(mat4, mathutils.Matrix.Identity(4), atol=1e-6))
+
+def vec4IsAllOnes(vec4):
+    return np.all(np.isclose(vec4, VEC4_ALL_ONES, atol=1e-6))
 
 def mat4IsTRSDecomposable(mat4):
 

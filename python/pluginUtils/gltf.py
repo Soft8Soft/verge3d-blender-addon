@@ -61,6 +61,20 @@ WEBGL_BLEND_FUNCS = {
 # NOTE: some Windows systems use 'image/hdr' instead of 'image/vnd.radiance'
 COMPAT_IMAGE_MIME = ['image/jpeg', 'image/bmp', 'image/png', 'image/x-png', 'image/vnd.radiance', 'image/hdr']
 
+# accessor constants
+ACCESSOR_COMPONENT_TYPES = ['BYTE', 'UNSIGNED_BYTE', 'SHORT', 'UNSIGNED_SHORT', 'UNSIGNED_INT', 'FLOAT']
+ACCESSOR_COMPONENT_TYPE_NUM = [5120, 5121, 5122, 5123, 5125, 5126]
+ACCESSOR_CONVERT_TYPES = ['b', 'B', 'h', 'H', 'I', 'f']
+ACCESSOR_CONVERT_TYPE_SIZES = [1, 1, 2, 2, 4, 4]
+
+ACCESSOR_TYPES = ['SCALAR', 'VEC2', 'VEC3', 'VEC4', 'MAT2', 'MAT3', 'MAT4']
+ACCESSOR_TYPE_COUNTS = [1, 2, 3, 4, 4, 9, 16]
+
+# buffer view constants
+BUFFER_VIEW_TARGETS = ['ARRAY_BUFFER', 'ELEMENT_ARRAY_BUFFER']
+BUFFER_VIEW_TARGET_NUM = [34962, 34963]
+
+
 def appendEntity(gltf, name, entity):
 
     if not gltf.get(name):
@@ -265,7 +279,6 @@ def getLightIndex(gltf, idname):
     """
     Return the light index in the gltf array.
     """
-
     v3dExt = appendExtension(gltf, 'S8S_v3d_lights', gltf)
 
     if v3dExt.get('lights') == None:
@@ -287,7 +300,6 @@ def getLightProbeIndex(gltf, idname):
     """
     Return the light probe index in the gltf array.
     """
-
     v3dExt = appendExtension(gltf, 'S8S_v3d_light_probes', gltf)
 
     if v3dExt.get('lightProbes') == None:
@@ -309,7 +321,6 @@ def getCurveIndex(gltf, idname):
     """
     Return the curve index in the gltf array.
     """
-
     v3dExt = appendExtension(gltf, 'S8S_v3d_curves', gltf)
 
     if v3dExt.get('curves') == None:
@@ -395,17 +406,14 @@ def getClippingPlaneIndex(gltf, idname):
 
     return -1
 
-def generateBufferView(gltf, binary, data_buffer, target, alignment):
+def generateBufferView(gltf, binary, drawBuffer, target, alignment):
 
-    if data_buffer is None:
+    if drawBuffer is None:
         return -1
 
-    gltf_target_number = [ 34962, 34963 ]
-    gltf_target_enums = [ "ARRAY_BUFFER", "ELEMENT_ARRAY_BUFFER" ]
-
-    target_number = 0
-    if target in gltf_target_enums:
-        target_number = gltf_target_number[gltf_target_enums.index(target)]
+    targetNum = 0
+    if target in BUFFER_VIEW_TARGETS:
+        targetNum = BUFFER_VIEW_TARGET_NUM[BUFFER_VIEW_TARGETS.index(target)]
 
     if gltf.get('bufferViews') is None:
         gltf['bufferViews'] = []
@@ -414,28 +422,28 @@ def generateBufferView(gltf, binary, data_buffer, target, alignment):
 
     bufferView = {}
 
-    if target_number != 0:
-        bufferView['target'] = target_number
+    if targetNum != 0:
+        bufferView['target'] = targetNum
 
-    bufferView['byteLength'] = len(data_buffer)
+    bufferView['byteLength'] = len(drawBuffer)
 
-    binary_length = len(binary)
+    binaryLen = len(binary)
 
     remainder = 0
 
     if alignment > 0:
-        remainder = binary_length % alignment
+        remainder = binaryLen % alignment
 
     if remainder > 0:
-        padding_byte = struct.pack(bytes(str('<1b').encode()), 0)
+        padding_byte = struct.pack('<1b', 0)
         for i in range(0, alignment - remainder):
             binary.extend(padding_byte)
 
 
     bufferView['byteOffset'] = len(binary)
-    binary.extend(data_buffer)
+    binary.extend(drawBuffer)
 
-    # only have one buffer.
+    # only have one buffer
     bufferView['buffer'] = 0
 
     bufferViews.append(bufferView)
@@ -446,34 +454,27 @@ def generateBufferView(gltf, binary, data_buffer, target, alignment):
 def generateAccessor(gltf, binary, data, componentType, count, _type, target):
 
     if data is None:
-        log.error('No data')
+        log.error('No data for accessor')
         return -1
 
-    gltf_convert_type = [ "b", "B", "h", "H", "I", "f" ]
-    gltf_enumNames = [ "BYTE", "UNSIGNED_BYTE", "SHORT", "UNSIGNED_SHORT", "UNSIGNED_INT", "FLOAT" ]
-    gltf_convert_type_size = [ 1, 1, 2, 2, 4, 4 ]
-
-    if componentType not in gltf_enumNames:
+    if componentType not in ACCESSOR_COMPONENT_TYPES:
         log.error('Invalid componentType ' + componentType)
         return -1
 
-    componentTypeInteger = [ 5120, 5121, 5122, 5123, 5125, 5126 ][gltf_enumNames.index(componentType)]
+    componentTypeNum = ACCESSOR_COMPONENT_TYPE_NUM[ACCESSOR_COMPONENT_TYPES.index(componentType)]
 
-    convert_type = gltf_convert_type[gltf_enumNames.index(componentType)]
-    convert_type_size = gltf_convert_type_size[gltf_enumNames.index(componentType)]
+    convertType = ACCESSOR_CONVERT_TYPES[ACCESSOR_COMPONENT_TYPES.index(componentType)]
+    convertTypeSize = ACCESSOR_CONVERT_TYPE_SIZES[ACCESSOR_COMPONENT_TYPES.index(componentType)]
 
     if count < 1:
         log.error('Invalid count ' + str(count))
         return -1
 
-    gltf_type_count = [1, 2, 3, 4, 4, 9, 16]
-    gltf_type = [ "SCALAR", "VEC2", "VEC3", "VEC4", "MAT2", "MAT3", "MAT4" ]
-
-    if _type not in gltf_type:
+    if _type not in ACCESSOR_TYPES:
         log.error('Invalid type ' + _type)
         return -1
 
-    type_count = gltf_type_count[gltf_type.index(_type)]
+    typeCount = ACCESSOR_TYPE_COUNTS[ACCESSOR_TYPES.index(_type)]
 
 
     if gltf.get('accessors') is None:
@@ -483,9 +484,9 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
 
 
     accessor = {
-        'componentType' : componentTypeInteger,
-        'count' : count,
-        'type' : _type
+        'componentType': componentTypeNum,
+        'count': count,
+        'type': _type
     }
 
 
@@ -496,7 +497,7 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
             npData = data
             data = npData.tolist()
 
-        npData = npData.reshape(-1, type_count)
+        npData = npData.reshape(-1, typeCount)
         accessor['min'] = npData.min(axis=0).tolist()
         accessor['max'] = npData.max(axis=0).tolist()
 
@@ -504,9 +505,9 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
         minimum = []
         maximum = []
 
-        for component_index in range(0, type_count):
+        for component_index in range(0, typeCount):
             for component in range(0, count):
-                element = data[component * type_count + component_index]
+                element = data[component * typeCount + component_index]
 
                 if component == 0:
                     minimum.append(element)
@@ -518,16 +519,10 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
         accessor['min'] = minimum
         accessor['max'] = maximum
 
-    convert_type = '<' + str(count * type_count) + convert_type
+    convertType = '<' + str(count * typeCount) + convertType
+    drawBuffer = struct.pack(convertType, *data)
 
-    # NOTE: There is a bug in the struct package happened on old
-    # python versions, reproduced in 3ds max 2017. Need to
-    # use byte strings in the pack method as a workaround.
-    # see: https://bugs.python.org/issue19099
-
-    data_buffer = struct.pack(bytes(convert_type.encode()), *data)
-
-    bufferView = generateBufferView(gltf, binary, data_buffer, target, convert_type_size)
+    bufferView = generateBufferView(gltf, binary, drawBuffer, target, convertTypeSize)
 
     if bufferView < 0:
         log.error('Invalid buffer view')
@@ -538,6 +533,7 @@ def generateAccessor(gltf, binary, data, componentType, count, _type, target):
     accessors.append(accessor)
 
     return len(accessors) - 1
+
 
 def createAnimChannel(sampler, nodeIndex, path):
     channel = {
@@ -555,8 +551,7 @@ def createAnimSampler(gltf, binary, keys, values, dim, interpolation='LINEAR'):
 
     sampler['interpolation'] = interpolation
 
-    input = generateAccessor(gltf, binary,
-            keys, 'FLOAT', len(keys), 'SCALAR', '')
+    input = generateAccessor(gltf, binary, keys, 'FLOAT', len(keys), 'SCALAR', '')
     sampler['input'] = input
 
     if dim == 1:
@@ -568,8 +563,7 @@ def createAnimSampler(gltf, binary, keys, values, dim, interpolation='LINEAR'):
     elif dim == 4:
         accessorType = 'VEC4'
 
-    output = generateAccessor(gltf, binary,
-            values, 'FLOAT', len(values) // dim, accessorType, '')
+    output = generateAccessor(gltf, binary, values, 'FLOAT', len(values) // dim, accessorType, '')
     sampler['output'] = output
 
     return sampler

@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,29 +19,25 @@ import math
 import os.path
 import shutil
 
-join = os.path.join
-norm = os.path.normpath
-
-import pluginUtils
+import pluginUtils as pU
 import pluginUtils.gltf as gltf
-import pluginUtils.rawdata
-
-log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_animate import *
 from .gltf2_extract import *
 from .gltf2_filter import *
 from .gltf2_get import *
 from .utils import *
+from . import utils
 
 from profilehooks import profile
 
-VERSION = '4.11.0'
+VERSION = '4.12.0'
 
 PRIMITIVE_MODE_LINES = 1
 PRIMITIVE_MODE_TRIANGLES = 4
 
 PROXY_NODE_PREFIX = 'v3d_Proxy_Node_{idx}_{name}'
+INSTANCE_OFFSET_NODE_PREFIX = 'Instance_Offset_'
 
 SPOT_SHADOW_MIN_NEAR = 0.01
 
@@ -61,6 +57,9 @@ ROTATION_NODE_TYPES = [
     'NODE_INV_X_90',
     'NODE_INV_X_90_X_90'
 ]
+
+log = pU.log.getLogger('V3D-BL')
+norm = os.path.normpath
 
 def generateAsset(operator, context, exportSettings, glTF):
     """
@@ -1213,8 +1212,8 @@ def generateLights(operator, context, exportSettings, glTF):
                 light['width'] = width
                 light['height'] = height
 
-                light['ltcMat1'] = pluginUtils.rawdata.ltcMat1
-                light['ltcMat2'] = pluginUtils.rawdata.ltcMat2
+                light['ltcMat1'] = pU.rawdata.ltcMat1
+                light['ltcMat2'] = pU.rawdata.ltcMat2
 
             light['intensity'] = light['power']
 
@@ -1695,9 +1694,9 @@ def generateDuplicateMesh(operator, context, exportSettings, glTF, bl_obj):
 
     return len(glTF['meshes']) - 1
 
-def generateNodeParameter(matrix, node):
+def generateNodeTransform(matrix, node):
     """
-    Helper function for storing node parameters.
+    Helper function for storing transformation parameters.
     """
 
     translation, rotation, scale = decomposeTransformSwizzle(matrix)
@@ -1746,7 +1745,9 @@ def getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj):
     return mesh
 
 def generateClippingPlanes(operator, context, exportSettings, glTF):
-    """Generates the top level clippingPlanes entry."""
+    """
+    Generates the top level clippingPlanes entry.
+    """
 
     planes = []
 
@@ -1770,86 +1771,93 @@ def generateClippingPlanes(operator, context, exportSettings, glTF):
     if len(planes):
         gltf.appendExtension(glTF, 'S8S_v3d_clipping_planes', glTF, {'clippingPlanes': planes})
 
-def generateNodeInstance(operator, context, exportSettings, glTF, bl_obj):
+def generateNodeInstance(operator, context, exportSettings, glTF, blObj):
     """
     Helper function for storing node instances.
     """
 
     node = {}
 
-    bl_obj_type = bl_obj.type
+    objType = blObj.type
 
-    node_matrix = bl_obj.matrix_basis
-    generateNodeParameter(node_matrix, node)
+    node_matrix = blObj.matrix_basis
+    generateNodeTransform(node_matrix, node)
 
     v3dExt = gltf.appendExtension(glTF, 'S8S_v3d_node', node)
 
-    if bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'META']:
+    if objType in ['MESH', 'CURVE', 'SURFACE', 'META']:
 
-        mesh = getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj)
+        mesh = getMeshIndexDupliCheck(operator, context, exportSettings, glTF, blObj)
         if mesh >= 0:
             node['mesh'] = mesh
 
-    elif bl_obj_type == 'FONT':
+    elif objType == 'FONT':
 
         if exportSettings['bakeText']:
-            mesh = getMeshIndexDupliCheck(operator, context, exportSettings, glTF, bl_obj)
+            mesh = getMeshIndexDupliCheck(operator, context, exportSettings, glTF, blObj)
             if mesh >= 0:
                 node['mesh'] = mesh
         else:
-            curve = getCurveIndex(glTF, bl_obj.data.name)
+            curve = getCurveIndex(glTF, blObj.data.name)
             if curve >= 0:
                 gltf.appendExtension(glTF, 'S8S_v3d_curves', node, {'curve' : curve})
 
-    elif bl_obj_type == 'CAMERA':
-        camera = getCameraIndex(glTF, bl_obj.data.name)
+    elif objType == 'CAMERA':
+        camera = getCameraIndex(glTF, blObj.data.name)
         if camera >= 0:
             node['camera'] = camera
 
-    elif bl_obj_type == 'LIGHT':
-        light = gltf.getLightIndex(glTF, bl_obj.data.name)
+    elif objType == 'LIGHT':
+        light = gltf.getLightIndex(glTF, blObj.data.name)
         if light >= 0:
             gltf.appendExtension(glTF, 'S8S_v3d_lights', node, {'light' : light})
 
-    elif bl_obj_type == 'LIGHT_PROBE':
-        probe = gltf.getLightProbeIndex(glTF, bl_obj.data.name)
+    elif objType == 'LIGHT_PROBE':
+        probe = gltf.getLightProbeIndex(glTF, blObj.data.name)
         if probe >= 0:
             gltf.appendExtension(glTF, 'S8S_v3d_light_probes', node, {'lightProbe' : probe})
 
-    elif bl_obj_type == 'EMPTY' and bl_obj.v3d.clipping_plane:
-        plane = gltf.getClippingPlaneIndex(glTF, bl_obj.name)
+    elif objType == 'EMPTY' and blObj.v3d.clipping_plane:
+        plane = gltf.getClippingPlaneIndex(glTF, blObj.name)
         if plane >= 0:
             gltf.appendExtension(glTF, 'S8S_v3d_clipping_planes', node, {'clippingPlane' : plane})
 
-    v3dExt['hidden'] = bl_obj.hide_render
-    v3dExt['renderOrder'] = bl_obj.v3d.render_order
-    v3dExt['frustumCulling'] = bl_obj.v3d.frustum_culling
-    v3dExt['hidpiCompositing'] = bl_obj.v3d.hidpi_compositing
+    if blObj.hide_render:
+        v3dExt['hidden'] = True
 
-    if bl_obj_type in ['MESH', 'CURVE', 'SURFACE', 'FONT', 'META'] and exportSettings['useShadows']:
-        v3dExt['useShadows'] = bl_obj.v3d.use_shadows
+    v3dExt['renderOrder'] = blObj.v3d.render_order
+    v3dExt['frustumCulling'] = blObj.v3d.frustum_culling
 
-    if len(bl_obj.users_collection):
+    if blObj.v3d.hidpi_compositing:
+        v3dExt['hidpiCompositing'] = True
 
-        collections = getObjectAllCollections(bl_obj)
+    if objType in ['MESH', 'CURVE', 'SURFACE', 'FONT', 'META'] and exportSettings['useShadows']:
+        v3dExt['useCastShadows'] = blObj.visible_shadow
+        v3dExt['useShadows'] = blObj.v3d.use_shadows
+
+    if len(blObj.users_collection):
+        collections = getObjectAllCollections(blObj)
         v3dExt['groupNames'] = [coll.name for coll in collections]
         for coll in collections:
             if coll is not None and coll.hide_render:
                 v3dExt['hidden'] = True
                 break
 
-    v3dExt['objectIndex'] = bl_obj.pass_index
-    v3dExt['objectColor'] = getVec4(bl_obj.color)
+    if blObj.pass_index != 0:
+        v3dExt['objectIndex'] = blObj.pass_index
+
+    if objType in ['MESH', 'CURVE', 'SURFACE', 'FONT', 'META'] and not utils.vec4IsAllOnes(blObj.color):
+        v3dExt['objectColor'] = getVec4(blObj.color)
 
     if exportSettings['exportCustomProps']:
-        props = createCustomProperty(bl_obj)
+        props = createCustomProperty(blObj)
 
         if props is not None:
             if 'extras' not in node:
                 node['extras'] = {}
             node['extras']['customProps'] = props
 
-    node['name'] = bl_obj.name
+    node['name'] = blObj.name
 
     return node
 
@@ -1861,12 +1869,13 @@ def inheritParentProps(node, nodeParent):
     v3dExtParent = gltf.getAssetExtension(nodeParent, 'S8S_v3d_node')
 
     if v3dExt and v3dExtParent:
-        if v3dExtParent['hidden'] == True:
+        if v3dExtParent.get('hidden') == True:
             v3dExt['hidden'] = True
 
         if 'groupNames' in v3dExtParent:
             if 'groupNames' in v3dExt:
                 v3dExt['groupNames'] += v3dExtParent['groupNames']
+                v3dExt['groupNames'] = list(set(v3dExt['groupNames']))
             else:
                 v3dExt['groupNames'] = v3dExtParent['groupNames'].copy()
 
@@ -1881,7 +1890,7 @@ def generateCameraNodeFromView(glTF):
 
     if region3D.is_perspective:
         matrix = region3D.view_matrix.inverted()
-        generateNodeParameter(matrix, node)
+        generateNodeTransform(matrix, node)
     else:
         q = region3D.view_rotation
         t = q @ mathutils.Vector((0, 0, region3D.view_distance)) + region3D.view_location
@@ -1906,9 +1915,9 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
     if bl_obj.parent is None:
         return []
 
-    proxy_nodes = []
+    proxyNodes = []
 
-    parInvMats = list(filter(lambda mat: not mat4IsIdentity(mat),
+    parInvMats = list(filter(lambda mat: not utils.mat4IsIdentity(mat),
             mat4ToTRSMatrices(bl_obj.matrix_parent_inverse)))
     if parInvMats:
         log.warning('Object "' + bl_obj.name
@@ -1919,7 +1928,7 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
         pose_bone = bl_obj.parent.pose.bones.get(bl_obj.parent_bone)
         if pose_bone is not None:
             if pose_bone.bone.use_relative_parent:
-                relBoneMats = list(filter(lambda mat: not mat4IsIdentity(mat),
+                relBoneMats = list(filter(lambda mat: not utils.mat4IsIdentity(mat),
                         mat4ToTRSMatrices(pose_bone.bone.matrix_local.inverted())))
                 if relBoneMats:
                     log.warning('Object "' + bl_obj.name
@@ -1933,12 +1942,12 @@ def generateProxyNodes(operator, context, glTF, node, bl_obj):
     proxyMats.reverse()
 
     for i in range(len(proxyMats)):
-        proxy_node = {}
-        proxy_node['name'] = PROXY_NODE_PREFIX.format(idx=str(i), name=node['name'])
-        generateNodeParameter(proxyMats[i], proxy_node)
-        proxy_nodes.append(proxy_node)
+        proxyNode = {}
+        proxyNode['name'] = PROXY_NODE_PREFIX.format(idx=str(i), name=node['name'])
+        generateNodeTransform(proxyMats[i], proxyNode)
+        proxyNodes.append(proxyNode)
 
-    return proxy_nodes
+    return proxyNodes
 
 def mat4ToTRSMatrices(mat4):
     """
@@ -1969,8 +1978,8 @@ def generateNodes(operator, context, exportSettings, glTF):
         node = generateNodeInstance(operator, context, exportSettings, glTF, bl_obj)
         nodes.append(node)
 
-        proxy_nodes = generateProxyNodes(operator, context, glTF, node, bl_obj)
-        nodes.extend(proxy_nodes)
+        proxyNodes = generateProxyNodes(operator, context, glTF, node, bl_obj)
+        nodes.extend(proxyNodes)
 
     if getCameraIndex(glTF, '__DEFAULT__') >= 0:
         nodes.append(generateCameraNodeFromView(glTF))
@@ -1990,15 +1999,16 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                 nodes.append(node)
 
-                proxy_nodes = generateProxyNodes(operator, context, glTF, node, bl_instance_obj)
-                nodes.extend(proxy_nodes)
+                proxyNodes = generateProxyNodes(operator, context, glTF, node, bl_instance_obj)
+                nodes.extend(proxyNodes)
 
-            node = {}
-            node['name'] = 'Instance_Offset_' + bl_obj.name
+            if not utils.vec3IsIdentity(bl_obj.instance_collection.instance_offset):
+                node = {}
+                node['name'] = INSTANCE_OFFSET_NODE_PREFIX + bl_obj.name
 
-            translation = convertSwizzleLocation(bl_obj.instance_collection.instance_offset)
-            node['translation'] = [-translation[0], -translation[1], -translation[2]]
-            nodes.append(node)
+                translation = convertSwizzleLocation(bl_obj.instance_collection.instance_offset)
+                node['translation'] = [-translation[0], -translation[1], -translation[2]]
+                nodes.append(node)
 
     if len(nodes) > 0:
         glTF['nodes'] = nodes
@@ -2040,7 +2050,7 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                 jointMatrix = getBoneJointMatrix(bl_obj, bl_bone, exportSettings['bakeArmatureActions'])
 
-                generateNodeParameter(jointMatrix, node)
+                generateNodeTransform(jointMatrix, node)
 
                 node['name'] = bl_obj.name + '_' + bl_bone.name
 
@@ -2081,11 +2091,11 @@ def generateNodes(operator, context, exportSettings, glTF):
 
                 skin['joints'] = joints
 
-                componentType = "FLOAT"
+                componentType = 'FLOAT'
                 count = len(inverse_matrices) // 16
-                type = "MAT4"
+                type = 'MAT4'
 
-                inverseBindMatrices = gltf.generateAccessor(glTF, exportSettings['binary'], inverse_matrices, componentType, count, type, "")
+                inverseBindMatrices = gltf.generateAccessor(glTF, exportSettings['binary'], inverse_matrices, componentType, count, type, '')
 
                 skin['inverseBindMatrices'] = inverseBindMatrices
 
@@ -2131,9 +2141,6 @@ def generateNodes(operator, context, exportSettings, glTF):
                        bl_obj.v3d.canvas_break_enabled):
             v3dExt['constraints'] = extractConstraints(glTF, bl_obj)
 
-        if v3dExt:
-            v3dExt['useCastShadows'] = bl_obj.visible_shadow
-
         if (bl_obj.type == 'CAMERA' and
                 bl_obj.data and
                 bl_obj.data.v3d.controls == 'FIRST_PERSON' and
@@ -2152,17 +2159,19 @@ def generateNodes(operator, context, exportSettings, glTF):
             nodeAppendChildFromObj(glTF, node, child_obj)
 
         if bl_obj.instance_type == 'COLLECTION' and bl_obj.instance_collection != None:
-            child_index = gltf.getNodeIndex(glTF, 'Instance_Offset_' + bl_obj.name)
-            if child_index >= 0:
+            offsetNodeIdx = gltf.getNodeIndex(glTF, INSTANCE_OFFSET_NODE_PREFIX + bl_obj.name)
+            if offsetNodeIdx >= 0:
                 if not 'children' in node:
                     node['children'] = []
-                node['children'].append(child_index)
+                node['children'].append(offsetNodeIdx)
 
-                instance_node = nodes[child_index]
-                for bl_instance_obj in bl_obj.instance_collection.objects:
-                    nodeAppendChildFromObj(glTF, instance_node,
-                            bl_instance_obj, 'Instance_' + bl_obj.name
-                            + '_' + bl_instance_obj.name)
+                instanceParentNode = nodes[offsetNodeIdx]
+            else:
+                instanceParentNode = node
+
+            for blInstanceObj in bl_obj.instance_collection.objects:
+                nodeAppendChildFromObj(glTF, instanceParentNode, blInstanceObj,
+                                       'Instance_' + bl_obj.name + '_' + blInstanceObj.name)
 
         if exportSettings['skins']:
             if bl_obj.type == 'ARMATURE' and len(bl_obj.pose.bones) > 0:
@@ -2203,35 +2212,34 @@ def generateNodes(operator, context, exportSettings, glTF):
 
     preprocessCamLampNodes(nodes)
 
-def nodeAppendChildFromObj(glTF, parent_node, child_obj, child_node_name=None):
+def nodeAppendChildFromObj(glTF, parentNode, childObj, childNodeName=None):
+    if childNodeName is None:
+        childNodeName = childObj.name
 
-    if child_node_name is None:
-        child_node_name = child_obj.name
-
-    child_index = gltf.getNodeIndex(glTF, child_node_name)
-    if child_index < 0:
+    childIdx = gltf.getNodeIndex(glTF, childNodeName)
+    if childIdx < 0:
         return -1
 
-    if not 'children' in parent_node:
-        parent_node['children'] = []
+    if not 'children' in parentNode:
+        parentNode['children'] = []
 
     i = 0
-    index_to_append = child_index
+    idxToAppend = childIdx
     while True:
-        proxy_name = PROXY_NODE_PREFIX.format(idx=str(i), name=child_node_name)
-        proxy_idx = gltf.getNodeIndex(glTF, proxy_name)
+        proxyName = PROXY_NODE_PREFIX.format(idx=str(i), name=childNodeName)
+        proxyIdx = gltf.getNodeIndex(glTF, proxyName)
         i += 1
 
-        if proxy_idx >= 0:
-            proxy_node = glTF['nodes'][proxy_idx]
-            if not 'children' in proxy_node:
-                proxy_node['children'] = []
-            proxy_node['children'].append(index_to_append)
-            index_to_append = proxy_idx
+        if proxyIdx >= 0:
+            proxyNode = glTF['nodes'][proxyIdx]
+            if not 'children' in proxyNode:
+                proxyNode['children'] = []
+            proxyNode['children'].append(idxToAppend)
+            idxToAppend = proxyIdx
         else:
             break
 
-    parent_node['children'].append(index_to_append)
+    parentNode['children'].append(idxToAppend)
 
 def preprocessCamLampNodes(nodes):
     """
@@ -2292,10 +2300,6 @@ def nodeIsCurve(node):
     return ('extensions' in node and 'S8S_v3d_curves' in node['extensions']
             and 'curve' in node['extensions']['S8S_v3d_curves'])
 
-def nodeIsPlaneReflProbe(node):
-    return ('extensions' in node and 'S8S_v3d_light_probes' in node['extensions']
-            and 'lightProbe' in node['extensions']['S8S_v3d_light_probes'])
-
 def generateImages(operator, context, exportSettings, glTF):
     """
     Generates the top level images entry.
@@ -2309,7 +2313,7 @@ def generateImages(operator, context, exportSettings, glTF):
     for bl_image in filteredImages:
         try:
             image = createImage(bl_image, context, exportSettings, glTF)
-        except pu.convert.CompressionFailed:
+        except pU.convert.CompressionFailed:
             bl_image['compression_error_status'] = 1
             image = createImage(bl_image, context, exportSettings, glTF)
 
@@ -2352,9 +2356,9 @@ def createImage(bl_image, context, exportSettings, glTF):
 
             elif imgNeedsCompression(bl_image, exportSettings):
                 if bl_image.file_format == 'HDR':
-                    pu.convert.compressLZMA(old_path, dstPath=new_path)
+                    pU.convert.compressLZMA(old_path, dstPath=new_path)
                 else:
-                    pu.convert.compressKTX2(old_path, dstPath=new_path, method=bl_image.v3d.compression_method)
+                    pU.convert.compressKTX2(old_path, dstPath=new_path, method=bl_image.v3d.compression_method)
             else:
                 shutil.copyfile(old_path, new_path)
 
@@ -2753,10 +2757,9 @@ def generateMaterials(operator, context, exportSettings, glTF):
                 v3dExt['dithering'] = bl_mat.v3d.dithering
 
             if mat_type == 'EEVEE':
-                v3dExt['nodeGraph'] = extractNodeGraph(bl_mat.node_tree,
-                        exportSettings, glTF)
+                v3dExt['nodeGraph'] = extractNodeGraph(bl_mat.node_tree, exportSettings, glTF)
             else:
-                v3dExt['nodeGraph'] = composeNodeGraph(bl_mat, exportSettings, glTF)
+                v3dExt['nodeGraph'] = composeNodeGraph(bl_mat)
 
             v3dExt['materialIndex'] = bl_mat.pass_index
 
@@ -2946,6 +2949,7 @@ def nodeGraphReplaceTexCoordObject(nGraph, glTF):
             matNode['object'] = (gltf.getNodeIndex(glTF, matNode['object'].name)
                     if matNode['object'] is not None else -1)
 
+#@profile(immediate=True)
 def generateGLTF(operator,
                   context,
                   exportSettings,

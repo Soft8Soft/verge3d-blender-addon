@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,13 +15,13 @@
 import bpy
 import json, struct, os, tempfile
 
-import pluginUtils
+import pluginUtils as pU
 from pluginUtils.manager import AppManagerConn
-
-log = pluginUtils.log.getLogger('V3D-BL')
 
 from .gltf2_filter import *
 from .gltf2_generate import *
+
+log = pU.log.getLogger('V3D-BL')
 
 def prepare(exportSettings):
     """
@@ -72,7 +72,7 @@ def compressLZMA(path, settings):
     if not settings['lzmaEnabled']:
         return
 
-    pluginUtils.convert.compressLZMA(path)
+    pU.convert.compressLZMA(path)
 
 def save(operator, context, exportSettings):
     """
@@ -170,7 +170,13 @@ def save(operator, context, exportSettings):
             title = blendname.replace('_', ' ').title() or 'Blender scene exported to HTML'
             if exportSettings['copyright']:
                 title += ' (Copyright {})'.format(exportSettings['copyright'])
-            pluginUtils.convert.composeSingleHTML(exportSettings['filepath'], file.name, title)
+
+            try:
+                pU.convert.composeSingleHTML(exportSettings['filepath'], file.name, title)
+            except PermissionError:
+                operator.report({'ERROR'}, 'Permission denied when attempting to access the engine runtime.\n'
+                        'Make sure that you\'re not running the App Manager under different user.')
+
             os.unlink(file.name)
 
     finish(exportSettings)

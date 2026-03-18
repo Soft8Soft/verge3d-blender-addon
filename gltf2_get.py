@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2025 Soft8Soft, LLC. All rights reserved.
+# Copyright (c) 2017-2026 Soft8Soft, LLC. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -448,6 +448,8 @@ def createDefaultMaterial():
     return {
         "extensions" : {
             "S8S_v3d_materials" : {
+                "gtaoVisible" : True,
+                "materialIndex" : 0,
                 "nodeGraph" : {
                     "edges" : [
                         {
@@ -472,8 +474,8 @@ def createDefaultMaterial():
                         },
                         {
                             "inputs" : [
-                                [ 0.800000011920929, 0.800000011920929, 0.800000011920929, 1.0 ],
-                                0.0,
+                                [ 0.8, 0.8, 0.8, 1.0 ],
+                                0.5,
                                 [ 0.0, 0.0, 0.0 ]
                             ],
                             "is_active_output" : False,
@@ -484,9 +486,7 @@ def createDefaultMaterial():
                             "type" : "BSDF_DIFFUSE_BL"
                         }
                     ]
-                },
-                "useCastShadows" : True,
-                "useShadows" : True
+                }
             }
         },
         "name" : DEFAULT_MAT_NAME
